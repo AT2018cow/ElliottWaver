@@ -31,6 +31,7 @@ def score(
     *,
     volume_comparable: bool,
     profile: ScoringProfile = "ew_score_v2",
+    subwave_fit: float | None = None,
 ) -> ScoreBreakdown:
     if profile not in {"ew_score_v1", "ew_score_v2"}:
         raise ValueError(f"Unsupported scoring profile: {profile}")
@@ -65,6 +66,7 @@ def score(
     ratios: list[
         tuple[str, float, tuple[float, ...], float, tuple[float, ...], float | None, str]
     ] = []
+    impulse_like = candidate.template.name in {"IMPULSE", "DIAGONAL"}
     l1 = q[1] - q[0]
     if len(q) >= 3:
         ratios.append(
@@ -79,14 +81,14 @@ def score(
             )
         )
     if len(q) >= 4:
-        targets = (1.618, 2.618) if candidate.template.name == "IMPULSE" else (1.0, 1.618)
-        secondary = (1.382, 2.0, 4.236) if candidate.template.name == "IMPULSE" else (0.618, 1.272)
+        targets = (1.618, 2.618) if impulse_like else (1.0, 1.618)
+        secondary = (1.382, 2.0, 4.236) if impulse_like else (0.618, 1.272)
         ratios.append(
             (
                 "extension_3_or_C",
                 (q[3] - q[2]) / l1,
                 targets,
-                0.15 if candidate.template.name == "IMPULSE" else 0.10,
+                0.15 if impulse_like else 0.10,
                 secondary,
                 None,
                 "",
@@ -104,7 +106,7 @@ def score(
                 "",
             )
         )
-    if len(q) >= 6:
+    if len(q) >= 6 and impulse_like:
         # Keep the original fifth-wave formula selectable; v2 explicitly uses
         # the broader best-of-two policy rather than silently replacing v1.
         w5 = q[5] - q[4]
@@ -152,7 +154,7 @@ def score(
             text + ("；进行中端点暂定，贡献折减20%" if tentative else ""),
         )
 
-    impulse = candidate.template.name == "IMPULSE"
+    impulse = impulse_like
     if impulse and len(points) >= 4:
         p1 = max(candidate.direction * indicators.dif[segment(1)])
         p3 = max(candidate.direction * indicators.dif[segment(3)])
@@ -212,14 +214,24 @@ def score(
             math.exp(-0.5 * distance**2),
             "P1-P3平行过P2的通道，用未参与拟合的P4验证",
         )
-    add(
-        "subwave_structure",
-        "subwaves",
-        15,
-        None,
-        0,
-        "次级模板尚未认证；不以5/9笔数代替内部结构证明",
-    )
+    if subwave_fit is None:
+        add(
+            "subwave_structure",
+            "subwaves",
+            15,
+            None,
+            0,
+            "次级模板尚未认证；不以5/9笔数代替内部结构证明",
+        )
+    else:
+        add(
+            "subwave_structure",
+            "subwaves",
+            15,
+            subwave_fit,
+            subwave_fit,
+            "多尺度子浪存在性检查；未做完整规则认证",
+        )
     expected = sum(e.weight for e in evidence if e.status != "NOT_APPLICABLE")
     available = sum(e.weight for e in evidence if e.status == "AVAILABLE")
     contribution = sum(e.weight * e.fit for e in evidence if e.status == "AVAILABLE")

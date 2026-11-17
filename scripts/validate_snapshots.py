@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from eliotbot import ENGINE_VERSION
-from eliotbot.config import load_settings
+from eliotbot.config import large_degree_settings, load_settings, long_term_settings
 from eliotbot.data.snapshots import SnapshotStore
 from eliotbot.evaluation.replay import replay
 from eliotbot.schemas.market import AnalysisRequest
@@ -26,10 +26,26 @@ def main():
     )
     parser.add_argument("--cache-root", type=Path, default=Path(".cache/live-smoke"))
     parser.add_argument("--config", type=Path)
+    parser.add_argument("--long-term", action="store_true")
+    parser.add_argument("--large-degree", action="store_true")
+    parser.add_argument("--subwave-depth", type=int, choices=(0, 1, 2), default=0)
+    parser.add_argument("--allow-gaps", action="store_true")
     parser.add_argument("--output", type=Path, default=Path("reports/snapshot-validation.json"))
     parser.add_argument("--reports", type=Path, default=Path("reports/validation"))
     args = parser.parse_args()
     settings = load_settings(args.config)
+    if args.long_term:
+        settings = long_term_settings(settings)
+    elif args.large_degree:
+        settings = large_degree_settings(settings)
+    if args.subwave_depth:
+        settings = settings.model_copy(
+            update={
+                "search": settings.search.model_copy(
+                    update={"max_subwave_depth": args.subwave_depth}
+                )
+            }
+        )
     service = AnalysisService(settings)
     store = SnapshotStore(args.cache_root)
     cases = []
@@ -42,6 +58,7 @@ def main():
             timeframe=period,
             as_of=bundle.as_of,
             mode="FROZEN_DATA_REPLAY",
+            allow_gaps=args.allow_gaps,
         )
         prepared = prepare_bundle(request, bundle)
         store.save(prepared)
@@ -69,12 +86,14 @@ def main():
             service,
             start=prepared.bars[-3].session_date,
             step=max(1, len(prepared.bars) // 100),
+            allow_gaps=args.allow_gaps,
         ):
             point = AnalysisRequest(
                 symbol=prepared.instrument.canonical_symbol,
                 timeframe=period,
                 as_of=historical.as_of,
                 end=historical.market_asof,
+                allow_gaps=args.allow_gaps,
             )
             assert service.analyze_bundle(point, prepared).result_digest == historical.result_digest
         report = publish_report(result, prepared, args.reports)

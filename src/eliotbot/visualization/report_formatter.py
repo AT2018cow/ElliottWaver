@@ -28,12 +28,12 @@ def markdown_report(result: AnalysisResult) -> str:
         "",
         "候选权重仅表示本次枚举候选之间的相对评分，统计成功概率尚未校准。",
         "",
-        "| 剧本 | 当前阶段 | 质量分 | 证据覆盖 | 候选权重 |",
-        "| --- | --- | --- | --- | --- |",
+        "| 剧本 | 浪级 | 当前阶段 | 质量分 | 证据覆盖 | 候选权重 |",
+        "| --- | --- | --- | --- | --- | --- |",
     ]
     for i, scenario in enumerate(result.scenarios, 1):
         lines.append(
-            f"| S{i} | {scenario.name} | {scenario.score.quality_score:.1f}/100 | {scenario.score.coverage:.1%} | {scenario.relative_weight:.1%} |"
+            f"| S{i} | {scenario.degree} | {scenario.name} | {scenario.score.quality_score:.1f}/100 | {scenario.score.coverage:.1%} | {scenario.relative_weight:.1%} |"
         )
     if not result.scenarios:
         lines += ["", "当前没有达到质量与证据门槛的候选，不强行给出数浪结论。"]

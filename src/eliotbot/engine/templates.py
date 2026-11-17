@@ -23,4 +23,28 @@ ZIGZAG = PatternTemplate(
     {2: "B_DEVELOPING", 3: "C_DEVELOPING"},
     4,
 )
-TEMPLATES = (IMPULSE, ZIGZAG)
+TRIANGLE = PatternTemplate(
+    "TRIANGLE",
+    ("0", "A", "B", "C", "D", "E"),
+    {2: "B_DEVELOPING", 3: "C_DEVELOPING", 4: "D_DEVELOPING", 5: "E_DEVELOPING"},
+    6,
+)
+FLAT = PatternTemplate(
+    "FLAT",
+    ("0", "A", "B", "C"),
+    {2: "B_DEVELOPING", 3: "C_DEVELOPING"},
+    4,
+)
+DIAGONAL = PatternTemplate(
+    "DIAGONAL",
+    ("0", "1", "2", "3", "4", "5"),
+    {2: "W2_DEVELOPING", 3: "W3_DEVELOPING", 4: "W4_DEVELOPING", 5: "W5_DEVELOPING"},
+    6,
+)
+WXY = PatternTemplate(
+    "WXY",
+    ("0", "W", "X", "Y"),
+    {2: "X_DEVELOPING", 3: "Y_DEVELOPING"},
+    4,
+)
+TEMPLATES = (IMPULSE, ZIGZAG, TRIANGLE, FLAT, DIAGONAL, WXY)

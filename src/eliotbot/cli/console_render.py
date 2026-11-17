@@ -13,11 +13,12 @@ def render_result(result: AnalysisResult) -> None:
     console.print(
         f"{prefix}分析价格 {result.latest_price:.4f} · 结构歧义 {result.ambiguity} · 候选权重不是成功概率"
     )
-    table = Table("剧本", "阶段", "质量", "证据覆盖", "候选权重", "第一目标")
+    table = Table("剧本", "浪级", "阶段", "质量", "证据覆盖", "候选权重", "第一目标")
     for i, scenario in enumerate(result.scenarios, 1):
         zone = scenario.target_zones[0] if scenario.target_zones else None
         table.add_row(
             f"S{i}",
+            scenario.degree,
             scenario.stage,
             f"{scenario.score.quality_score:.1f}/100",
             f"{scenario.score.coverage:.0%}",

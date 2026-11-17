@@ -24,6 +24,7 @@ class AnalysisConfig(Section):
     min_anchor_bars: int = Field(60, ge=6)
     max_analysis_bars: int = Field(600, ge=60, le=5000)
     max_anchors: int = Field(4, ge=1, le=8)
+    anchor_mode: Literal["recent", "spread"] = "recent"
     warmup_bars: int = Field(130, ge=26)
     scales: tuple[float, ...] = (1.4, 2.4, 3.8)
     macro_scale: float = Field(4.0, gt=0)
@@ -47,8 +48,15 @@ class AnalysisConfig(Section):
 class SearchConfig(Section):
     beam_width: int = Field(128, ge=1, le=1024)
     max_expansions: int = Field(50000, ge=1, le=1000000)
-    max_bridge_intervals: Literal[1, 3, 5] = 5
-    max_subwave_depth: Literal[0] = 0
+    max_bridge_intervals: int = Field(5, ge=1, le=21)
+    max_subwave_depth: int = Field(0, ge=0, le=2)
+
+    @field_validator("max_bridge_intervals")
+    @classmethod
+    def odd_bridge_intervals(cls, value):
+        if value % 2 == 0:
+            raise ValueError("max_bridge_intervals must be odd")
+        return value
 
 
 ScoringProfile = Literal["ew_score_v1", "ew_score_v2"]
@@ -107,6 +115,33 @@ class Settings(BaseSettings):
                 "scoring": self.scoring,
             }
         )
+
+
+def large_degree_settings(settings: Settings) -> Settings:
+    """Search wider for counts whose endpoints are separated by many pivots."""
+    search = settings.search.model_copy(
+        update={
+            "max_bridge_intervals": 21,
+            "beam_width": 512,
+            "max_expansions": 200000,
+        }
+    )
+    return settings.model_copy(update={"search": search})
+
+
+def long_term_settings(settings: Settings) -> Settings:
+    """Use the full 20-year download window and the wider large-degree search."""
+    analysis = settings.analysis.model_copy(
+        update={
+            "timeframe": "1w",
+            "history_years": 20,
+            "max_analysis_bars": 5000,
+            "max_anchors": 8,
+            "anchor_mode": "spread",
+            "top_k": 8,
+        }
+    )
+    return large_degree_settings(settings.model_copy(update={"analysis": analysis}))
 
 
 def load_settings(path: Path | None = None) -> Settings:

@@ -13,7 +13,12 @@ from rich.console import Console
 
 from eliotbot import __version__
 from eliotbot.cli.console_render import render_result
-from eliotbot.config import alpaca_credentials, load_settings
+from eliotbot.config import (
+    alpaca_credentials,
+    large_degree_settings,
+    load_settings,
+    long_term_settings,
+)
 from eliotbot.data.calendar import parse_as_of
 from eliotbot.data.demo import demo_bundle
 from eliotbot.data.router import route_symbol
@@ -67,9 +72,25 @@ def run_analyze(
     refresh=False,
     open_browser=False,
     allow_stale=False,
+    allow_gaps=False,
+    long_term=False,
+    large_degree=False,
+    subwave_depth=0,
     timeframe=None,
 ):
     settings = load_settings(Path(config) if config else None)
+    if subwave_depth not in {0, 1, 2}:
+        raise InputError("--subwave-depth must be 0, 1, or 2")
+    if long_term:
+        settings = long_term_settings(settings)
+    elif large_degree:
+        settings = large_degree_settings(settings)
+    if subwave_depth:
+        settings = settings.model_copy(
+            update={
+                "search": settings.search.model_copy(update={"max_subwave_depth": subwave_depth})
+            }
+        )
     store = SnapshotStore(settings.cache.directory)
     instrument = route_symbol(symbol)
     if offline and not snapshot:
@@ -96,6 +117,7 @@ def run_analyze(
         feed=feed,
         top_k=top_k,
         allow_stale=allow_stale,
+        allow_gaps=allow_gaps,
         mode="FROZEN_DATA_REPLAY" if snapshot or as_of else "LIVE",
         timeframe=normalize_timeframe(
             timeframe or (bundle.timeframe if snapshot else settings.analysis.timeframe)
@@ -174,9 +196,15 @@ def run_fetch(
     feed=None,
     config=None,
     refresh=False,
+    long_term=False,
+    large_degree=False,
     timeframe=None,
 ):
     settings = load_settings(Path(config) if config else None)
+    if long_term:
+        settings = long_term_settings(settings)
+    elif large_degree:
+        settings = large_degree_settings(settings)
     instrument = route_symbol(symbol)
     cutoff = parse_as_of(
         as_of, instrument, datetime.now(UTC), settings.data.delayed_access_buffer_minutes
@@ -416,6 +444,10 @@ else:
         refresh: bool = False,
         open_browser: bool = typer.Option(False, "--open"),
         allow_stale: bool = False,
+        allow_gaps: bool = False,
+        long_term: bool = False,
+        large_degree: bool = False,
+        subwave_depth: int = 0,
         timeframe: str | None = None,
     ):
         run_analyze(**locals())
@@ -457,6 +489,8 @@ else:
         feed: str | None = None,
         config: Path | None = None,
         refresh: bool = False,
+        long_term: bool = False,
+        large_degree: bool = False,
         timeframe: str | None = None,
     ):
         run_fetch(**locals())

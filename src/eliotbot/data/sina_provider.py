@@ -154,6 +154,12 @@ class SinaProvider:
                 "BJ_CAPABILITY_UNVERIFIED: Beijing equity data is not enabled in this release"
             )
         calendar = load_calendar(instrument, start, end)
+        first_session = calendar.dates[0]
+        calendar_warning = (
+            (f"CALENDAR_CLIPPED: requested start {start} precedes XSHG calendar {first_session}",)
+            if start < first_session
+            else ()
+        )
         target = target_session(
             calendar, instrument, as_of, timeframe, end, self.config.delayed_access_buffer_minutes
         )
@@ -169,7 +175,7 @@ class SinaProvider:
         bars = []
         for row in payload["raw"]:
             day = date.fromisoformat(str(row["date"])[:10])
-            if not start <= day <= target:
+            if day < first_session or not start <= day <= target:
                 continue
             opened, closed, available = bar_window(
                 calendar.session(day), "CN", self.config.delayed_access_buffer_minutes
@@ -218,7 +224,7 @@ class SinaProvider:
                 volume_unit="index_volume",
                 amount_currency="CNY",
                 volume_comparable=True,
-                warnings=("指数无复权因子；价格为原始点位",),
+                warnings=("指数无复权因子；价格为原始点位",) + calendar_warning,
             )
         else:
             factors = tuple(
@@ -307,7 +313,8 @@ class SinaProvider:
                     )
                     if timeframe == "1m"
                     else ()
-                ),
+                )
+                + calendar_warning,
             )
         return MarketDataBundle(
             instrument=instrument.model_copy(

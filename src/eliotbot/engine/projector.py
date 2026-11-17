@@ -53,7 +53,7 @@ def project(
         condition(
             "STAGE_EXIT", p[-1], s > 0, "越过已完成浪终点需要重新评估当前调整阶段", inclusive=False
         )
-    elif candidate.template.name == "IMPULSE":
+    elif candidate.template.name in {"IMPULSE", "DIAGONAL"}:
         l1 = abs(p[1] - p[0])
         if len(points) <= 4:
             origin = p[2]
@@ -63,13 +63,14 @@ def project(
         else:
             origin = p[4]
             if candidate.stage == "W4_DEVELOPING":
-                condition("INVALIDATION", p[1], s < 0, "普通推动浪4不可与浪1重叠")
+                if candidate.template.name != "DIAGONAL":
+                    condition("INVALIDATION", p[1], s < 0, "普通推动浪4不可与浪1重叠")
             else:
                 condition(
                     "STAGE_EXIT", p[4], s < 0, "跌向镜像的浪4边界结束当前浪5阶段", inclusive=False
                 )
                 l3 = abs(p[3] - p[2])
-                if l3 < l1:
+                if l3 < l1 and candidate.template.name != "DIAGONAL":
                     cap = p[4] + s * l3
                     condition("INVALIDATION", cap, s > 0, "超过此长度将使浪3最短", inclusive=False)
             targets = [(origin + s * r * l1, "fibonacci_extension") for r in (0.618, 1.0)]
@@ -82,6 +83,17 @@ def project(
             confirmation = p[3]
         if s * (confirmation - current) > tick:
             condition("CONFIRMATION", confirmation, s > 0, "越过前一推动浪终点", inclusive=False)
+    elif candidate.template.name == "TRIANGLE":
+        if len(points) >= 6:
+            origin = p[-1]
+            width = max(abs(p[1] - p[0]), abs(p[3] - p[2]), abs(p[5] - p[4]))
+            condition("STAGE_EXIT", p[-1], s > 0, "越过三角形E点结束当前阶段", inclusive=False)
+            if s * (p[3] - current) > tick:
+                condition("CONFIRMATION", p[3], s > 0, "越过三角形C点确认突破", inclusive=False)
+            targets = [(origin + s * r * width, "fibonacci_extension") for r in (1.0, 1.618)]
+        else:
+            condition("STAGE_EXIT", p[-1], s > 0, "三角形尚未完成", inclusive=False)
+            targets = []
     else:
         a = abs(p[1] - p[0])
         origin = p[2]

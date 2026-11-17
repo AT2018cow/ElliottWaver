@@ -15,16 +15,16 @@
 | 主周期 | `1m、5m、15m、30m、60m、1d、1w`，支持 `1h` 别名；两市场合成样本全覆盖，A 股真实样本全周期覆盖；指数仅 `1d / 1w` |
 | 时间边界 | 不纳入未完成/尚不可用 bar；UTC 与交易所会话分开；节假日、DST、提前收市、午休、小时线尾段与完整周处理已测试 |
 | 复权 | 保存 raw 与因子；A 股基准日乘法复权；先复权日线再聚合周线；美股供应商 all 不进行二次复权 |
-| 分析 | ATR/MACD、三尺度因果 ZigZag、背景锚点与回退、有限 CSP 搜索、端点与完整影线区间硬规则 |
-| 浪型 | 普通涨/跌推动、ABC 锯齿；进行中阶段与完成态；已确认 pivot 与 developing tip 分开 |
-| 评分与点位 | 分项证据、缺失状态、质量/覆盖/相对权重、Top-K 未展示权重、带方向条件、第五浪上限、合法目标带；完成态含 38.2%–100% 回撤目标，低分但硬规则通过的结构以 `EXCLUDED_STRUCTURE` 显式列出；第五浪同时比较浪 5/浪 1 与浪 5/浪 3，含 2.618/4.236 扩展位 |
+| 分析 | ATR/MACD、三尺度因果 ZigZag、背景锚点与回退、有限 CSP 搜索、端点与完整影线区间硬规则；`--long-term` 20 年窗口/首尾锚点/宽桥接搜索，`--allow-gaps` 显式跳过停牌缺口 |
+| 浪型 | 普通涨/跌推动、ABC 锯齿、三角形、平台、楔形、双锯齿 WXY；进行中阶段与完成态；新模板为端点级硬规则；`--subwave-depth` 提供多尺度子浪存在性检查 |
+| 评分与点位 | 分项证据、缺失状态、质量/覆盖/相对权重、Top-K 未展示权重、带方向条件、第五浪上限、合法目标带；完成态含 38.2%–100% 回撤目标，低分但硬规则通过的结构以 `EXCLUDED_STRUCTURE` 显式列出；第五浪同时比较浪 5/浪 1 与浪 5/浪 3，含 2.618/4.236 扩展位；按 K 线跨度标注浪级并提示 `MIXED_DEGREE_SCENARIOS` |
 | 产物 | Rich、JSON、Markdown、独立 Plotly HTML、SVG/PNG 备选渲染；报告文件完整后更新对应周期/feed 的 latest |
 | 快照与回放 | SQLite 索引、Parquet 不可变块、SHA256、原子写入、源身份检查；逐前缀回放与回放 manifest |
 
 ## 验证结果
 
 ```text
-python -m pytest tests -q              122 passed
+python -m pytest tests -q              140 passed
 ruff check src tests scripts           PASS
 ruff format --check src tests scripts  PASS
 pip check                             No broken requirements found
@@ -66,9 +66,21 @@ pip check                             No broken requirements found
 
 股票九组与指数验证的七组（5 个不同指数的 6 组指数/周期组合 + 平安个股回归）均通过规则检查、候选权重质量检查、抽样历史前缀一致性以及 JSON/MD/HTML 产物校验。原始记录的单次纯计算耗时约 0.07–0.25 秒，不包括下载、快照 I/O 与出图；新版本耗时见对应验证 JSON。这不是全市场性能或完整 p95 基准测试。
 
+长历史验证使用 `--long-term --subwave-depth 1 --allow-gaps`，结果见 [validation_long_history_20261118.json](validation_long_history_20261118.json)：
+
+| 标的 / 周期 | 根数 | 输入起始 | 数据截止 | 状态 | Top-K 候选 |
+| --- | ---: | --- | --- | --- | ---: |
+| 000001.SH / 周线 | 1821 | 1991-01-02 | 2026-11-13 | OK | 8 |
+| 399001.SZ / 周线 | 1646 | 1994-04-18 | 2026-11-13 | OK | 8 |
+| 000300.SH / 周线 | 1263 | 2002-01-07 | 2026-11-13 | OK | 8 |
+| 000001.SZ / 周线 | 1569 | 1994-04-18 | 2026-11-13 | OK；77 个允许缺口 | 8 |
+| 600519.SH / 周线 | 1249 | 2001-08-27 | 2026-11-13 | OK；28 个允许缺口 | 8 |
+
+长历史组均通过硬规则、候选权重、抽样前缀一致性和报告校验；单次纯计算约 0.94–1.87 秒。上证 Top-8 中包含 2008–2026、2013–2026、2019–2026 的三角形候选，浪级为 `SUPERCYCLE / CYCLE`，并出现 `MIXED_DEGREE_SCENARIOS` 提示；子浪状态为 `UNVERIFIED`（存在性检查，不是完整认证）。
+
 完成态目标扩展、第五浪评分修正与 `EXCLUDED_STRUCTURE` 可见性变更不包含按证券代码分支的逻辑。DeepSeek 初版的九组证据保留在 [validation_20261117_ext5.json](validation_20261117_ext5.json)。其中部分样本的业务内容未变，但由于引擎版本参与摘要，所有样本都生成了新的结果 ID；业务内容一致不能等同于结果身份一致。
 
-验收修复后的最新证据见 [validation_20261117_ext5_fixed.json](validation_20261117_ext5_fixed.json)，修复与复验见[记录](reviews/2026-11-17-deepseek-ext5-fixed.md)。评分默认 `ew_score_v2`，可以显式选择保留旧公式的 `ew_score_v1`；两者使用不同配置摘要。引擎代码标识为 `ew-rules-v1/zigzag-v1/score-v2/projection-v2/report-v2/0.1.0`，结果中的 `engine_version` 会追加当前 profile（例如 `.../0.1.0/ew_score_v2`），报告修复不会复用旧版本的报告目录。
+验收修复后的最新证据见 [validation_20261117_ext5_fixed.json](validation_20261117_ext5_fixed.json)，修复与复验见[记录](reviews/2026-11-17-deepseek-ext5-fixed.md)。评分默认 `ew_score_v2`，可以显式选择保留旧公式的 `ew_score_v1`；两者使用不同配置摘要。引擎代码标识为 `ew-rules-v2/zigzag-v1/score-v2/projection-v3/report-v3/search-v2/0.1.0`，结果中的 `engine_version` 会追加当前 profile（例如 `.../0.1.0/ew_score_v2`），报告修复不会复用旧版本的报告目录。
 
 ### 真实路径发现并修正的边界
 
@@ -86,13 +98,13 @@ pip check                             No broken requirements found
 | M0 | 骨架、配置与契约实现并通过针对性测试 |
 | M1 | 沪深真实子集通过；US 仅契约测试；未完成原计划 8–12 只跨市场真实样本验收 |
 | M2–M5 | 核心 CLI 链路、规则、评分和报告已实现；次级分形认证按缺失证据处理 |
-| M6 | 主周期能力已提前实现；平台、三角形、楔形、父级上下文与子浪递归尚未实现 |
+| M6 | 平台、三角形、楔形、WXY 已加入端点级硬规则；父级上下文与完整子浪递归尚未实现，`--subwave-depth` 仅做多尺度存在性检查 |
 | M7 | 冻结数据逐前缀回放工具与事件标签基础已实现；长期统计评估、留出比较与概率校准尚未完成 |
 | W1–W2 | 未开始 Web；公共结构化结果与服务入口已预留 |
 
-目前 `max_subwave_depth` 固定为 0，分形证据显示 UNAVAILABLE，`calibrated_event_probability` 固定为 null。规则通过表示当前端点/影线约束未被证伪，不代表已经认证完整的内部 Elliott 子结构。
+`max_subwave_depth` 默认 0，子浪证据显示 `UNAVAILABLE`；设为 `1/2` 时只做多尺度存在性检查，状态为 `UNVERIFIED`，仍不认证完整内部结构。`calibrated_event_probability` 固定为 null。规则通过表示当前端点/影线约束未被证伪，不代表已经认证完整的内部 Elliott 子结构。
 
-其他边界：BJ 个股仅有代码路由，线上接入显式拒绝；BJ 指数（`899*`）已接通。Sina 无可信停牌证据时内部缺口保持未知；尚未接入 BaoStock 备源。指数分钟线未启用；分钟历史取供应商实际返回范围；评分默认参数为工程初值，未根据收益寻优。
+其他边界：BJ 个股仅有代码路由，线上接入显式拒绝；BJ 指数（`899*`）已接通。Sina 无可信停牌证据时内部缺口保持未知；长历史个股需显式 `--allow-gaps`。新模板（三角形/平台/楔形/WXY）是端点级规则，不认证内部 3/5 浪；`max_subwave_depth` 允许 `0/1/2`，但 1/2 只是多尺度存在性检查，不是完整子浪递归。尚未接入 BaoStock 备源；指数分钟线未启用；分钟历史取供应商实际返回范围；评分默认参数为工程初值，未根据收益寻优。
 
 ## 复现
 

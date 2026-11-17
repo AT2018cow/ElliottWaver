@@ -2,14 +2,18 @@ import numpy as np
 import pytest
 from conftest import make_bar, make_pivots
 
+from eliotbot.config import SearchConfig, Settings
+from eliotbot.engine.degree import wave_degree
 from eliotbot.engine.indicators import calculate, ema
-from eliotbot.engine.matcher import Candidate
+from eliotbot.engine.matcher import Candidate, search
 from eliotbot.engine.projector import project
 from eliotbot.engine.rules import check_pattern
 from eliotbot.engine.scorer import score, weight_scenarios
+from eliotbot.engine.subwaves import subwave_fit
 from eliotbot.engine.templates import IMPULSE
-from eliotbot.engine.zigzag import extract
+from eliotbot.engine.zigzag import ZigZagResult, extract
 from eliotbot.schemas.market import AnalysisRequest, Bar
+from eliotbot.schemas.wave import PivotPoint
 from eliotbot.service import AnalysisService
 
 
@@ -228,7 +232,7 @@ def test_missing_feature_does_not_inflate_fit(bundle):
 
 def test_deterministic_results_and_topk_mass(bundle):
     service = AnalysisService()
-    request = AnalysisRequest(symbol="AAPL", as_of=bundle.as_of, top_k=10)
+    request = AnalysisRequest(symbol="AAPL", as_of=bundle.as_of, top_k=20)
     first = service.analyze_bundle(request, bundle)
     second = service.analyze_bundle(
         request.model_copy(update={"mode": "FROZEN_DATA_REPLAY"}), bundle
@@ -253,3 +257,99 @@ def test_search_budget_is_global_and_visible(bundle):
     assert result.status == "SEARCH_LIMITED"
     assert result.diagnostics.search_truncated
     assert result.diagnostics.expansions == 1
+
+
+@pytest.mark.parametrize(
+    "prices, pattern",
+    [
+        ([100, 120, 101, 119], "FLAT"),
+        ([100, 120, 105, 115, 108, 112], "TRIANGLE"),
+        ([100, 120, 110, 150, 118, 160], "DIAGONAL"),
+        ([100, 120, 105, 130], "WXY"),
+    ],
+)
+def test_new_template_hard_rules(prices, pattern):
+    bars, points = make_pivots(prices)
+    rules = check_pattern(pattern, points, bars, 1, developing=False)
+    assert not any(rule.status == "FAIL" for rule in rules), rules
+
+
+@pytest.mark.parametrize(
+    "prices, pattern",
+    [
+        ([100, 120, 101, 119], "FLAT"),
+        ([100, 120, 105, 115, 108, 112], "TRIANGLE"),
+        ([100, 120, 110, 150, 118, 160], "DIAGONAL"),
+        ([100, 120, 105, 130], "WXY"),
+    ],
+)
+def test_new_templates_are_enumerated(prices, pattern):
+    bars, points = make_pivots(prices)
+    zigzag = ZigZagResult(points, points[-1])
+    candidates, _ = search(
+        bars, [zigzag], [bars[0].session_date], SearchConfig(max_bridge_intervals=5)
+    )
+    assert any(candidate.template.name == pattern for candidate in candidates)
+
+
+def test_wave_degree_thresholds():
+    _, pivots = make_pivots([100, 120, 110, 150, 135, 160])
+    start = pivots[0].model_copy(update={"index": 0})
+    weekly_cycle = pivots[-1].model_copy(update={"index": 400})
+    daily_primary = pivots[-1].model_copy(update={"index": 400})
+    minor = pivots[-1].model_copy(update={"index": 10})
+    assert wave_degree((start, weekly_cycle), "1w") == "CYCLE"
+    assert wave_degree((start, daily_primary), "1d") == "PRIMARY"
+    assert wave_degree((start, minor), "1d") == "MINOR"
+
+
+def test_subwave_presence_counts_finer_pivots():
+    _, pivots = make_pivots([100, 120, 110, 150, 135, 160])
+    indices = (0, 10, 20, 30, 40, 50)
+    points = tuple(
+        pivot.model_copy(update={"index": index})
+        for pivot, index in zip(pivots, indices, strict=False)
+    )
+    candidate = Candidate(IMPULSE, points, points[-1], 1, "COMPLETE", (), (3.8,))
+
+    def pivot(index, price, kind):
+        return PivotPoint(
+            pivot_id=f"f{index}",
+            index=index,
+            extreme_bar_id=f"f{index}",
+            extreme_at=pivots[0].extreme_at,
+            confirmed_at=pivots[0].confirmed_at,
+            price=price,
+            kind=kind,
+            state="CONFIRMED",
+            scale=2.4,
+            threshold_at_extreme=1,
+        )
+
+    finer = []
+    for base in (0, 20, 40):
+        for offset, kind in ((2, "HIGH"), (4, "LOW"), (6, "HIGH"), (8, "LOW")):
+            finer.append(pivot(base + offset, 110 + offset, kind))
+    for base in (10, 30):
+        for offset, kind in ((2, "LOW"), (4, "HIGH")):
+            finer.append(pivot(base + offset, 115 + offset, kind))
+    zigzag = ZigZagResult(tuple(finer), finer[-1])
+    assert subwave_fit(candidate, [zigzag], [2.4], 1) == pytest.approx(1.0)
+    assert subwave_fit(candidate, [ZigZagResult((), None)], [2.4], 1) == pytest.approx(0.0)
+
+
+def test_subwave_evidence_is_available_when_enabled(bundle, monkeypatch):
+    import eliotbot.service as service_module
+
+    monkeypatch.setattr(service_module, "calculate_subwave_fit", lambda *args: 1.0)
+    result = AnalysisService(Settings(search={"max_subwave_depth": 1})).analyze_bundle(
+        AnalysisRequest(symbol="AAPL", as_of=bundle.as_of), bundle
+    )
+    evidence = [
+        item
+        for scenario in result.scenarios
+        for item in scenario.score.evidence
+        if item.feature == "subwave_structure"
+    ]
+    assert any(item.status == "AVAILABLE" for item in evidence)
+    assert any(scenario.subwave_status == "UNVERIFIED" for scenario in result.scenarios)

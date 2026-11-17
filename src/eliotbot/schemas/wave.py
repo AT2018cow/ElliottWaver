@@ -6,7 +6,7 @@ from pydantic import AwareDatetime, Field, model_validator
 from eliotbot.schemas.market import Contract, Instrument
 from eliotbot.timeframes import Timeframe
 
-Pattern = Literal["IMPULSE", "ZIGZAG_ABC"]
+Pattern = Literal["IMPULSE", "ZIGZAG_ABC", "TRIANGLE", "FLAT", "DIAGONAL", "WXY"]
 
 
 class PivotPoint(Contract):
@@ -95,6 +95,9 @@ class WaveScenario(Contract):
     pattern_direction: Literal["UP", "DOWN"]
     next_leg_bias: Literal["UP", "DOWN", "UNKNOWN"]
     stage: str
+    degree: Literal["MINOR", "INTERMEDIATE", "PRIMARY", "CYCLE", "SUPERCYCLE", "UNKNOWN"] = (
+        "UNKNOWN"
+    )
     parent_context: Literal["UNKNOWN", "VERIFIED"] = "UNKNOWN"
     subwave_status: Literal["UNVERIFIED", "VERIFIED", "UNAVAILABLE"] = "UNAVAILABLE"
     relative_weight: float = Field(0, ge=0, le=1)

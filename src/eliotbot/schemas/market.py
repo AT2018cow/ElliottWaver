@@ -196,6 +196,7 @@ class AnalysisRequest(Contract):
     feed: Literal["sip", "iex"] | None = None
     top_k: int | None = Field(None, ge=1, le=20)
     allow_stale: bool = False
+    allow_gaps: bool = False
 
     @field_validator("as_of")
     @classmethod

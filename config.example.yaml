@@ -6,6 +6,7 @@ analysis:
   min_anchor_bars: 60
   max_analysis_bars: 600
   max_anchors: 4
+  anchor_mode: recent
   warmup_bars: 130
   scales: [1.4, 2.4, 3.8]
   macro_scale: 4.0

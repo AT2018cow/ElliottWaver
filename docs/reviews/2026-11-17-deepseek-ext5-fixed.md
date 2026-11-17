@@ -16,11 +16,13 @@
 
 v1 保留浪 5/浪 1 的原评分：核心 1.0/0.618、次优 1.618 权重 0.7、sigma=0.10。v2 保留 DeepSeek 的两套关系取较优拟合与扩展比例，不以恢复旧命名为理由修改新公式。其他评分特征共用，目标推演与报告使用当前引擎。
 
-引擎标识增加 `report-v2`，使旧报告与修复后的产物使用不同结果身份及目录。新版本完整标识为：
+引擎标识增加 `report-v2`，使旧报告与修复后的产物使用不同结果身份及目录。该次修复的完整标识为：
 
 ```text
 ew-rules-v1/zigzag-v1/score-v2/projection-v2/report-v2/0.1.0
 ```
+
+P0/P1/P2 之后当前标识为 `ew-rules-v2/zigzag-v1/score-v2/projection-v3/report-v3/search-v2/0.1.0`。
 
 验证脚本也移除了固定写入“81 tests passed”和“没有凭证”的元数据。冻结快照脚本只报告自己做过的检查，pytest 和在线联调标记为 `NOT_RUN_BY_THIS_SCRIPT`，本文件单独记录实际测试结果。
 
@@ -28,7 +30,7 @@ ew-rules-v1/zigzag-v1/score-v2/projection-v2/report-v2/0.1.0
 
 ## 验证证据
 
-- pytest：**100 passed**（本次验收时）；后续小调整与指数支持后为 122，见下方说明。22 条原有第三方 timedelta 弃用告警。
+- pytest：**100 passed**（本次验收时）；后续小调整、指数支持与 P0/P1/P2 后为 140，见下方说明。22 条原有第三方 timedelta 弃用告警。
 - Ruff lint、format：通过。
 - 独立评分：v2 的 90 组比例/尺度算例及 90 组涨跌镜像通过；新增 90 组 v1 独立公式复核通过。
 - 完成态目标：16 组推动/ABC、涨跌镜像、深回撤与目标耗尽边界通过。
@@ -36,7 +38,7 @@ ew-rules-v1/zigzag-v1/score-v2/projection-v2/report-v2/0.1.0
 - 真实数据：使用原有明确快照 ID，九组分析、逐前缀复核及 JSON/MD/HTML 报告均通过；不联网重抓数据。
 - 身份绑定：修复后的源码和配置摘要与新验证记录匹配；每份结果摘要都按包含引擎版本的字段独立重算。
 
-后续小调整（同日）：`ew_score_v1` 的第五浪解释不再展示浪 3 比值；结果 `engine_version` 末尾追加当前 profile（例如 `.../0.1.0/ew_score_v2`）。随后接入沪深京指数日线/周线；pytest 更新为 **122 passed**（含指数路由、无复权 provider、日线→周线、快照往返与分钟线拒绝测试），九组验证、指数验证与验收脚本均已重新生成并通过；本文件其余结论保持不变。
+后续小调整（同日）：`ew_score_v1` 的第五浪解释不再展示浪 3 比值；结果 `engine_version` 末尾追加当前 profile（例如 `.../0.1.0/ew_score_v2`）。随后接入沪深京指数日线/周线；再完成 P0/P1/P2：长历史预设与日历裁剪、`--allow-gaps`、宽桥接/大级别搜索、端点级三角形/平台/楔形/WXY、`--subwave-depth` 存在性检查、浪级标签。pytest 更新为 **140 passed**，九组验证、指数验证、五组长历史验证与验收脚本均已重新生成并通过；本文件其余结论保持不变。
 
 最新输入、结果身份、覆盖区间和源码指纹见[九组快照验证](../validation_20261117_ext5_fixed.json)。独立检查及逐文件指纹见[复验证据](2026-11-17-deepseek-ext5-fixed-evidence.json)。原始的[失败证据](2026-11-17-deepseek-ext5-evidence.json)与 [DeepSeek 初版验证](../validation_20261117_ext5.json)保持原样，作为历史记录，不冒充当前版本结果。
 

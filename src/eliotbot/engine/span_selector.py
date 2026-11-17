@@ -32,11 +32,10 @@ def select_anchors(
         weekly = weekly_bars(bundle.daily_context, bundle.sessions, monthly=True)
     else:
         weekly = bundle.daily_context
-    anchors: list[date] = []
+    eligible: dict[str, list[date]] = {"LOW": [], "HIGH": []}
     if len(weekly) >= 15:
         zz = extract(weekly, calculate(weekly).atr, config.macro_scale, bundle.instrument.tick_size)
-        counts = {"LOW": 0, "HIGH": 0}
-        for pivot in reversed(zz.confirmed):
+        for pivot in zz.confirmed:
             if pivot.confirmed_at is None or pivot.confirmed_at > request.as_of:
                 continue
             week = weekly[pivot.index]
@@ -50,17 +49,23 @@ def select_anchors(
             )
             index = next(i for i, b in enumerate(bars) if b.start_at == daily.start_at)
             age = len(bars) - 1 - index
-            if (
-                index >= earliest
-                and config.min_anchor_bars <= age <= config.max_analysis_bars
-                and counts[pivot.kind] < 2
-            ):
-                counts[pivot.kind] += 1
-                anchors.append(daily.session_date)
-                if len(anchors) >= config.max_anchors:
-                    break
+            if index >= earliest and config.min_anchor_bars <= age <= config.max_analysis_bars:
+                eligible[pivot.kind].append(daily.session_date)
+    limit = max(1, config.max_anchors // 2)
+
+    def choose(items: list[date]) -> list[date]:
+        if len(items) <= limit:
+            return items
+        if config.anchor_mode == "spread":
+            if limit == 1:
+                return items[-1:]
+            step = (len(items) - 1) / (limit - 1)
+            return [items[round(index * step)] for index in range(limit)]
+        return items[-limit:]
+
+    anchors = choose(eligible["LOW"]) + choose(eligible["HIGH"])
     if anchors:
-        return tuple(sorted(set(anchors))), ()
+        return tuple(sorted(set(anchors))[: config.max_anchors]), ()
     fallback = max(earliest, len(bars) - 252)
     return (bars[fallback].session_date,), (
         "ANCHOR_FALLBACK: 未找到已确认的合格背景周期锚点，使用明确标记的252根K线窗口",

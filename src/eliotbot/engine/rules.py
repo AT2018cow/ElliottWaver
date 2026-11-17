@@ -15,7 +15,14 @@ def check_pattern(
     *,
     developing: bool,
 ) -> tuple[RuleResult, ...]:
-    if pattern not in {"IMPULSE", "ZIGZAG_ABC"} or direction not in {-1, 1}:
+    if pattern not in {
+        "IMPULSE",
+        "ZIGZAG_ABC",
+        "TRIANGLE",
+        "FLAT",
+        "DIAGONAL",
+        "WXY",
+    } or direction not in {-1, 1}:
         raise ValueError("unsupported rule profile")
     q = [direction * p.price for p in points]
     eps = max(1e-10, max(abs(x) for x in q) * 1e-10)
@@ -55,9 +62,11 @@ def check_pattern(
             else low >= q[j] - eps and high <= q[j - 1] + eps
         )
         rule(f"SEGMENT_EXTREMA_{j}", extrema_valid, "合并未隐藏更极端的内部影线")
-    if len(points) >= 3:
+    if len(points) >= 3 and pattern != "FLAT":
         low, _ = extremes(2)
         rule("W2_OR_B_ORIGIN", low > q[0] + eps, "浪2或锯齿B不可触及起点", low, q[0])
+    elif pattern == "FLAT" and len(points) >= 3:
+        rule("W2_OR_B_ORIGIN", None, "平台B允许超过起点，由B_DEEP检查")
     else:
         rule("W2_OR_B_ORIGIN", None, "尚无第二反向段")
     if pattern == "ZIGZAG_ABC":
@@ -68,6 +77,78 @@ def check_pattern(
                 "完整非截短C须越过A终点",
                 q[3],
                 q[1],
+            )
+        return tuple(results)
+    if pattern == "FLAT":
+        if len(points) == 4:
+            a = abs(q[1] - q[0])
+            b = abs(q[1] - q[2])
+            rule("B_DEEP", b >= 0.9 * a - eps, "平台B至少回撤A的90%", b, 0.9 * a)
+            rule(
+                "C_NEAR_A",
+                q[3] >= q[1] - 0.25 * a - eps,
+                "平台C回到A终点附近或以上",
+                q[3],
+                q[1] - 0.25 * a,
+            )
+        return tuple(results)
+    if pattern == "WXY":
+        if len(points) == 4:
+            a = abs(q[1] - q[0])
+            x = abs(q[1] - q[2])
+            rule(
+                "X_RETRACE",
+                0.5 * a - eps <= x <= a + eps,
+                "WXY的X回撤W的50%-100%",
+                x,
+                a,
+            )
+            rule("Y_BEYOND_W", q[3] > q[1] + eps, "WXY的Y超过W终点", q[3], q[1])
+        return tuple(results)
+    if pattern == "TRIANGLE":
+        if len(points) == 6:
+            legs = [abs(q[index] - q[index - 1]) for index in range(1, 6)]
+            contracting = (
+                legs[2] < legs[0] - eps and legs[4] < legs[2] - eps and legs[3] < legs[1] - eps
+            )
+            expanding = (
+                legs[2] > legs[0] + eps and legs[4] > legs[2] + eps and legs[3] > legs[1] + eps
+            )
+            rule(
+                "TRIANGLE_SHAPE",
+                contracting or expanding,
+                "三角形应收敛或扩散",
+                legs[2] / legs[0] if legs[0] else None,
+                1.0,
+            )
+        else:
+            rule("TRIANGLE_SHAPE", None, "三角形尚未完成")
+        return tuple(results)
+    if pattern == "DIAGONAL":
+        if len(points) >= 4:
+            pending = developing and len(points) == 4 and q[3] <= q[1] + eps
+            rule(
+                "W3_PROGRESS",
+                None if pending else q[3] > q[1] + eps,
+                "完成浪3须越过浪1终点",
+                q[3],
+                q[1],
+            )
+        if len(points) >= 5:
+            rule(
+                "W4_OVERLAP",
+                q[4] <= q[1] + eps,
+                "楔形浪4与浪1重叠",
+                q[4],
+                q[1],
+            )
+        if len(points) >= 6:
+            rule(
+                "W5_PROGRESS",
+                None if q[5] <= q[3] + eps else True,
+                "楔形允许截断第五浪",
+                q[5],
+                q[3],
             )
         return tuple(results)
     if len(points) >= 4:

@@ -9,6 +9,8 @@ from eliotbot.errors import DataError
 from eliotbot.schemas.market import Instrument
 from eliotbot.util import digest
 
+XSHG_MIN_DATE = date(1991, 1, 2)
+
 
 @dataclass(frozen=True)
 class Session:
@@ -42,10 +44,19 @@ def load_calendar(instrument: Instrument, start: date, end: date) -> TradingCale
 
         calendar = xcals.get_calendar(
             "XNYS" if instrument.market == "US" else "XSHG",
-            start=start - timedelta(days=50),
+            start=(
+                max(start - timedelta(days=50), XSHG_MIN_DATE)
+                if instrument.market == "CN"
+                else start - timedelta(days=50)
+            ),
             end=end + timedelta(days=21),
         )
-        labels = calendar.sessions_in_range(start - timedelta(days=40), end + timedelta(days=14))
+        labels = calendar.sessions_in_range(
+            max(start - timedelta(days=40), XSHG_MIN_DATE)
+            if instrument.market == "CN"
+            else start - timedelta(days=40),
+            end + timedelta(days=14),
+        )
         sessions = tuple(
             Session(
                 date=label.date(),

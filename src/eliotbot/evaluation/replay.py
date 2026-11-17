@@ -15,6 +15,7 @@ def replay(
     start: date | None = None,
     end: date | None = None,
     step: int = 1,
+    allow_gaps: bool = False,
 ) -> Iterator[AnalysisResult]:
     if step < 1:
         raise ValueError("replay step must be positive")
@@ -32,5 +33,6 @@ def replay(
             end=bar.session_date,
             mode="FROZEN_DATA_REPLAY",
             timeframe=bundle.timeframe,
+            allow_gaps=allow_gaps,
         )
         yield service.analyze_bundle(request, bundle)

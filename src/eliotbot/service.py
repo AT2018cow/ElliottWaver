@@ -10,16 +10,27 @@ from eliotbot.data.periods import as_weekly
 from eliotbot.data.quality import missing_intervals
 from eliotbot.data.resample import weekly_bars
 from eliotbot.data.router import route_symbol
+from eliotbot.engine.degree import wave_degree
 from eliotbot.engine.indicators import calculate
 from eliotbot.engine.matcher import Candidate, search
 from eliotbot.engine.projector import project
 from eliotbot.engine.scorer import score, weight_scenarios
 from eliotbot.engine.span_selector import require_history, select_anchors
+from eliotbot.engine.subwaves import subwave_fit as calculate_subwave_fit
 from eliotbot.engine.zigzag import extract
 from eliotbot.errors import DataError, InputError
 from eliotbot.schemas.market import AnalysisRequest, MarketDataBundle
 from eliotbot.schemas.wave import AnalysisResult, SearchDiagnostics, WaveLabel, WaveScenario
 from eliotbot.util import digest
+
+TEMPLATE_LABELS = {
+    "IMPULSE": "推动",
+    "ZIGZAG_ABC": "锯齿ABC",
+    "TRIANGLE": "三角形",
+    "FLAT": "平台",
+    "DIAGONAL": "楔形",
+    "WXY": "双锯齿WXY",
+}
 
 
 def prepare_bundle(request: AnalysisRequest, bundle: MarketDataBundle) -> MarketDataBundle:
@@ -126,13 +137,27 @@ class AnalysisService:
         require_history(bars)
         anchors, warnings = select_anchors(bundle, request, config.analysis)
         warnings = list(bundle.provenance.warnings + warnings)
+        if len(bars) > config.analysis.max_analysis_bars:
+            warnings.append(
+                f"ANALYSIS_WINDOW_TRUNCATED: {len(bars)} bars available; "
+                f"anchor search uses the latest {config.analysis.max_analysis_bars}"
+            )
+        if request.start and bars[0].session_date > request.start:
+            warnings.append(
+                f"DATA_START_CLIPPED: requested {request.start}; first bar {bars[0].session_date}"
+            )
         if len(bars) < config.analysis.warmup_bars + config.analysis.min_anchor_bars:
             warnings.append("WARMUP_TRUNCATED: 可用历史不足完整预热与分析跨度")
         if not bundle.instrument.identity_verified:
             warnings.append("IDENTITY_UNVERIFIED: 证券身份来自离线输入，未经在线核实")
         gaps = missing_intervals(bundle, min(anchors))
         if gaps:
-            warnings.append(f"UNKNOWN_SESSION_GAPS: 分析范围有{len(gaps)}个未知行情缺口")
+            if request.allow_gaps:
+                warnings.append(
+                    f"ALLOWED_GAPS: {len(gaps)} unknown gaps ignored by explicit --allow-gaps"
+                )
+            else:
+                warnings.append(f"UNKNOWN_SESSION_GAPS: 分析范围有{len(gaps)}个未知行情缺口")
         stale = "STALE_SNAPSHOT" in bundle.provenance.warnings
         if request.end and bundle.timeframe == "1d":
             eligible = [day for day in bundle.sessions if day <= request.end]
@@ -144,7 +169,7 @@ class AnalysisService:
         ]
         candidates, budget = (
             search(bars, zigzags, anchors, config.search, exact_anchor=request.anchor is not None)
-            if not gaps
+            if not gaps or request.allow_gaps
             else ([], None)
         )
         if request.anchor and not candidates:
@@ -152,12 +177,23 @@ class AnalysisService:
         scenarios = []
         excluded: list[tuple[float, float, str, Candidate]] = []
         for candidate in candidates:
+            subwave = (
+                calculate_subwave_fit(
+                    candidate,
+                    zigzags,
+                    config.analysis.scales,
+                    config.search.max_subwave_depth,
+                )
+                if config.search.max_subwave_depth > 0
+                else None
+            )
             breakdown = score(
                 candidate,
                 bars,
                 indicators,
                 volume_comparable=bundle.provenance.volume_comparable,
                 profile=config.scoring.profile,
+                subwave_fit=subwave,
             )
             groups = {e.group for e in breakdown.evidence if e.status == "AVAILABLE"}
             reasons = []
@@ -191,17 +227,27 @@ class AnalysisService:
                 timeframe=request.timeframe,
             )
             bias = -candidate.direction if candidate.stage == "COMPLETE" else candidate.direction
-            note = ("子浪结构尚未认证，当前为端点与价格规则候选",)
+            note = (
+                ("子浪结构尚未认证，当前为端点与价格规则候选",)
+                if subwave is None
+                else ("子浪为多尺度存在性检查，未做完整规则认证",)
+            )
             if not zones:
                 note += ("NO_FEASIBLE_TARGET: 当前没有符合方向及硬边界的未触及目标",)
             scenarios.append(
                 WaveScenario(
                     scenario_id=candidate.key,
-                    name=f"{'上涨' if candidate.direction > 0 else '下跌'}{'推动' if candidate.template.name == 'IMPULSE' else '锯齿ABC'} · {candidate.stage}",
+                    name=(
+                        f"{'上涨' if candidate.direction > 0 else '下跌'}"
+                        f"{TEMPLATE_LABELS.get(candidate.template.name, candidate.template.name)}"
+                        f" · {candidate.stage}"
+                    ),
                     pattern_type=candidate.template.name,
                     pattern_direction="UP" if candidate.direction > 0 else "DOWN",
                     next_leg_bias="UP" if bias > 0 else "DOWN",
                     stage=candidate.stage,
+                    degree=wave_degree(candidate.points, request.timeframe),
+                    subwave_status="UNVERIFIED" if subwave is not None else "UNAVAILABLE",
                     completed_waves=tuple(
                         WaveLabel(label=label, pivot=pivot)
                         for label, pivot in zip(
@@ -237,6 +283,13 @@ class AnalysisService:
         displayed, omitted = weight_scenarios(
             scenarios, config.scoring.temperature, request.top_k or config.analysis.top_k
         )
+        degrees = {scenario.degree for scenario in displayed if scenario.degree != "UNKNOWN"}
+        if len(degrees) > 1:
+            warnings.append(
+                "MIXED_DEGREE_SCENARIOS: "
+                + ", ".join(sorted(degrees))
+                + "; compare counts within the same degree"
+            )
         status = (
             "OK"
             if displayed and displayed[0].score.quality_score >= config.scoring.unclear_below
@@ -244,7 +297,7 @@ class AnalysisService:
         )
         if budget and budget.truncated:
             status = "SEARCH_LIMITED"
-        if gaps:
+        if gaps and not request.allow_gaps:
             status = "INSUFFICIENT_DATA"
         if stale:
             status = "STALE_DATA"

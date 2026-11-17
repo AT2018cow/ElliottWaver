@@ -181,6 +181,25 @@ live 端点为 `https://api.alpaca.markets`。配置文件从当前工作目录�
 
 长期数浪还需要按需提高 `analysis.max_analysis_bars`（默认 600，最大 5000），否则锚点搜索只覆盖最近约 600 根 K 线。指数分钟线尚未启用；请求 `5m` 等周期会返回 `INDEX_INTRADAY_UNSUPPORTED`。
 
+### 4.4 长历史与大级别搜索
+
+A 股老指数/老股票原始数据可到 1990/1991 年；引擎日历从 **1991-01-02** 起，更早的数据会被裁剪并给出 `CALENDAR_CLIPPED`。默认只下载 5 年、锚点只看最近 600 根日线，所以长历史需要显式开启：
+
+```bash
+# 20 年窗口、默认周线、Top-8、首尾兼顾的锚点、宽桥接搜索
+.venv/bin/eliot analyze 000001.SH --long-term --start 1991-01-01 --allow-gaps
+
+# 只放宽搜索，不改变数据窗口
+.venv/bin/eliot analyze 000300.SH --large-degree --timeframe 1w
+
+# 子浪存在性检查（0/1/2）
+.venv/bin/eliot analyze 000001.SH --long-term --subwave-depth 1
+```
+
+`--long-term` 等价于：`history_years=20`、`max_analysis_bars=5000`、默认 `1w`、`top_k=8`、`anchor_mode=spread`、`max_bridge_intervals=21`、`beam_width=512`、`max_expansions=200000`。`--large-degree` 只应用后三项搜索参数。
+
+30 年以上日线会超过 `max_analysis_bars` 上限 5000；请用周线，或接受 `ANALYSIS_WINDOW_TRUNCATED` 警告。个股长历史通常有停牌缺口；`--allow-gaps` 会继续分析并给出 `ALLOWED_GAPS` 警告，不补造价格。
+
 ## 5. 找到并查看报告
 
 终端最后会给出类似信息：
@@ -250,8 +269,10 @@ HTML 包含 K 线、成交量、MACD 三个面板。可以通过图上方的下�
 | `W3_DEVELOPING` 等 | 当前处于第 3 浪等进行中阶段，最后端点尚未确认 |
 | `B_DEVELOPING / C_DEVELOPING` | ABC 模板中的 B 浪或 C 浪进行中 |
 | `COMPLETE` | 当前模板已完成；查看 `next_leg_bias` 判断程序评估的下一段方向 |
+| 浪级 | `MINOR / INTERMEDIATE / PRIMARY / CYCLE / SUPERCYCLE`；按候选 K 线跨度启发式划分，不同浪级不宜直接比较 |
+| 子浪状态 | 默认 `UNAVAILABLE`；`--subwave-depth 1/2` 时为 `UNVERIFIED`（多尺度存在性检查，不是完整认证） |
 
-当前只枚举普通上涨/下跌推动浪与 ABC 锯齿。`pattern_direction` 是整个模板方向，`next_leg_bias` 是下一段方向，二者在完成态可能不同。
+当前枚举普通推动浪、ABC 锯齿、三角形、平台、楔形和双锯齿 WXY；新模板是端点级硬规则，内部子浪未完整认证。`pattern_direction` 是整个模板方向，`next_leg_bias` 是下一段方向，二者在完成态可能不同。
 
 ### 6.3 条件、目标与证据
 
@@ -275,9 +296,15 @@ HTML 包含 K 线、成交量、MACD 三个面板。可以通过图上方的下�
 
 如需原第五浪评分，在 YAML 中配置 `scoring.profile: ew_score_v1`：只比较浪 5/浪 1，核心比例为 1.0/0.618，次优比例 1.618 的权重为 0.7，sigma 为 0.10。它保留旧评分公式，其他目标推演和报告仍使用当前引擎。报告底部的引擎标识和 JSON 的 `engine_version` 会追加当前 profile，例如 `.../0.1.0/ew_score_v2`；切换 profile 或升级引擎后，配置/结果摘要会相应变化，不应期待旧结果 ID 保持一致。
 
+浪级是启发式：日线跨度约 `<=60 / <=250 / <=1000 / <=2500` 根对应 `MINOR / INTERMEDIATE / PRIMARY / CYCLE`，更长为 `SUPERCYCLE`；周线约 `<=13 / <=52 / <=260 / <=520`。不同浪级的候选同时出现时，报告会给出 `MIXED_DEGREE_SCENARIOS`，应优先在同一浪级内比较。
+
+新模板的硬规则是端点级近似：三角形要求收敛或扩散；平台要求 B 至少回撤 A 的 90% 且 C 回到 A 附近；楔形要求 W4 与 W1 重叠并允许截断 W5；双锯齿 WXY 要求 X 回撤 W 的 50%–100%、Y 超过 W。它们不认证内部 3/5 浪结构。
+
+`--subwave-depth 1/2` 会启用多尺度子浪存在性检查：父级每一腿在更细 ZigZag 中是否有足够的交替拐点。它会把子浪证据从 `UNAVAILABLE` 变为 `AVAILABLE`，但状态仍是 `UNVERIFIED`，不是完整规则认证。
+
 目标带、条件价和图中分析价格属于同一复权坐标；原始收盘价另存为 JSON 的 `latest_raw_close`。比较不同历史截止日期的 A 股结果时，还应核对复权基准和 `price_coordinate_id`。
 
-内部子浪与父级位置尚未认证，子浪证据会显示 `UNAVAILABLE`，`calibrated_event_probability` 保持 `null`。规则通过表示当前已实现的端点及影线约束通过，不等于完整内部波浪结构已被认证。
+默认情况下内部子浪与父级位置尚未认证，子浪证据会显示 `UNAVAILABLE`，`calibrated_event_probability` 保持 `null`。启用 `--subwave-depth` 后也只做多尺度存在性检查，不认证完整 3/5 浪规则；规则通过表示当前已实现的端点及影线约束通过，不等于完整内部波浪结构已被认证。
 
 ## 7. 日期、时间和锚点
 
@@ -367,16 +394,22 @@ cp -n config.example.yaml config.yaml
 | `analysis.timeframe` | `1d` | 默认主周期 |
 | `analysis.top_k` | `3` | 默认展示候选数 |
 | `analysis.history_years` | `5` | 请求历史年数；分钟历史仍受供应商限制 |
+| `analysis.max_analysis_bars` | `600` | 锚点搜索窗口；长历史可提高到 5000 |
+| `analysis.max_anchors` | `4` | 最多锚点数；长历史预设为 8 |
+| `analysis.anchor_mode` | `recent` | `recent` 取最近锚点；`spread` 首尾兼顾 |
 | `analysis.scales` | `[1.4, 2.4, 3.8]` | 多尺度 ATR ZigZag 的阈值 |
 | `scoring.profile` | `ew_score_v2` | v2 扩展第五浪评分；可选 `ew_score_v1` 保留原公式 |
-| `search.max_expansions` | `50000` | 有限搜索的扩展预算 |
+| `search.beam_width` | `128` | 搜索束宽；大级别模式 512 |
+| `search.max_expansions` | `50000` | 有限搜索的扩展预算；大级别模式 200000 |
+| `search.max_bridge_intervals` | `5` | 允许跳过的最大间隔（奇数 1–21）；大级别模式 21 |
+| `search.max_subwave_depth` | `0` | `0/1/2`；1/2 启用多尺度子浪存在性检查 |
 | `data.us_feed` | `sip` | 默认美股 feed |
 | `data.delayed_access_buffer_minutes` | `20` | K 线结束后的可用时间缓冲 |
 | `cache.directory` | `.cache/eliotbot` | 本地快照与缓存位置 |
 | `output.directory` | `reports` | 真实分析默认报告根目录 |
 | `output.formats` | `[html, md]` | 默认报告格式；JSON 始终保存 |
 
-配置字段必须符合样例结构，未知字段会报错。`search.max_subwave_depth` 当前只允许 `0`，不能通过改配置开启尚未实现的子浪递归。`demo` 有独立的默认输出目录和格式，需要通过其 `--output-dir`、`--format` 修改。
+配置字段必须符合样例结构，未知字段会报错。`search.max_subwave_depth` 允许 `0/1/2`；`1/2` 只是多尺度存在性检查，不是完整子浪递归认证。`demo` 有独立的默认输出目录和格式，需要通过其 `--output-dir`、`--format` 修改。
 
 已暴露为命令参数的设置，其优先级为：显式命令参数 > `ELIOT_` 环境变量 > YAML 配置 > 内置默认值。例如只对一次调用改变候选数：
 
@@ -416,6 +449,10 @@ done
 | `--refresh` | 跳过缓存复用，从行情源重新获取 |
 | `--snapshot ID --offline` | 使用已有快照，不联网 |
 | `--allow-stale` | 显式接受快照覆盖不足，保留陈旧标记 |
+| `--allow-gaps` | 长历史个股停牌/未知缺口继续分析，输出 `ALLOWED_GAPS` |
+| `--long-term` | 20 年窗口、周线默认、Top-8、首尾锚点、大级别搜索 |
+| `--large-degree` | 只放宽桥接/beam/扩展预算，不改变数据窗口 |
+| `--subwave-depth 0/1/2` | 多尺度子浪存在性检查；不是完整子浪认证 |
 | `--output-dir PATH` | 报告根目录 |
 | `--format html,png,md` | 附加产物格式，JSON 和 manifest 始终保存 |
 | `--renderer plotly` | `plotly` 为默认交互图；`svg` 为另一渲染器，可直接导出 PNG |
@@ -447,6 +484,12 @@ done
 | `EXPLICIT_ANCHOR_UNMATCHED` | 人工指定日期没有匹配合法当前计数；检查日期，或去掉 `--anchor` 使用自动锚点 |
 | `STALE_DATA` | 检查请求时间与快照覆盖；更新数据或显式使用旧快照 |
 | `INDEX_INTRADAY_UNSUPPORTED` | 指数目前只支持 `1d` / `1w`；分钟线尚未启用，改用日线或周线 |
+| `CALENDAR_CLIPPED` | 请求起点早于 XSHG 日历 1991-01-02；更早的原始数据被裁剪 |
+| `DATA_START_CLIPPED` | 请求的 `--start` 早于实际第一根 K 线；检查数据源覆盖 |
+| `ANALYSIS_WINDOW_TRUNCATED` | 数据根数超过 `max_analysis_bars`，锚点只用最近 N 根；提高该值或改用周线 |
+| `ALLOWED_GAPS` | 显式 `--allow-gaps` 后忽略了停牌/未知缺口；结果保留该警告 |
+| `MIXED_DEGREE_SCENARIOS` | 同时展示了不同浪级的候选；先在同一浪级内比较 |
+| 子浪状态 `UNVERIFIED` | 启用了 `--subwave-depth`，但只做多尺度存在性检查，不是完整子浪认证 |
 | 输入 `000688` 被当成深市个股或身份失败 | 上证指数要写 `000688.SH` 或 `sh000688`；`000001` / `000001.SZ` 默认是平安银行 |
 | `SH880xxx sector indices are not supported` | 同花顺行业指数当前未接入；请使用 `SH000*`、`SZ399*`、`BJ899*` 官方指数代码 |
 | 快照不存在 | 检查完整 ID、当前工作目录，以及是否使用相同 `cache.directory` |

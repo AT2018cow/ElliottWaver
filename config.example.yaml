@@ -1,0 +1,35 @@
+schema_version: 1
+analysis:
+  timeframe: 1d
+  top_k: 3
+  history_years: 5
+  min_anchor_bars: 60
+  max_analysis_bars: 600
+  max_anchors: 4
+  warmup_bars: 130
+  scales: [1.4, 2.4, 3.8]
+  macro_scale: 4.0
+search:
+  beam_width: 128
+  max_expansions: 50000
+  max_bridge_intervals: 5
+  max_subwave_depth: 0
+scoring:
+  profile: ew_score_v1
+  min_quality: 40
+  unclear_below: 45
+  min_coverage: 0.70
+  temperature: 12.0
+data:
+  us_feed: sip
+  request_timeout_seconds: 20
+  max_attempts: 3
+  total_fetch_deadline_seconds: 120
+  max_requests_per_second: 2
+  delayed_access_buffer_minutes: 20
+  cache_ttl_seconds: 21600
+cache:
+  directory: .cache/eliotbot
+output:
+  directory: reports
+  formats: [html, md]

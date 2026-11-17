@@ -1,0 +1,181 @@
+"""Markdown and atomic report publication from the canonical JSON result."""
+
+import hashlib
+import json
+import os
+import shutil
+import tempfile
+from pathlib import Path
+
+from eliotbot.errors import ExportError
+from eliotbot.schemas.market import MarketDataBundle
+from eliotbot.schemas.wave import AnalysisResult
+from eliotbot.util import atomic_write, canonical_json, digest
+from eliotbot.visualization.chart_builder import build_plotly, render_html, svg_chart
+
+
+def markdown_report(result: AnalysisResult) -> str:
+    lines = [
+        f"# EliotBot · {result.instrument.canonical_symbol}",
+        "",
+        f"行情截止：{result.market_asof}；周期：{result.timeframe}；来源：{result.feed}；调整口径：{result.adjustment}。",
+        f"分析状态：**{result.status}**；结构歧义：{result.ambiguity}；分析价格：{result.latest_price:.4f}。",
+        "",
+        "候选权重仅表示本次枚举候选之间的相对评分，统计成功概率尚未校准。",
+        "",
+        "| 剧本 | 当前阶段 | 质量分 | 证据覆盖 | 候选权重 |",
+        "| --- | --- | --- | --- | --- |",
+    ]
+    for i, scenario in enumerate(result.scenarios, 1):
+        lines.append(
+            f"| S{i} | {scenario.name} | {scenario.score.quality_score:.1f}/100 | {scenario.score.coverage:.1%} | {scenario.relative_weight:.1%} |"
+        )
+    if not result.scenarios:
+        lines += ["", "当前没有达到质量与证据门槛的候选，不强行给出数浪结论。"]
+    lines += ["", f"未展示的已枚举候选权重：{result.omitted_weight:.1%}。"]
+    for i, scenario in enumerate(result.scenarios, 1):
+        lines += [
+            "",
+            f"## S{i} · {scenario.name}",
+            "",
+            f"剧本 ID：`{scenario.scenario_id}`；下一段方向：{scenario.next_leg_bias}；子浪状态：{scenario.subwave_status}。",
+            "",
+            "### 关键条件",
+            "",
+        ]
+        for condition in scenario.conditions:
+            lines.append(
+                f"- {condition.kind}：{condition.side} {condition.op} **{condition.price:.4f}**，{condition.reason}。"
+            )
+        for zone in scenario.target_zones:
+            lines.append(
+                f"- {zone.label}：**{zone.low:.4f}–{zone.high:.4f}**；来源：{', '.join(zone.methods)}；独立方法数 {zone.independent_method_count}。"
+            )
+        lines += [
+            "",
+            "### 得分依据",
+            "",
+            "| 特征 | 状态 | 实测值 | 匹配度 | 说明 |",
+            "| --- | --- | --- | --- | --- |",
+        ]
+        for item in scenario.score.evidence:
+            value = f"{item.value:.4f}" if item.value is not None else "—"
+            lines.append(
+                f"| {item.feature} | {item.status} | {value} | {item.fit:.1%} | {item.explanation} |"
+            )
+        lines += ["", "### 硬规则", ""]
+        for rule in scenario.rules:
+            lines.append(f"- {rule.rule_id}：{rule.status}，{rule.reason}。")
+        lines += ["", *[f"- {warning}" for warning in scenario.warnings]]
+    lines += [
+        "",
+        "## 数据与搜索状态",
+        "",
+        *[f"- {w}" for w in result.warnings],
+        f"- 扩展状态：{result.diagnostics.expansions}；截断：{result.diagnostics.search_truncated}。",
+        f"- 输入快照：`{result.input_snapshot_id}`。",
+        f"- 业务结果：`{result.result_digest}`。",
+        f"- 引擎：`{result.engine_version}`。",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def publish_report(
+    result: AnalysisResult,
+    bundle: MarketDataBundle,
+    root: Path,
+    formats=("html", "md"),
+    renderer="plotly",
+) -> Path:
+    formats = tuple(sorted(set(formats)))
+    if set(formats) - {"html", "md", "png"}:
+        raise ExportError("Unsupported report format")
+    if result.input_snapshot_id != bundle.snapshot_id:
+        raise ExportError("Report input snapshot does not match the analyzed input")
+    parent = root / result.instrument.market / result.instrument.canonical_symbol / result.timeframe
+    if renderer not in {"plotly", "svg"}:
+        raise ExportError("Unsupported renderer; choose plotly or svg")
+    destination = (
+        parent / str(result.market_asof) / digest([result.result_digest, formats, renderer])
+    )
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=".report-", dir=destination.parent))
+    try:
+        atomic_write(staging / "analysis.json", canonical_json(result))
+        if "md" in formats:
+            atomic_write(staging / "report.md", markdown_report(result))
+        if "html" in formats:
+            atomic_write(staging / "chart.html", render_html(result, bundle, renderer))
+        if "png" in formats:
+            if renderer == "svg":
+                atomic_write(staging / "chart.png", svg_chart(result, bundle, png=True))
+            else:
+                build_plotly(result, bundle).write_image(str(staging / "chart.png"), scale=2)
+        files = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in staging.iterdir()}
+        atomic_write(
+            staging / "manifest.json",
+            canonical_json(
+                {
+                    "schema_version": "1.0",
+                    "input_snapshot_id": bundle.snapshot_id,
+                    "result_digest": result.result_digest,
+                    "renderer": renderer,
+                    "files": files,
+                }
+            ),
+        )
+        if destination.exists():
+            manifest = json.loads((destination / "manifest.json").read_text())
+            if (
+                manifest.get("schema_version") != "1.0"
+                or manifest.get("result_digest") != result.result_digest
+                or manifest.get("input_snapshot_id") != bundle.snapshot_id
+                or set(manifest.get("files", {})) != set(files)
+            ):
+                raise ExportError("Existing report has a mismatched business identity")
+            for filename, checksum in manifest["files"].items():
+                if (
+                    filename not in files
+                    or hashlib.sha256((destination / filename).read_bytes()).hexdigest() != checksum
+                ):
+                    raise ExportError("Existing report failed integrity verification")
+            recorded = AnalysisResult.model_validate_json(
+                (destination / "analysis.json").read_text()
+            )
+            actual_digest = digest(
+                recorded.model_dump(
+                    mode="json", exclude={"run_id", "result_digest", "analyzed_at", "mode"}
+                )
+            )
+            if actual_digest != result.result_digest:
+                raise ExportError(
+                    "Existing report contents do not match its declared result identity"
+                )
+        else:
+            os.replace(staging, destination)
+        if result.status in {"OK", "UNCLEAR", "SEARCH_LIMITED"}:
+            pointer = parent / f"latest_{result.config_hash[:12]}_{result.feed}.json"
+            previous = json.loads(pointer.read_text()) if pointer.exists() else {}
+            if previous.get("market_asof", "") <= str(result.market_asof):
+                atomic_write(
+                    pointer,
+                    canonical_json(
+                        {
+                            "schema_version": "1.0",
+                            "market_asof": result.market_asof,
+                            "result_digest": result.result_digest,
+                            "path": str(destination.relative_to(parent)),
+                        }
+                    ),
+                )
+        return destination
+    except ExportError:
+        raise
+    except Exception as exc:
+        raise ExportError(
+            f"Report export failed ({type(exc).__name__}); no incomplete report was published"
+        ) from exc
+    finally:
+        if staging.exists():
+            shutil.rmtree(staging)

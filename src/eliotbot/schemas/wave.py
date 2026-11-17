@@ -1,0 +1,146 @@
+from datetime import date
+from typing import Literal
+
+from pydantic import AwareDatetime, Field, model_validator
+
+from eliotbot.schemas.market import Contract, Instrument
+from eliotbot.timeframes import Timeframe
+
+Pattern = Literal["IMPULSE", "ZIGZAG_ABC"]
+
+
+class PivotPoint(Contract):
+    pivot_id: str
+    index: int = Field(ge=0)
+    extreme_bar_id: str
+    extreme_at: AwareDatetime
+    confirmed_at: AwareDatetime | None = None
+    price: float = Field(gt=0)
+    kind: Literal["HIGH", "LOW"]
+    state: Literal["SEED", "CONFIRMED", "DEVELOPING"]
+    scale: float = Field(gt=0)
+    threshold_at_extreme: float = Field(gt=0)
+
+
+class RuleResult(Contract):
+    rule_id: str
+    status: Literal["PASS", "FAIL", "PENDING"]
+    reason: str
+    observed: float | None = None
+    boundary: float | None = None
+    evidence_bar_ids: tuple[str, ...] = ()
+
+
+class WaveLabel(Contract):
+    label: str
+    pivot: PivotPoint
+
+
+class LevelCondition(Contract):
+    kind: Literal["INVALIDATION", "CONFIRMATION", "STAGE_EXIT"]
+    side: Literal["HIGH", "LOW", "CLOSE"]
+    op: Literal["<", "<=", ">", ">="]
+    price: float = Field(gt=0)
+    active_from: AwareDatetime
+    reason: str
+    coordinate_id: str
+
+
+class PriceZone(Contract):
+    low: float = Field(gt=0)
+    high: float = Field(gt=0)
+    label: str
+    methods: tuple[str, ...]
+    independent_method_count: int = Field(ge=1)
+    conditional: bool = True
+
+    @model_validator(mode="after")
+    def ordered(self):
+        if self.low > self.high:
+            raise ValueError("zone bounds reversed")
+        return self
+
+
+class ScoreEvidence(Contract):
+    feature: str
+    group: str
+    weight: float = Field(ge=0)
+    status: Literal["AVAILABLE", "UNAVAILABLE", "NOT_APPLICABLE"]
+    value: float | None = None
+    fit: float = Field(0, ge=0, le=1)
+    explanation: str
+
+
+class ScoreBreakdown(Contract):
+    quality_score: float = Field(ge=0, le=100)
+    fit_score: float = Field(ge=0, le=100)
+    coverage: float = Field(ge=0, le=1)
+    evidence: tuple[ScoreEvidence, ...]
+
+
+class ProjectedPoint(Contract):
+    label: str
+    target_price: float = Field(gt=0)
+    min_bars: int = Field(ge=1)
+    reference_bars: int = Field(ge=1)
+    max_bars: int = Field(ge=1)
+    timeframe: Timeframe = "1d"
+    conditional: bool = True
+
+
+class WaveScenario(Contract):
+    scenario_id: str
+    name: str
+    pattern_type: Pattern
+    pattern_direction: Literal["UP", "DOWN"]
+    next_leg_bias: Literal["UP", "DOWN", "UNKNOWN"]
+    stage: str
+    parent_context: Literal["UNKNOWN", "VERIFIED"] = "UNKNOWN"
+    subwave_status: Literal["UNVERIFIED", "VERIFIED", "UNAVAILABLE"] = "UNAVAILABLE"
+    relative_weight: float = Field(0, ge=0, le=1)
+    calibrated_event_probability: None = None
+    completed_waves: tuple[WaveLabel, ...]
+    developing_tip: PivotPoint
+    rules: tuple[RuleResult, ...]
+    score: ScoreBreakdown
+    conditions: tuple[LevelCondition, ...] = ()
+    target_zones: tuple[PriceZone, ...] = ()
+    projected_path: tuple[ProjectedPoint, ...] = ()
+    discovered_scales: tuple[float, ...] = ()
+    warnings: tuple[str, ...] = ()
+
+
+class SearchDiagnostics(Contract):
+    expansions: int = 0
+    pruned: int = 0
+    candidates_found: int = 0
+    candidates_qualified: int = 0
+    search_truncated: bool = False
+    anchors: tuple[date, ...] = ()
+    pivot_counts: dict[str, int] = Field(default_factory=dict)
+
+
+class AnalysisResult(Contract):
+    schema_version: Literal["1.0"] = "1.0"
+    run_id: str
+    result_digest: str
+    engine_version: str
+    config_hash: str
+    input_snapshot_id: str
+    instrument: Instrument
+    as_of: AwareDatetime
+    market_asof: date
+    analyzed_at: AwareDatetime
+    timeframe: Timeframe = "1d"
+    mode: str
+    status: Literal["OK", "UNCLEAR", "INSUFFICIENT_DATA", "STALE_DATA", "SEARCH_LIMITED"]
+    ambiguity: Literal["LOW", "MEDIUM", "HIGH"]
+    latest_price: float = Field(gt=0)
+    latest_raw_close: float = Field(gt=0)
+    price_coordinate_id: str
+    feed: str
+    adjustment: str
+    scenarios: tuple[WaveScenario, ...]
+    omitted_weight: float = Field(0, ge=0, le=1)
+    diagnostics: SearchDiagnostics
+    warnings: tuple[str, ...] = ()

@@ -44,8 +44,11 @@ def project(
     if candidate.stage == "COMPLETE":
         target_direction = -s
         amplitude = abs(p[-1] - p[0])
+        # A completed pattern can retrace deeper than 61.8%; without the 78.6%/100%
+        # levels a market that has already passed 61.8% is reported as having no target.
         targets = [
-            (p[-1] - s * r * amplitude, "fibonacci_retracement") for r in (0.382, 0.5, 0.618)
+            (p[-1] - s * r * amplitude, "fibonacci_retracement")
+            for r in (0.382, 0.5, 0.618, 0.786, 1.0)
         ]
         condition(
             "STAGE_EXIT", p[-1], s > 0, "越过已完成浪终点需要重新评估当前调整阶段", inclusive=False

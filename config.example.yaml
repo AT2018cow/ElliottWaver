@@ -15,7 +15,7 @@ search:
   max_bridge_intervals: 5
   max_subwave_depth: 0
 scoring:
-  profile: ew_score_v1
+  profile: ew_score_v2
   min_quality: 40
   unclear_below: 45
   min_coverage: 0.70

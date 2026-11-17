@@ -231,10 +231,17 @@ HTML 包含 K 线、成交量、MACD 三个面板。可以通过图上方的下�
 | `CONFIRMATION` | 确认条件；达到指定价格条件后取得新的确认依据 |
 | `STAGE_EXIT` | 当前阶段的退出边界 |
 | `target_zones` | 条件性目标价格区间，附计算方法与独立方法数 |
+| `EXCLUDED_STRUCTURE` | 硬规则通过、证据覆盖达标，但质量分未达门槛的结构；列在 warnings 中，不参与候选权重归一化 |
 | 规则 `PASS / PENDING` | 当前约束未被证伪 / 尚待后续行情确认 |
 | 证据 `UNAVAILABLE` | 尚未取得该项证据；不能按已验证处理 |
 
 条件中的 `HIGH`、`LOW`、`CLOSE` 分别指最高价、最低价、收盘价，`< / <= / > / >=` 指明比较方式。例如 `LOW < 100` 表示最低价低于 100 时触发。
+
+`COMPLETE` 模板的目标区使用 38.2%、50%、61.8%、78.6% 和 100% 回撤位；如果价格已经越过 61.8%，仍会给出更深的条件性目标，而不是直接显示无目标。
+
+默认的 `ew_score_v2` 评分中，第五浪的 Fibonacci 证据同时比较浪 5/浪 1 与浪 5/浪 3，并纳入 1.618、2.618、4.236 等扩展位；两种关系取较优拟合，不要求同时满足。这是新的工程评分口径，不能据此认定预测效果提高。
+
+如需原第五浪评分，在 YAML 中配置 `scoring.profile: ew_score_v1`：只比较浪 5/浪 1，核心比例为 1.0/0.618，次优比例 1.618 的权重为 0.7，sigma 为 0.10。它保留旧评分公式，其他目标推演和报告仍使用当前引擎。切换 profile 或升级引擎后，配置/结果摘要会相应变化，不应期待旧结果 ID 保持一致。
 
 目标带、条件价和图中分析价格属于同一复权坐标；原始收盘价另存为 JSON 的 `latest_raw_close`。比较不同历史截止日期的 A 股结果时，还应核对复权基准和 `price_coordinate_id`。
 
@@ -329,6 +336,7 @@ cp -n config.example.yaml config.yaml
 | `analysis.top_k` | `3` | 默认展示候选数 |
 | `analysis.history_years` | `5` | 请求历史年数；分钟历史仍受供应商限制 |
 | `analysis.scales` | `[1.4, 2.4, 3.8]` | 多尺度 ATR ZigZag 的阈值 |
+| `scoring.profile` | `ew_score_v2` | v2 扩展第五浪评分；可选 `ew_score_v1` 保留原公式 |
 | `search.max_expansions` | `50000` | 有限搜索的扩展预算 |
 | `data.us_feed` | `sip` | 默认美股 feed |
 | `data.delayed_access_buffer_minutes` | `20` | K 线结束后的可用时间缓冲 |

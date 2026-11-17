@@ -51,8 +51,11 @@ class SearchConfig(Section):
     max_subwave_depth: Literal[0] = 0
 
 
+ScoringProfile = Literal["ew_score_v1", "ew_score_v2"]
+
+
 class ScoringConfig(Section):
-    profile: Literal["ew_score_v1"] = "ew_score_v1"
+    profile: ScoringProfile = "ew_score_v2"
     min_quality: float = Field(40, ge=0, le=100)
     unclear_below: float = Field(45, ge=0, le=100)
     min_coverage: float = Field(0.70, ge=0, le=1)

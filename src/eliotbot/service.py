@@ -11,7 +11,7 @@ from eliotbot.data.quality import missing_intervals
 from eliotbot.data.resample import weekly_bars
 from eliotbot.data.router import route_symbol
 from eliotbot.engine.indicators import calculate
-from eliotbot.engine.matcher import search
+from eliotbot.engine.matcher import Candidate, search
 from eliotbot.engine.projector import project
 from eliotbot.engine.scorer import score, weight_scenarios
 from eliotbot.engine.span_selector import require_history, select_anchors
@@ -150,16 +150,36 @@ class AnalysisService:
         if request.anchor and not candidates:
             warnings.append("EXPLICIT_ANCHOR_UNMATCHED: 指定锚点没有匹配合法的当前计数")
         scenarios = []
+        excluded: list[tuple[float, float, str, Candidate]] = []
         for candidate in candidates:
             breakdown = score(
-                candidate, bars, indicators, volume_comparable=bundle.provenance.volume_comparable
+                candidate,
+                bars,
+                indicators,
+                volume_comparable=bundle.provenance.volume_comparable,
+                profile=config.scoring.profile,
             )
             groups = {e.group for e in breakdown.evidence if e.status == "AVAILABLE"}
-            if (
-                breakdown.quality_score < config.scoring.min_quality
-                or breakdown.coverage < config.scoring.min_coverage
-                or len(groups) < 2
-            ):
+            reasons = []
+            if breakdown.quality_score < config.scoring.min_quality:
+                reasons.append("quality")
+            if breakdown.coverage < config.scoring.min_coverage:
+                reasons.append("coverage")
+            if len(groups) < 2:
+                reasons.append("groups")
+            if reasons:
+                if (
+                    not any(rule.status == "FAIL" for rule in candidate.rules)
+                    and breakdown.coverage >= config.scoring.min_coverage
+                ):
+                    excluded.append(
+                        (
+                            breakdown.quality_score,
+                            breakdown.coverage,
+                            "+".join(reasons),
+                            candidate,
+                        )
+                    )
                 continue
             conditions, zones, path = project(
                 candidate,
@@ -198,6 +218,22 @@ class AnalysisService:
                     warnings=note,
                 )
             )
+        seen_excluded = set()
+        for quality, coverage, reason, candidate in sorted(excluded, key=lambda item: -item[0])[:3]:
+            points = " ".join(
+                f"{label}={pivot.price:.2f}"
+                for label, pivot in zip(candidate.template.labels, candidate.points, strict=False)
+            )
+            span = (
+                f"{candidate.points[0].extreme_at.date()}→{candidate.points[-1].extreme_at.date()}"
+            )
+            message = (
+                f"EXCLUDED_STRUCTURE: {candidate.template.name}/{candidate.stage} "
+                f"q={quality:.1f} cov={coverage:.2f} reason={reason}; {span} {points}"
+            )
+            if message not in seen_excluded:
+                seen_excluded.add(message)
+                warnings.append(message)
         displayed, omitted = weight_scenarios(
             scenarios, config.scoring.temperature, request.top_k or config.analysis.top_k
         )

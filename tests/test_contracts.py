@@ -87,6 +87,15 @@ def test_config_extra_fields_and_environment_precedence(tmp_path, monkeypatch):
     assert settings.analysis.warmup_bars == 150
 
 
+def test_scoring_profiles_are_explicit_and_part_of_config_identity():
+    current = Settings()
+    legacy = Settings(scoring={"profile": "ew_score_v1"})
+    assert current.scoring.profile == "ew_score_v2"
+    assert current.computation_hash != legacy.computation_hash
+    with pytest.raises(ValidationError):
+        Settings(scoring={"profile": "unknown"})
+
+
 def test_request_range(bundle):
     with pytest.raises(ValidationError):
         AnalysisRequest(symbol="AAPL", as_of=bundle.as_of, start="2024-02-01", end="2024-01-01")

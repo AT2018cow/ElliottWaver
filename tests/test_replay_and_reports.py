@@ -16,8 +16,9 @@ from eliotbot.evaluation.replay import replay
 from eliotbot.schemas.market import AnalysisRequest, Bar
 from eliotbot.schemas.wave import LevelCondition, PriceZone
 from eliotbot.service import AnalysisService, prepare_bundle
+from eliotbot.util import digest
 from eliotbot.visualization.chart_builder import build_plotly
-from eliotbot.visualization.report_formatter import publish_report
+from eliotbot.visualization.report_formatter import markdown_report, publish_report
 
 
 def test_replay_matches_individual_prefix_analysis(bundle):
@@ -90,6 +91,70 @@ def test_report_plot_and_json_share_the_same_canonical_levels(tmp_path, bundle):
     for filename, checksum in manifest["files"].items():
         assert hashlib.sha256((path / filename).read_bytes()).hexdigest() == checksum
     assert json.loads((path / "analysis.json").read_text())["result_digest"] == result.result_digest
+
+
+def test_markdown_report_flags_weight_denominator_when_structures_are_excluded(bundle):
+    request = AnalysisRequest(symbol="AAPL", as_of=bundle.as_of)
+    bundle = prepare_bundle(request, bundle)
+    result = AnalysisService().analyze_bundle(request, bundle)
+    flagged = result.model_copy(
+        update={"warnings": result.warnings + ("EXCLUDED_STRUCTURE: fixture",)}
+    )
+    text = markdown_report(flagged)
+    assert "候选权重仅在通过质量/覆盖门槛的候选之间归一化" in text
+
+
+@pytest.mark.parametrize(
+    "target_indices, expected",
+    [
+        ((2, 4), "S2、S4"),
+        ((2, 3), "S2、S3"),
+        ((3,), "S3"),
+        ((), None),
+    ],
+)
+def test_target_hint_names_only_candidates_that_have_targets(bundle, target_indices, expected):
+    result = AnalysisService().analyze_bundle(
+        AnalysisRequest(symbol="AAPL", as_of=bundle.as_of), bundle
+    )
+    example = next(s for s in result.scenarios if s.target_zones)
+    scenarios = tuple(
+        example.model_copy(
+            update={
+                "scenario_id": f"hint-fixture-{index}",
+                "target_zones": example.target_zones if index in target_indices else (),
+                "projected_path": example.projected_path if index in target_indices else (),
+                "relative_weight": 0.25,
+            }
+        )
+        for index in range(1, 5)
+    )
+    flagged = result.model_copy(
+        update={
+            "scenarios": scenarios,
+            "omitted_weight": 0,
+            "warnings": result.warnings + ("EXCLUDED_STRUCTURE: hint fixture",),
+        }
+    )
+    hints = [
+        line for line in markdown_report(flagged).splitlines() if "S1 当前无合法目标；" in line
+    ]
+    if expected is None:
+        assert not hints
+    else:
+        assert hints == [f"S1 当前无合法目标；{expected} 提供条件性目标，可在图表中切换。"]
+
+
+def test_engine_version_is_bound_into_result_identity(bundle):
+    result = AnalysisService().analyze_bundle(
+        AnalysisRequest(symbol="AAPL", as_of=bundle.as_of), bundle
+    )
+    payload = result.model_dump(
+        mode="json", exclude={"run_id", "result_digest", "analyzed_at", "mode"}
+    )
+    assert digest(payload) == result.result_digest
+    payload["engine_version"] += "/different-version"
+    assert digest(payload) != result.result_digest
 
 
 def test_export_failure_does_not_publish_or_update_latest(tmp_path, bundle, monkeypatch):

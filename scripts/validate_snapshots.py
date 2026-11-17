@@ -26,7 +26,7 @@ def main():
     )
     parser.add_argument("--cache-root", type=Path, default=Path(".cache/live-smoke"))
     parser.add_argument("--config", type=Path)
-    parser.add_argument("--output", type=Path, default=Path("docs/validation_20261117.json"))
+    parser.add_argument("--output", type=Path, default=Path("reports/snapshot-validation.json"))
     parser.add_argument("--reports", type=Path, default=Path("reports/validation"))
     args = parser.parse_args()
     settings = load_settings(args.config)
@@ -116,9 +116,9 @@ def main():
         "engine_version": ENGINE_VERSION,
         "source_sha256": source_hash,
         "config_hash": settings.computation_hash,
-        "test_status": "81 tests passed before this acceptance run; see implementation status for final suite",
+        "test_status": "NOT_RUN_BY_THIS_SCRIPT",
         "scope": "Frozen real Sina snapshots; not PIT, probability calibration, or profitability evidence",
-        "alpaca_live": "NOT_VERIFIED_NO_CREDENTIALS",
+        "alpaca_live": "NOT_RUN_BY_THIS_SCRIPT",
         "cases": cases,
     }
     atomic_write(args.output, canonical_json(evidence) + "\n")

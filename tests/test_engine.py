@@ -6,7 +6,7 @@ from eliotbot.engine.indicators import calculate, ema
 from eliotbot.engine.matcher import Candidate
 from eliotbot.engine.projector import project
 from eliotbot.engine.rules import check_pattern
-from eliotbot.engine.scorer import weight_scenarios
+from eliotbot.engine.scorer import score, weight_scenarios
 from eliotbot.engine.templates import IMPULSE
 from eliotbot.engine.zigzag import extract
 from eliotbot.schemas.market import AnalysisRequest, Bar
@@ -116,6 +116,95 @@ def test_projection_respects_fifth_limit():
     assert cap.price == 155 and cap.op == ">" and cap.side == "HIGH"
     assert all(zone.high <= 155 for zone in zones)
     assert any(c.kind == "STAGE_EXIT" and c.price == 131 for c in conditions)
+
+
+def test_complete_projection_includes_deep_retracements():
+    bars, pivots = make_pivots([100, 130, 115, 150, 132, 160])
+    candidate = Candidate(IMPULSE, pivots, pivots[-1], 1, "COMPLETE", (), (1.4,))
+    _, zones, _ = project(candidate, bars, 1, "test", bars[-1].end_at, 0.01)
+    assert len(zones) == 5
+    assert any(zone.low <= 100 <= zone.high for zone in zones)
+    assert any(zone.low <= 112.84 <= zone.high for zone in zones)
+
+
+def test_complete_projection_deep_retracements_are_direction_symmetric():
+    bars, pivots = make_pivots([160, 130, 145, 110, 128, 100])
+    candidate = Candidate(IMPULSE, pivots, pivots[-1], -1, "COMPLETE", (), (1.4,))
+    _, zones, _ = project(candidate, bars, 1, "test", bars[-1].end_at, 0.01)
+    assert len(zones) == 5
+    assert any(zone.low <= 160 <= zone.high for zone in zones)
+    assert any(zone.low <= 147.16 <= zone.high for zone in zones)
+
+
+@pytest.mark.parametrize(
+    "last, ratio, basis",
+    [
+        (155, 1.0, "浪1"),
+        (187.36, 2.618, "浪1"),
+        (199.72, 1.618, "浪3"),
+    ],
+)
+def test_wave5_extension_uses_best_wave1_or_wave3_fit(last, ratio, basis):
+    bars, pivots = make_pivots([100, 120, 110, 150, 135, last])
+    candidate = Candidate(IMPULSE, pivots, pivots[-1], 1, "COMPLETE", (), (1.4,))
+    breakdown = score(candidate, bars, calculate(bars, period=3), volume_comparable=True)
+    evidence = next(e for e in breakdown.evidence if e.feature == "extension_5")
+    assert evidence.value == pytest.approx(ratio)
+    assert evidence.fit == pytest.approx(1.0)
+    assert f"相对{basis}" in evidence.explanation
+
+
+@pytest.mark.parametrize(
+    "last, profile, expected_fit",
+    [
+        (167.36, "ew_score_v1", 0.7),
+        (167.36, "ew_score_v2", 1.0),
+        (199.72, "ew_score_v1", 0.0),
+        (199.72, "ew_score_v2", 1.0),
+    ],
+)
+def test_fifth_wave_profiles_preserve_legacy_and_extended_formulas(last, profile, expected_fit):
+    bars, pivots = make_pivots([100, 120, 110, 150, 135, last])
+    candidate = Candidate(IMPULSE, pivots, pivots[-1], 1, "COMPLETE", (), (1.4,))
+    breakdown = score(
+        candidate, bars, calculate(bars, period=3), volume_comparable=True, profile=profile
+    )
+    evidence = next(e for e in breakdown.evidence if e.feature == "extension_5")
+    assert evidence.fit == pytest.approx(expected_fit, abs=1e-12)
+
+
+def test_unknown_scoring_profile_fails_closed():
+    bars, pivots = make_pivots([100, 120, 110, 150, 135, 155])
+    candidate = Candidate(IMPULSE, pivots, pivots[-1], 1, "COMPLETE", (), (1.4,))
+    with pytest.raises(ValueError, match="Unsupported scoring profile"):
+        score(candidate, bars, calculate(bars, period=3), volume_comparable=True, profile="typo")
+
+
+def test_analysis_service_passes_selected_scoring_profile(bundle, monkeypatch):
+    import eliotbot.service as service_module
+    from eliotbot.config import Settings
+
+    observed = []
+
+    def recording_score(*args, profile, **kwargs):
+        observed.append(profile)
+        return score(*args, profile=profile, **kwargs)
+
+    monkeypatch.setattr(service_module, "score", recording_score)
+    AnalysisService(Settings(scoring={"profile": "ew_score_v1"})).analyze_bundle(
+        AnalysisRequest(symbol="AAPL", as_of=bundle.as_of), bundle
+    )
+    assert observed and set(observed) == {"ew_score_v1"}
+
+
+def test_excluded_structure_is_reported(bundle):
+    from eliotbot.config import Settings
+
+    result = AnalysisService(
+        Settings(scoring={"min_quality": 99, "min_coverage": 0})
+    ).analyze_bundle(AnalysisRequest(symbol="AAPL", as_of=bundle.as_of), bundle)
+    assert not result.scenarios
+    assert any(w.startswith("EXCLUDED_STRUCTURE:") for w in result.warnings)
 
 
 def test_missing_feature_does_not_inflate_fit(bundle):

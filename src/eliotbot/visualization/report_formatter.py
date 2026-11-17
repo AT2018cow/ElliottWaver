@@ -32,6 +32,19 @@ def markdown_report(result: AnalysisResult) -> str:
         )
     if not result.scenarios:
         lines += ["", "当前没有达到质量与证据门槛的候选，不强行给出数浪结论。"]
+    excluded = [w for w in result.warnings if w.startswith("EXCLUDED_STRUCTURE:")]
+    if excluded:
+        lines += [
+            "",
+            "候选权重仅在通过质量/覆盖门槛的候选之间归一化；硬规则通过但评分未达标的候选见下方 `EXCLUDED_STRUCTURE`。",
+        ]
+        if result.scenarios and not result.scenarios[0].target_zones:
+            with_targets = [
+                i for i, scenario in enumerate(result.scenarios, 1) if scenario.target_zones
+            ]
+            if with_targets:
+                label = "、".join(f"S{i}" for i in with_targets)
+                lines.append(f"S1 当前无合法目标；{label} 提供条件性目标，可在图表中切换。")
     lines += ["", f"未展示的已枚举候选权重：{result.omitted_weight:.1%}。"]
     for i, scenario in enumerate(result.scenarios, 1):
         lines += [

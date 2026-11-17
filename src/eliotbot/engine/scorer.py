@@ -5,6 +5,7 @@ from collections.abc import Sequence
 
 import numpy as np
 
+from eliotbot.config import ScoringProfile
 from eliotbot.engine.indicators import Indicators
 from eliotbot.engine.matcher import Candidate
 from eliotbot.schemas.market import Bar
@@ -24,8 +25,15 @@ def fibonacci_fit(
 
 
 def score(
-    candidate: Candidate, bars: Sequence[Bar], indicators: Indicators, *, volume_comparable: bool
+    candidate: Candidate,
+    bars: Sequence[Bar],
+    indicators: Indicators,
+    *,
+    volume_comparable: bool,
+    profile: ScoringProfile = "ew_score_v2",
 ) -> ScoreBreakdown:
+    if profile not in {"ew_score_v1", "ew_score_v2"}:
+        raise ValueError(f"Unsupported scoring profile: {profile}")
     points = candidate.points
     q = [candidate.direction * p.price for p in points]
     evidence: list[ScoreEvidence] = []
@@ -54,11 +62,21 @@ def score(
         data = bars[segment(j)]
         return float(np.mean([b.volume for b in data])) if data else 0
 
-    ratios = []
+    ratios: list[
+        tuple[str, float, tuple[float, ...], float, tuple[float, ...], float | None, str]
+    ] = []
     l1 = q[1] - q[0]
     if len(q) >= 3:
         ratios.append(
-            ("retracement_2_or_B", (q[1] - q[2]) / l1, (0.5, 0.618), 0.06, (0.382, 0.786))
+            (
+                "retracement_2_or_B",
+                (q[1] - q[2]) / l1,
+                (0.5, 0.618),
+                0.06,
+                (0.382, 0.786),
+                None,
+                "",
+            )
         )
     if len(q) >= 4:
         targets = (1.618, 2.618) if candidate.template.name == "IMPULSE" else (1.0, 1.618)
@@ -70,23 +88,66 @@ def score(
                 targets,
                 0.15 if candidate.template.name == "IMPULSE" else 0.10,
                 secondary,
+                None,
+                "",
             )
         )
     if len(q) >= 5:
         ratios.append(
-            ("retracement_4", (q[3] - q[4]) / (q[3] - q[2]), (0.382,), 0.05, (0.236, 0.5))
+            (
+                "retracement_4",
+                (q[3] - q[4]) / (q[3] - q[2]),
+                (0.382,),
+                0.05,
+                (0.236, 0.5),
+                None,
+                "",
+            )
         )
     if len(q) >= 6:
-        ratios.append(("extension_5", (q[5] - q[4]) / l1, (1.0, 0.618), 0.10, (1.618,)))
-    for i, (name, ratio, targets, sigma, secondary) in enumerate(ratios):
+        # Keep the original fifth-wave formula selectable; v2 explicitly uses
+        # the broader best-of-two policy rather than silently replacing v1.
+        w5 = q[5] - q[4]
+        w5_w1 = w5 / l1
+        w5_w3 = w5 / (q[3] - q[2])
+        if profile == "ew_score_v1":
+            w1_targets, sigma, w1_secondary = (1.0, 0.618), 0.10, (1.618,)
+            ratio, basis = w5_w1, "浪1"
+            fit = fibonacci_fit(ratio, w1_targets, sigma, w1_secondary)
+        else:
+            w1_targets, sigma, w1_secondary = (0.618, 1.0, 1.618, 2.618), 0.15, (0.382, 4.236)
+            w1_fit = fibonacci_fit(w5_w1, w1_targets, sigma, w1_secondary)
+            w3_fit = fibonacci_fit(w5_w3, (0.618, 1.0, 1.618), sigma, (0.382, 2.618))
+            if w1_fit >= w3_fit:
+                ratio, fit, basis = w5_w1, w1_fit, "浪1"
+            else:
+                ratio, fit, basis = w5_w3, w3_fit, "浪3"
+        ratios.append(
+            (
+                "extension_5",
+                ratio,
+                w1_targets,
+                sigma,
+                w1_secondary,
+                fit,
+                f"实测比例 {ratio:.3f}（相对{basis}；浪1={w5_w1:.3f}，浪3={w5_w3:.3f}）",
+            )
+        )
+    for i, (name, ratio, targets, sigma, secondary, fit_override, explanation) in enumerate(ratios):
         tentative = candidate.developing and i == len(ratios) - 1
+        fit = (
+            fit_override
+            if fit_override is not None
+            else fibonacci_fit(ratio, targets, sigma, secondary)
+        )
+        text = explanation or f"实测比例 {ratio:.3f}"
         add(
             name,
             "fibonacci",
             40 / len(ratios),
             ratio,
-            fibonacci_fit(ratio, targets, sigma, secondary) * (0.8 if tentative else 1),
-            f"实测比例 {ratio:.3f}" + ("；进行中端点暂定，贡献折减20%" if tentative else ""),
+            fit * (0.8 if tentative else 1),
+            text + ("；进行中端点暂定，贡献折减20%" if tentative else ""),
         )
 
     impulse = candidate.template.name == "IMPULSE"

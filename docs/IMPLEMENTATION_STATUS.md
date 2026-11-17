@@ -16,14 +16,14 @@
 | 复权 | 保存 raw 与因子；A 股基准日乘法复权；先复权日线再聚合周线；美股供应商 all 不进行二次复权 |
 | 分析 | ATR/MACD、三尺度因果 ZigZag、背景锚点与回退、有限 CSP 搜索、端点与完整影线区间硬规则 |
 | 浪型 | 普通涨/跌推动、ABC 锯齿；进行中阶段与完成态；已确认 pivot 与 developing tip 分开 |
-| 评分与点位 | 分项证据、缺失状态、质量/覆盖/相对权重、Top-K 未展示权重、带方向条件、第五浪上限、合法目标带 |
+| 评分与点位 | 分项证据、缺失状态、质量/覆盖/相对权重、Top-K 未展示权重、带方向条件、第五浪上限、合法目标带；完成态含 38.2%–100% 回撤目标，低分但硬规则通过的结构以 `EXCLUDED_STRUCTURE` 显式列出；第五浪同时比较浪 5/浪 1 与浪 5/浪 3，含 2.618/4.236 扩展位 |
 | 产物 | Rich、JSON、Markdown、独立 Plotly HTML、SVG/PNG 备选渲染；报告文件完整后更新对应周期/feed 的 latest |
 | 快照与回放 | SQLite 索引、Parquet 不可变块、SHA256、原子写入、源身份检查；逐前缀回放与回放 manifest |
 
 ## 验证结果
 
 ```text
-python -m pytest tests -q              81 passed
+python -m pytest tests -q              100 passed
 ruff check src tests scripts           PASS
 ruff format --check src tests scripts  PASS
 pip check                             No broken requirements found
@@ -47,7 +47,11 @@ pip check                             No broken requirements found
 | 000001 / 日线 | 1214 | 2021-11-12 | 2026-11-16 | UNCLEAR；无达标候选 |
 | 300750 / 日线 | 1214 | 2021-11-12 | 2026-11-16 | OK |
 
-九组均通过规则检查、候选权重质量检查、抽样历史前缀一致性以及 JSON/MD/HTML 产物校验。记录的单次纯计算耗时约 0.07–0.25 秒，不包括下载、快照 I/O 与出图；这不是全市场性能或完整 p95 基准测试。
+九组均通过规则检查、候选权重质量检查、抽样历史前缀一致性以及 JSON/MD/HTML 产物校验。原始记录的单次纯计算耗时约 0.07–0.25 秒，不包括下载、快照 I/O 与出图；新版本耗时见对应验证 JSON。这不是全市场性能或完整 p95 基准测试。
+
+完成态目标扩展、第五浪评分修正与 `EXCLUDED_STRUCTURE` 可见性变更不包含按证券代码分支的逻辑。DeepSeek 初版的九组证据保留在 [validation_20261117_ext5.json](validation_20261117_ext5.json)。其中部分样本的业务内容未变，但由于引擎版本参与摘要，所有样本都生成了新的结果 ID；业务内容一致不能等同于结果身份一致。
+
+验收修复后的最新证据见 [validation_20261117_ext5_fixed.json](validation_20261117_ext5_fixed.json)，修复与复验见[记录](reviews/2026-11-17-deepseek-ext5-fixed.md)。评分默认 `ew_score_v2`，可以显式选择保留旧公式的 `ew_score_v1`；两者使用不同配置摘要。引擎标识为 `ew-rules-v1/zigzag-v1/score-v2/projection-v2/report-v2/0.1.0`，报告修复不会复用旧版本的报告目录。
 
 ### 真实路径发现并修正的边界
 
@@ -55,6 +59,8 @@ pip check                             No broken requirements found
 2. 新浪证券身份核验直接使用同源、带证券代码的公开报价响应，移除原先为一个股票下载全市场跨站列表的依赖。
 3. 新浪 1 分钟样本每天在 14:57、14:58 起始的时隙没有成交 K 线。只在该源的现代沪深股票 profile 中，将这两个集合竞价时隙从“预期连续成交 bar”中排除，保留实际收盘 bar；其他缺口仍阻断严格分析，不补造价格。交易所规则将 14:57–15:00 定义为收盘集合竞价，集中撮合与连续成交不同。[上交所现行交易规则](https://www.sse.com.cn/lawandrules/sselawsrules2025/trade/universal/c/c_20260424_10816492.shtml)、[深交所交易时间说明](https://www.szse.cn/www/investor/knowledge/stock/deal/t20191204_572383.html)
 4. 周线不能把整周原始 OHLC 乘以周末因子。回放时也从原始日线重新复权后聚合，已有一周内拆股的独立手算回归用例。
+5. 完成态目标原先只到 61.8% 回撤，价格越过该位后会显示无目标。现已扩展到 78.6%/100%，并把硬规则通过但质量分未达门槛的结构列为 `EXCLUDED_STRUCTURE`，避免它们在默认报告中完全消失；候选权重仍只在达标候选之间归一化。
+6. 第五浪评分原先只比较浪 5/浪 1，偏好 1.0/0.618，延伸第五浪容易得零分。现同时比较浪 5/浪 1 与浪 5/浪 3，纳入 1.618/2.618/4.236 等标准扩展位，并对两种关系取较优拟合；这是评分口径修正，不针对单一证券。
 
 ## 与目标设计的阶段对应
 
@@ -80,7 +86,7 @@ pip check                             No broken requirements found
   --cache-root .cache/live-smoke \
   --case maotai_day:1b89533b62b28eacc88ed5f95c7e4da2478679b2b7bb5a247d6ee111d5fee124:1d \
   --case maotai_week:1b89533b62b28eacc88ed5f95c7e4da2478679b2b7bb5a247d6ee111d5fee124:1w \
-  --output docs/validation_20261117.json
+  --output reports/snapshot-validation.json
 ```
 
 此命令要求对应本地快照仍在；新下载的行情即使价格相同，也可能因下载时间、修订及因子版本产生新 ID，应使用新命令返回的 ID。脚本保存源代码指纹、配置、输入与结果摘要。原始数据、代码规则、统计结果和实际交易验证属于不同证据层次，本次未进行交易收益验证。

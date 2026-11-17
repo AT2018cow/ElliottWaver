@@ -491,6 +491,8 @@ W3 尚在延伸时，其当前长度小于 W1 并不构成“浪 3 最短”；�
 
 ### 11.1 特征和可用性
 
+实现版本说明（2026-11-17）：原 DESIGN 的第五浪比率表作为 `ew_score_v1` 保留。当前默认 `ew_score_v2` 使用浪 5/浪 1 与浪 5/浪 3 两套关系取较优拟合，sigma=0.15；浪 1 基准的核心集合为 `{0.618,1,1.618,2.618}`、次优集合为 `{0.382,4.236}`，浪 3 基准的核心集合为 `{0.618,1,1.618}`、次优集合为 `{0.382,2.618}`，次优权重均为 0.7。其他评分特征与硬规则保持共用。profile 参与配置摘要；v2 的算术验证不构成预测优越性或概率校准证据。
+
 保留 DESIGN 的 40/25/20/15 分组，以独立特征贡献组成：
 
 | 分组 | 内容 | 实施约定 |
@@ -589,14 +591,16 @@ JSON / Markdown / 图表共享同一 `scenario_id`、点位和得分，图表 bu
 下列均为待实现命令规格；JSON 为强制基础产物，`--format` 选择额外展示格式：
 
 ```bash
+# 将变量替换为下方离线示例对应的 AAPL 快照 ID
+SNAPSHOT_ID='替换为对应股票快照的完整ID'
 eliot analyze 600519
 eliot analyze AAPL --feed sip --format html,md
 eliot analyze BRK.B --as-of 2026-11-13 --top-k 3
 eliot analyze sz300750 --anchor 2025-04-09 --format html,png,md
-eliot analyze AAPL --offline --snapshot <snapshot-id>
+eliot analyze AAPL --offline --snapshot "$SNAPSHOT_ID"
 eliot data fetch 600519 --start 2021-01-01 --end 2026-11-13
-eliot data inspect <snapshot-id>
-eliot replay <snapshot-id> --start 2024-01-01 --end 2025-12-31
+eliot data inspect "$SNAPSHOT_ID"
+eliot replay "$SNAPSHOT_ID" --start 2024-01-01 --end 2025-12-31
 eliot doctor --market US
 ```
 
@@ -735,7 +739,7 @@ search:
   max_bridge_intervals: 5
   max_subwave_depth: 2
 scoring:
-  profile: ew_score_v1
+  profile: ew_score_v2
   min_quality: 40
   unclear_below: 45
   min_coverage: 0.70

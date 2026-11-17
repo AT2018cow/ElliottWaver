@@ -19,6 +19,11 @@ def markdown_report(result: AnalysisResult) -> str:
         f"# EliotBot · {result.instrument.canonical_symbol}",
         "",
         f"行情截止：{result.market_asof}；周期：{result.timeframe}；来源：{result.feed}；调整口径：{result.adjustment}。",
+        *(
+            ["品种：指数；指数无复权，价格为原始点位。"]
+            if result.instrument.asset_type == "INDEX"
+            else []
+        ),
         f"分析状态：**{result.status}**；结构歧义：{result.ambiguity}；分析价格：{result.latest_price:.4f}。",
         "",
         "候选权重仅表示本次枚举候选之间的相对评分，统计成功概率尚未校准。",

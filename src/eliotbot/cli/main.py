@@ -195,6 +195,7 @@ def run_fetch(
             {
                 "snapshot_id": bundle.snapshot_id,
                 "symbol": bundle.instrument.canonical_symbol,
+                "asset_type": bundle.instrument.asset_type,
                 "feed": bundle.provenance.feed,
                 "first": bundle.bars[0].session_date,
                 "last": bundle.bars[-1].session_date,
@@ -214,6 +215,7 @@ def run_inspect(snapshot, *, config=None):
             {
                 "snapshot_id": bundle.snapshot_id,
                 "instrument": bundle.instrument,
+                "asset_type": bundle.instrument.asset_type,
                 "bars": len(bundle.bars),
                 "first": bundle.bars[0].session_date,
                 "last": bundle.bars[-1].session_date,
@@ -310,8 +312,9 @@ def run_doctor(market="US"):
                 "alpaca_credentials_configured": credentials,
                 "network_smoke": "NOT_RUN",
                 "supported_timeframes": TIMEFRAMES,
+                "index_timeframes": ["1d", "1w"],
                 "supported_patterns": ["IMPULSE", "ZIGZAG_ABC"],
-                "bj_live": "UNVERIFIED",
+                "bj_live": "INDEX_ONLY",
                 "calibrated_probability": "UNAVAILABLE",
             },
             ensure_ascii=False,

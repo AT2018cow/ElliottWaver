@@ -9,8 +9,9 @@ def render_result(result: AnalysisResult) -> None:
     console.print(
         f"[bold]EliotBot · {result.instrument.canonical_symbol}[/bold]  {result.timeframe}  {result.market_asof}  {result.feed}  {result.status}"
     )
+    prefix = "指数 · " if result.instrument.asset_type == "INDEX" else ""
     console.print(
-        f"分析价格 {result.latest_price:.4f} · 结构歧义 {result.ambiguity} · 候选权重不是成功概率"
+        f"{prefix}分析价格 {result.latest_price:.4f} · 结构歧义 {result.ambiguity} · 候选权重不是成功概率"
     )
     table = Table("剧本", "阶段", "质量", "证据覆盖", "候选权重", "第一目标")
     for i, scenario in enumerate(result.scenarios, 1):

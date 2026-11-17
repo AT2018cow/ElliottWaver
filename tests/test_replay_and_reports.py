@@ -8,6 +8,7 @@ from hypothesis import strategies as st
 from typer.testing import CliRunner
 
 from eliotbot.cli.main import app
+from eliotbot.data.router import route_symbol
 from eliotbot.engine.indicators import calculate
 from eliotbot.engine.zigzag import extract
 from eliotbot.errors import DataError, ExportError
@@ -169,6 +170,14 @@ def test_markdown_report_shows_selected_scoring_profile(bundle):
     assert result.engine_version.endswith("/ew_score_v1")
     text = markdown_report(result)
     assert f"- 引擎：`{result.engine_version}`。" in text
+
+
+def test_markdown_report_labels_index_instrument(bundle):
+    result = AnalysisService().analyze_bundle(
+        AnalysisRequest(symbol="AAPL", as_of=bundle.as_of), bundle
+    )
+    index_result = result.model_copy(update={"instrument": route_symbol("000688.SH")})
+    assert "品种：指数；指数无复权，价格为原始点位。" in markdown_report(index_result)
 
 
 def test_export_failure_does_not_publish_or_update_latest(tmp_path, bundle, monkeypatch):

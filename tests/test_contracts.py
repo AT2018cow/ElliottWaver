@@ -26,6 +26,33 @@ def test_symbol_routing(symbol, expected):
     assert route_symbol(symbol).canonical_symbol == expected
 
 
+@pytest.mark.parametrize(
+    "symbol, canonical, asset_type",
+    [
+        ("000688.SH", "000688.SH", "INDEX"),
+        ("sh000300", "000300.SH", "INDEX"),
+        ("000001.SH", "000001.SH", "INDEX"),
+        ("399001", "399001.SZ", "INDEX"),
+        ("sz399006", "399006.SZ", "INDEX"),
+        ("899050", "899050.BJ", "INDEX"),
+        ("000001", "000001.SZ", "EQUITY"),
+        ("000001.SZ", "000001.SZ", "EQUITY"),
+        ("688981.SH", "688981.SH", "EQUITY"),
+        ("600519.SH", "600519.SH", "EQUITY"),
+    ],
+)
+def test_index_and_equity_routing(symbol, canonical, asset_type):
+    instrument = route_symbol(symbol)
+    assert instrument.canonical_symbol == canonical
+    assert instrument.asset_type == asset_type
+
+
+@pytest.mark.parametrize("symbol", ["399001.SH", "880001", "SH.880001", "000688.BJ"])
+def test_invalid_index_exchange_ranges(symbol):
+    with pytest.raises(InputError):
+        route_symbol(symbol)
+
+
 @pytest.mark.parametrize("symbol", ["sh600519.SZ", "600519.SZ", "12345", "", "AAPL/USD", "$(id)"])
 def test_invalid_symbols(symbol):
     with pytest.raises(InputError):

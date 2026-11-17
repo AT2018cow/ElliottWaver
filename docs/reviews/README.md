@@ -6,3 +6,4 @@
 | --- | --- | --- | --- |
 | 2026-11-17 | DeepSeek 对首次提交 `9c6db8f` 之后的 ext5 工作区修改 | 初次有条件通过；失败记录保留，后续修复已复验 | [初次验收](2026-11-17-deepseek-ext5-acceptance.md)、[初次证据](2026-11-17-deepseek-ext5-evidence.json) |
 | 2026-11-17 | R01/R02 修复与 D01 评分版本区分 | 修复复验通过，详见各项证据 | [修复记录](2026-11-17-deepseek-ext5-fixed.md)、[复验证据](2026-11-17-deepseek-ext5-fixed-evidence.json) |
+| 2026-11-17 | 沪深京指数日线/周线接入 | 122 项测试、7 组快照验证通过 | [指数验证摘要](../validation_cn_index_20261117.json) |

@@ -15,6 +15,20 @@ class Contract(BaseModel):
     )
 
 
+def asset_type_for(market: str, canonical_symbol: str) -> Literal["EQUITY", "INDEX"]:
+    """Derive the asset class from the exchange code without changing snapshots."""
+    if market != "CN":
+        return "EQUITY"
+    code, _, exchange = canonical_symbol.partition(".")
+    if (
+        (exchange == "SH" and code.startswith("000"))
+        or (exchange == "SZ" and code.startswith("399"))
+        or (exchange == "BJ" and code.startswith("899"))
+    ):
+        return "INDEX"
+    return "EQUITY"
+
+
 class Instrument(Contract):
     instrument_id: str
     input_symbol: str
@@ -27,6 +41,10 @@ class Instrument(Contract):
     name: str = ""
     tick_size: float = Field(0.01, gt=0)
     identity_verified: bool = False
+
+    @property
+    def asset_type(self) -> Literal["EQUITY", "INDEX"]:
+        return asset_type_for(self.market, self.canonical_symbol)
 
 
 class Bar(Contract):

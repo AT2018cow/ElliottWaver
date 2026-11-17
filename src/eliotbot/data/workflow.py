@@ -36,13 +36,29 @@ def fetch_bundle(
     )
     if request.start and request.start > target:
         raise InputError("Analysis start follows the latest available session")
-    feed = (request.feed or settings.data.us_feed) if instrument.market == "US" else "sina"
+    if instrument.market == "US":
+        feed = request.feed or settings.data.us_feed
+    elif instrument.asset_type == "INDEX":
+        feed = "sina-index"
+    else:
+        feed = "sina"
     if instrument.market == "CN" and request.feed:
         raise InputError("--feed sip/iex applies only to US equities")
     try:
-        parser = "sina-v2/" + version("akshare") if instrument.market == "CN" else "alpaca-rest-v1"
+        if instrument.market == "US":
+            parser = "alpaca-rest-v1"
+        elif instrument.asset_type == "INDEX":
+            parser = "sina-index-v1/" + version("akshare")
+        else:
+            parser = "sina-v2/" + version("akshare")
     except PackageNotFoundError:
         parser = "unavailable"
+    if instrument.market == "US":
+        adjustment_key = "all"
+    elif instrument.asset_type == "INDEX":
+        adjustment_key = "none"
+    else:
+        adjustment_key = "basis_date_qfq"
     key = digest(
         [
             instrument.canonical_symbol,
@@ -51,7 +67,7 @@ def fetch_bundle(
             target,
             calendar.version,
             parser,
-            "all" if instrument.market == "US" else "basis_date_qfq",
+            adjustment_key,
             settings.data.delayed_access_buffer_minutes,
             request.timeframe,
             expected_starts(

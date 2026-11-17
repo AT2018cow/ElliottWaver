@@ -149,12 +149,26 @@ def test_engine_version_is_bound_into_result_identity(bundle):
     result = AnalysisService().analyze_bundle(
         AnalysisRequest(symbol="AAPL", as_of=bundle.as_of), bundle
     )
+    assert result.engine_version.endswith("/ew_score_v2")
     payload = result.model_dump(
         mode="json", exclude={"run_id", "result_digest", "analyzed_at", "mode"}
     )
     assert digest(payload) == result.result_digest
     payload["engine_version"] += "/different-version"
     assert digest(payload) != result.result_digest
+
+
+def test_markdown_report_shows_selected_scoring_profile(bundle):
+    from eliotbot.config import Settings
+
+    request = AnalysisRequest(symbol="AAPL", as_of=bundle.as_of)
+    bundle = prepare_bundle(request, bundle)
+    result = AnalysisService(Settings(scoring={"profile": "ew_score_v1"})).analyze_bundle(
+        request, bundle
+    )
+    assert result.engine_version.endswith("/ew_score_v1")
+    text = markdown_report(result)
+    assert f"- 引擎：`{result.engine_version}`。" in text
 
 
 def test_export_failure_does_not_publish_or_update_latest(tmp_path, bundle, monkeypatch):

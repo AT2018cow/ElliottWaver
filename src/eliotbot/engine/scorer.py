@@ -114,6 +114,7 @@ def score(
             w1_targets, sigma, w1_secondary = (1.0, 0.618), 0.10, (1.618,)
             ratio, basis = w5_w1, "浪1"
             fit = fibonacci_fit(ratio, w1_targets, sigma, w1_secondary)
+            explanation = f"实测比例 {ratio:.3f}（相对浪1）"
         else:
             w1_targets, sigma, w1_secondary = (0.618, 1.0, 1.618, 2.618), 0.15, (0.382, 4.236)
             w1_fit = fibonacci_fit(w5_w1, w1_targets, sigma, w1_secondary)
@@ -122,6 +123,7 @@ def score(
                 ratio, fit, basis = w5_w1, w1_fit, "浪1"
             else:
                 ratio, fit, basis = w5_w3, w3_fit, "浪3"
+            explanation = f"实测比例 {ratio:.3f}（相对{basis}；浪1={w5_w1:.3f}，浪3={w5_w3:.3f}）"
         ratios.append(
             (
                 "extension_5",
@@ -130,7 +132,7 @@ def score(
                 sigma,
                 w1_secondary,
                 fit,
-                f"实测比例 {ratio:.3f}（相对{basis}；浪1={w5_w1:.3f}，浪3={w5_w3:.3f}）",
+                explanation,
             )
         )
     for i, (name, ratio, targets, sigma, secondary, fit_override, explanation) in enumerate(ratios):

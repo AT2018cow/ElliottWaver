@@ -23,7 +23,7 @@
 ## 验证结果
 
 ```text
-python -m pytest tests -q              100 passed
+python -m pytest tests -q              101 passed
 ruff check src tests scripts           PASS
 ruff format --check src tests scripts  PASS
 pip check                             No broken requirements found
@@ -51,7 +51,7 @@ pip check                             No broken requirements found
 
 完成态目标扩展、第五浪评分修正与 `EXCLUDED_STRUCTURE` 可见性变更不包含按证券代码分支的逻辑。DeepSeek 初版的九组证据保留在 [validation_20261117_ext5.json](validation_20261117_ext5.json)。其中部分样本的业务内容未变，但由于引擎版本参与摘要，所有样本都生成了新的结果 ID；业务内容一致不能等同于结果身份一致。
 
-验收修复后的最新证据见 [validation_20261117_ext5_fixed.json](validation_20261117_ext5_fixed.json)，修复与复验见[记录](reviews/2026-11-17-deepseek-ext5-fixed.md)。评分默认 `ew_score_v2`，可以显式选择保留旧公式的 `ew_score_v1`；两者使用不同配置摘要。引擎标识为 `ew-rules-v1/zigzag-v1/score-v2/projection-v2/report-v2/0.1.0`，报告修复不会复用旧版本的报告目录。
+验收修复后的最新证据见 [validation_20261117_ext5_fixed.json](validation_20261117_ext5_fixed.json)，修复与复验见[记录](reviews/2026-11-17-deepseek-ext5-fixed.md)。评分默认 `ew_score_v2`，可以显式选择保留旧公式的 `ew_score_v1`；两者使用不同配置摘要。引擎代码标识为 `ew-rules-v1/zigzag-v1/score-v2/projection-v2/report-v2/0.1.0`，结果中的 `engine_version` 会追加当前 profile（例如 `.../0.1.0/ew_score_v2`），报告修复不会复用旧版本的报告目录。
 
 ### 真实路径发现并修正的边界
 

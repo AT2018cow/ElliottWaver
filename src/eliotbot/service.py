@@ -270,7 +270,7 @@ class AnalysisService:
         result = AnalysisResult(
             run_id=uuid4().hex,
             result_digest="",
-            engine_version=ENGINE_VERSION,
+            engine_version=f"{ENGINE_VERSION}/{config.scoring.profile}",
             config_hash=config.computation_hash,
             input_snapshot_id=bundle.snapshot_id,
             instrument=bundle.instrument,

@@ -171,6 +171,11 @@ def test_fifth_wave_profiles_preserve_legacy_and_extended_formulas(last, profile
     )
     evidence = next(e for e in breakdown.evidence if e.feature == "extension_5")
     assert evidence.fit == pytest.approx(expected_fit, abs=1e-12)
+    if profile == "ew_score_v1":
+        assert "浪3=" not in evidence.explanation
+        assert "相对浪1" in evidence.explanation
+    else:
+        assert "浪3=" in evidence.explanation
 
 
 def test_unknown_scoring_profile_fails_closed():
@@ -191,10 +196,11 @@ def test_analysis_service_passes_selected_scoring_profile(bundle, monkeypatch):
         return score(*args, profile=profile, **kwargs)
 
     monkeypatch.setattr(service_module, "score", recording_score)
-    AnalysisService(Settings(scoring={"profile": "ew_score_v1"})).analyze_bundle(
+    result = AnalysisService(Settings(scoring={"profile": "ew_score_v1"})).analyze_bundle(
         AnalysisRequest(symbol="AAPL", as_of=bundle.as_of), bundle
     )
     assert observed and set(observed) == {"ew_score_v1"}
+    assert result.engine_version.endswith("/ew_score_v1")
 
 
 def test_excluded_structure_is_reported(bundle):

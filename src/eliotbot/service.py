@@ -242,7 +242,6 @@ class AnalysisService:
                 note = ("子浪证据不足，当前为端点与价格规则候选",)
             if parent.status == "PROVISIONAL":
                 note += (f"PARENT_CONTEXT_PROVISIONAL: {parent.reason}",)
-                warnings.append(f"PARENT_CONTEXT_PROVISIONAL: {candidate.key} {parent.reason}")
             if not zones:
                 note += ("NO_FEASIBLE_TARGET: 当前没有符合方向及硬边界的未触及目标",)
             scenarios.append(
@@ -300,6 +299,12 @@ class AnalysisService:
                 warnings.append(message)
         displayed, omitted = weight_scenarios(
             scenarios, config.scoring.temperature, request.top_k or config.analysis.top_k
+        )
+        warnings.extend(
+            f"PARENT_CONTEXT_PROVISIONAL: {scenario.scenario_id} "
+            f"{parent_links[scenario.scenario_id].reason}"
+            for scenario in displayed
+            if scenario.parent_context == "PROVISIONAL"
         )
         degrees = {scenario.degree for scenario in displayed if scenario.degree != "UNKNOWN"}
         if len(degrees) > 1:

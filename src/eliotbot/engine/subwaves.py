@@ -6,20 +6,20 @@ template (for example 5-wave motive or 3-wave corrective) passes the same hard
 rules used for a top-level candidate.
 """
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
-from itertools import combinations, pairwise
+from itertools import combinations, pairwise, product
 
 from eliotbot.engine.matcher import Candidate
 from eliotbot.engine.rules import check_pattern
-from eliotbot.engine.templates import TEMPLATES
+from eliotbot.engine.templates import TEMPLATES, allowed_child_templates
 from eliotbot.engine.zigzag import ZigZagResult
 from eliotbot.schemas.market import Bar
-from eliotbot.schemas.wave import PivotPoint, RuleResult, SubwaveLegEvidence, SubwaveStatus
+from eliotbot.schemas.wave import Pattern, PivotPoint, RuleResult, SubwaveLegEvidence, SubwaveStatus
 
 _BY_NAME = {template.name: template for template in TEMPLATES}
-_MOTIVE = ("IMPULSE", "DIAGONAL")
-_CORRECTIVE = ("ZIGZAG_ABC", "FLAT")
+# The bounded fine-pivot search certifies only these four child templates.
+_CERTIFIABLE = {"IMPULSE", "DIAGONAL", "ZIGZAG_ABC", "FLAT"}
 _STATUS_RANK = {"UNAVAILABLE": 0, "UNVERIFIED": 1, "VERIFIED": 2}
 
 
@@ -27,7 +27,7 @@ _STATUS_RANK = {"UNAVAILABLE": 0, "UNVERIFIED": 1, "VERIFIED": 2}
 class _LegCertification:
     evidence: SubwaveLegEvidence
     points: tuple[PivotPoint, ...] = ()
-    template: str | None = None
+    template: Pattern | None = None
     scale: float | None = None
     rules: tuple[RuleResult, ...] = ()
 
@@ -38,27 +38,6 @@ class SubwaveCertification:
     fit: float | None
     evidence: tuple[SubwaveLegEvidence, ...]
     depth: int = 0
-
-
-def _leg_specs(candidate: Candidate) -> list[tuple[str, str]]:
-    name = candidate.template.name
-    if name in {"IMPULSE", "DIAGONAL"}:
-        kinds = ("MOTIVE", "CORRECTIVE", "MOTIVE", "CORRECTIVE", "MOTIVE")
-    elif name == "ZIGZAG_ABC":
-        kinds = ("MOTIVE", "CORRECTIVE", "MOTIVE")
-    elif name == "FLAT":
-        kinds = ("CORRECTIVE", "CORRECTIVE", "MOTIVE")
-    elif name == "TRIANGLE":
-        kinds = ("CORRECTIVE",) * 5
-    elif name == "WXY":
-        kinds = ("CORRECTIVE",) * 3
-    else:
-        return []
-    labels = candidate.template.labels
-    return [
-        (f"{labels[index]}->{labels[index + 1]}", kind)
-        for index, kind in enumerate(kinds[: len(candidate.points) - 1])
-    ]
 
 
 def _bounded(pivots: Sequence[PivotPoint], limit: int = 12) -> tuple[PivotPoint, ...]:
@@ -85,12 +64,12 @@ def _try_scale(
     right: PivotPoint,
     inner: Sequence[PivotPoint],
     direction: int,
-    kind: str,
+    allowed: Sequence[Pattern],
     bars: Sequence[Bar],
     scale: float,
     depth: int,
+    refine: Callable[[_LegCertification], _LegCertification] | None = None,
 ) -> _LegCertification:
-    allowed = _MOTIVE if kind == "MOTIVE" else _CORRECTIVE
     tried = False
     for name in allowed:
         template = _BY_NAME[name]
@@ -113,7 +92,11 @@ def _try_scale(
                     depth=depth,
                     reason=f"{name} 子结构通过硬规则",
                 )
-                return _LegCertification(evidence, points, name, scale, rules)
+                match = _LegCertification(evidence, points, name, scale, rules)
+                if refine is not None:
+                    match = refine(match)
+                if match.evidence.status == "VERIFIED":
+                    return match
     if tried:
         return _LegCertification(
             SubwaveLegEvidence(
@@ -142,17 +125,18 @@ def _certify_leg(
     left: PivotPoint,
     right: PivotPoint,
     direction: int,
-    kind: str,
+    allowed: Sequence[Pattern],
     finer: Sequence[tuple[float, ZigZagResult]],
     bars: Sequence[Bar],
     depth: int,
+    refine: Callable[[_LegCertification], _LegCertification] | None = None,
 ) -> _LegCertification:
     best: _LegCertification | None = None
     for scale, zigzag in finer:
         inner = _bounded(
             [point for point in zigzag.confirmed if left.index < point.index < right.index]
         )
-        result = _try_scale(leg, left, right, inner, direction, kind, bars, scale, depth)
+        result = _try_scale(leg, left, right, inner, direction, allowed, bars, scale, depth, refine)
         if (
             best is None
             or _STATUS_RANK[result.evidence.status] > _STATUS_RANK[best.evidence.status]
@@ -185,14 +169,51 @@ def _overall(evidence: Sequence[SubwaveLegEvidence], depth: int) -> SubwaveCerti
     return SubwaveCertification(status, fit, tuple(evidence), depth)
 
 
+def is_completed_contracting_triangle(candidate: Candidate) -> bool:
+    if candidate.template.name != "TRIANGLE" or candidate.stage != "COMPLETE":
+        return False
+    shape = next((rule for rule in candidate.rules if rule.rule_id == "TRIANGLE_SHAPE"), None)
+    return (
+        shape is not None
+        and shape.status == "PASS"
+        and shape.observed is not None
+        and shape.boundary is not None
+        and shape.observed < shape.boundary
+    )
+
+
+def classify_triangle_legs(evidence: Sequence[SubwaveLegEvidence]) -> dict[str, object]:
+    """Classify a triangle's legs under the Frost/Prechter group rule.
+
+    A zigzag-family leg is ZIGZAG_ABC or WXY. A complex leg is FLAT, WXY or
+    TRIANGLE; WXY therefore counts in both categories, which prevents two
+    WXY legs from being mistaken for zero complex legs.
+    """
+    patterns = [item.pattern for item in evidence if item.pattern is not None]
+    all_verified = len(evidence) == 5 and all(item.status == "VERIFIED" for item in evidence)
+    zigzag_legs = sum(pattern in {"ZIGZAG_ABC", "WXY"} for pattern in patterns)
+    complex_legs = sum(pattern in {"FLAT", "WXY", "TRIANGLE"} for pattern in patterns)
+    return {
+        "all_verified": all_verified,
+        "zigzag_legs": zigzag_legs,
+        "complex_legs": complex_legs,
+        "classic": all_verified and zigzag_legs >= 4 and complex_legs <= 1,
+    }
+
+
 def certify_subwaves(
     candidate: Candidate,
     zigzags: Sequence[ZigZagResult],
     scales: Sequence[float],
     depth: int,
     bars: Sequence[Bar],
+    *,
+    classic_triangles: bool = True,
 ) -> SubwaveCertification:
-    """Certify child structure using scales finer than the parent candidate."""
+    """Certify thinner-scale structure, with the classic triangle rule by default.
+
+    The loose option preserves per-leg selection for the controlled experiment.
+    """
     finer = sorted(
         (
             (scale, zigzag)
@@ -204,7 +225,9 @@ def certify_subwaves(
     )
     cache: dict[tuple[str, tuple[float, ...], int], SubwaveCertification] = {}
 
-    def run(current: Candidate, available: Sequence[tuple[float, ZigZagResult]], level: int):
+    def run(
+        current: Candidate, available: Sequence[tuple[float, ZigZagResult]], level: int
+    ) -> SubwaveCertification:
         key = (current.key, tuple(scale for scale, _ in available), level)
         if key in cache:
             return cache[key]
@@ -212,15 +235,50 @@ def certify_subwaves(
             result = SubwaveCertification("UNAVAILABLE", None, (), level)
             cache[key] = result
             return result
-        specs = _leg_specs(current)
-        if not specs:
-            result = SubwaveCertification("UNAVAILABLE", None, (), level)
-            cache[key] = result
-            return result
+        labels = current.template.labels
+        points = current.points
+
+        def allowed_at(index: int) -> tuple[Pattern, ...]:
+            return tuple(
+                name
+                for name in allowed_child_templates(current.template.name, index)
+                if name in _CERTIFIABLE
+            )
+
+        def deepen(leg: _LegCertification) -> _LegCertification:
+            if leg.evidence.status != "VERIFIED" or leg.template is None or leg.scale is None:
+                return leg
+            child = Candidate(
+                _BY_NAME[leg.template],
+                leg.points,
+                leg.points[-1],
+                1 if leg.points[-1].price > leg.points[0].price else -1,
+                "COMPLETE",
+                leg.rules,
+                (leg.scale,),
+            )
+            remaining = [(scale, zigzag) for scale, zigzag in available if scale < leg.scale]
+            nested = run(child, remaining, level - 1)
+            if nested.status == "UNAVAILABLE":
+                return leg
+            reason = "；深度2子结构通过" if nested.status == "VERIFIED" else "；深度2子结构未通过"
+            return replace(
+                leg,
+                evidence=leg.evidence.model_copy(
+                    update={"status": nested.status, "reason": leg.evidence.reason + reason}
+                ),
+            )
+
         legs: list[_LegCertification] = []
-        for index, (leg, kind) in enumerate(specs):
-            left, right = current.points[index], current.points[index + 1]
-            if current.developing and index == len(specs) - 1:
+        for index, (left, right) in enumerate(pairwise(points)):
+            leg = f"{labels[index]}->{labels[index + 1]}"
+            allowed = allowed_at(index)
+            unavailable_reason = None
+            if current.developing and index == len(points) - 2:
+                unavailable_reason = "父级最后一条腿仍在进行中，端点尚未确认"
+            elif not allowed:
+                unavailable_reason = "该父浪位置没有可用的内部结构认证规则"
+            if unavailable_reason:
                 legs.append(
                     _LegCertification(
                         SubwaveLegEvidence(
@@ -228,50 +286,55 @@ def certify_subwaves(
                             status="UNAVAILABLE",
                             point_count=2,
                             depth=level,
-                            reason="父级最后一条腿仍在进行中，端点尚未确认",
+                            reason=unavailable_reason,
                         )
                     )
                 )
                 continue
             direction = 1 if right.price > left.price else -1
-            legs.append(_certify_leg(leg, left, right, direction, kind, available, bars, level))
-        if level > 1:
-            for index, leg in enumerate(legs):
-                if leg.evidence.status != "VERIFIED" or leg.template is None:
-                    continue
-                child = Candidate(
-                    _BY_NAME[leg.template],
-                    leg.points,
-                    leg.points[-1],
-                    1 if leg.points[-1].price > leg.points[0].price else -1,
-                    "COMPLETE",
-                    leg.rules,
-                    (leg.scale,),
-                )
-                remaining = [
-                    (scale, zigzag) for scale, zigzag in available if scale < (leg.scale or 0)
-                ]
-                nested = run(child, remaining, level - 1)
-                if nested.status == "UNVERIFIED":
-                    legs[index] = replace(
-                        leg,
-                        evidence=leg.evidence.model_copy(
-                            update={
-                                "status": "UNVERIFIED",
-                                "reason": leg.evidence.reason + "；深度2子结构未通过",
-                            }
-                        ),
-                    )
-                elif nested.status == "VERIFIED":
-                    legs[index] = replace(
-                        leg,
-                        evidence=leg.evidence.model_copy(
-                            update={
-                                "reason": leg.evidence.reason + "；深度2子结构通过",
-                            }
-                        ),
-                    )
-        result = _overall([leg.evidence for leg in legs], level)
+            legs.append(_certify_leg(leg, left, right, direction, allowed, available, bars, level))
+        resolved = [deepen(leg) for leg in legs] if level > 1 else legs
+        result = _overall([leg.evidence for leg in resolved], level)
+        if classic_triangles and is_completed_contracting_triangle(current):
+            policy = classify_triangle_legs(result.evidence)
+            if not policy["classic"] and all(leg.evidence.status == "VERIFIED" for leg in legs):
+                # The quota depends on template names. One verified match per
+                # template suffices, even when the match comes from a finer scale.
+                options: list[list[SubwaveLegEvidence]] = []
+                for index, ((left, right), first) in enumerate(
+                    zip(pairwise(points), resolved, strict=True)
+                ):
+                    choices = [first.evidence] if first.evidence.status == "VERIFIED" else []
+                    direction = 1 if right.price > left.price else -1
+                    for name in allowed_at(index):
+                        if choices and name == first.evidence.pattern:
+                            continue
+                        alternate = _certify_leg(
+                            first.evidence.leg,
+                            left,
+                            right,
+                            direction,
+                            (name,),
+                            available,
+                            bars,
+                            level,
+                            refine=deepen if level > 1 else None,
+                        )
+                        if alternate.evidence.status == "VERIFIED":
+                            choices.append(alternate.evidence)
+                    if not choices:
+                        break
+                    options.append(choices)
+                if len(options) == len(legs):
+                    for evidence in product(*options):
+                        if classify_triangle_legs(evidence)["classic"]:
+                            result = _overall(evidence, level)
+                            break
+                if (
+                    result.status == "VERIFIED"
+                    and not classify_triangle_legs(result.evidence)["classic"]
+                ):
+                    result = replace(result, status="UNVERIFIED", fit=0.0)
         cache[key] = result
         return result
 

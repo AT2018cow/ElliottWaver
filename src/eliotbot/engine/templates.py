@@ -2,10 +2,12 @@
 
 from dataclasses import dataclass
 
+from eliotbot.schemas.wave import Pattern
+
 
 @dataclass(frozen=True)
 class PatternTemplate:
-    name: str
+    name: Pattern
     labels: tuple[str, ...]
     developing_stages: dict[int, str]
     complete_points: int
@@ -48,3 +50,29 @@ WXY = PatternTemplate(
     4,
 )
 TEMPLATES = (IMPULSE, ZIGZAG, TRIANGLE, FLAT, DIAGONAL, WXY)
+
+_MOTIVE = ("IMPULSE", "DIAGONAL")
+_CORRECTION = ("ZIGZAG_ABC", "FLAT", "WXY")
+_WITH_TRIANGLE = (*_CORRECTION, "TRIANGLE")
+# Four legs are three-wave corrections. A rare E-leg nested triangle is
+# permitted only as a provisional parent link; parents.py never marks it VERIFIED.
+_TRIANGLE_LEG = ("ZIGZAG_ABC", "FLAT", "WXY")
+_CHILD_TEMPLATES: dict[Pattern, tuple[tuple[Pattern, ...], ...]] = {
+    "IMPULSE": (_MOTIVE, _CORRECTION, ("IMPULSE",), _WITH_TRIANGLE, _MOTIVE),
+    "ZIGZAG_ABC": (_MOTIVE, _WITH_TRIANGLE, _MOTIVE),
+    "FLAT": (_CORRECTION, _WITH_TRIANGLE, _MOTIVE),
+    "TRIANGLE": (*(_TRIANGLE_LEG,) * 4, (*_TRIANGLE_LEG, "TRIANGLE")),
+    "WXY": (("ZIGZAG_ABC",), _WITH_TRIANGLE, ("ZIGZAG_ABC",)),
+}
+
+
+def allowed_child_templates(parent: Pattern, leg_index: int) -> tuple[Pattern, ...]:
+    """Return the templates for a direct child, indexed from the first parent leg.
+
+    The endpoint-only DIAGONAL does not identify the leading or ending subtype,
+    so its internal legs have no certification profile.
+    """
+    positions = _CHILD_TEMPLATES.get(parent)
+    if positions is None or not 0 <= leg_index < len(positions):
+        return ()
+    return positions[leg_index]

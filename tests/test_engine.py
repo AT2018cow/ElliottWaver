@@ -10,11 +10,23 @@ from eliotbot.engine.parents import attach_parent_context
 from eliotbot.engine.projector import project
 from eliotbot.engine.rules import check_pattern
 from eliotbot.engine.scorer import score, weight_scenarios
-from eliotbot.engine.subwaves import SubwaveCertification, certify_subwaves
-from eliotbot.engine.templates import DIAGONAL, FLAT, IMPULSE, WXY, ZIGZAG
+from eliotbot.engine.subwaves import (
+    SubwaveCertification,
+    certify_subwaves,
+    classify_triangle_legs,
+)
+from eliotbot.engine.templates import (
+    DIAGONAL,
+    FLAT,
+    IMPULSE,
+    TRIANGLE,
+    WXY,
+    ZIGZAG,
+    allowed_child_templates,
+)
 from eliotbot.engine.zigzag import ZigZagResult, extract
 from eliotbot.schemas.market import AnalysisRequest, Bar
-from eliotbot.schemas.wave import PivotPoint
+from eliotbot.schemas.wave import PivotPoint, SubwaveLegEvidence
 from eliotbot.service import AnalysisService
 
 
@@ -438,11 +450,11 @@ def test_subwave_depth_two_ignores_pivots_outside_the_parent_legs():
     assert with_outside.fit == baseline.fit
 
 
-def test_parent_context_links_child_inside_higher_degree_leg():
-    _, parent_pivots = make_pivots([100, 200, 150])
+def test_parent_context_reports_containment_as_provisional():
+    _, parent_pivots = make_pivots([100, 200, 150, 210])
     parent_points = tuple(
         pivot.model_copy(update={"index": index, "scale": 3.8})
-        for pivot, index in zip(parent_pivots, (0, 150, 300), strict=True)
+        for pivot, index in zip(parent_pivots, (0, 150, 240, 300), strict=True)
     )
     parent = Candidate(ZIGZAG, parent_points, parent_points[-1], 1, "COMPLETE", (), (3.8,))
     _, child_pivots = make_pivots([110, 130, 120, 140])
@@ -454,7 +466,7 @@ def test_parent_context_links_child_inside_higher_degree_leg():
 
     link = attach_parent_context([parent, child], "1d")[child.key]
 
-    assert link.status == "VERIFIED"
+    assert link.status == "PROVISIONAL"
     assert link.relation == "CONTAINED"
     assert link.parent_key == parent.key
     assert link.parent_pattern == "ZIGZAG_ABC"
@@ -463,40 +475,57 @@ def test_parent_context_links_child_inside_higher_degree_leg():
 
 
 def test_parent_context_marks_exact_leg_and_developing_leg():
-    _, parent_pivots = make_pivots([100, 200, 150])
+    _, parent_pivots = make_pivots([100, 200, 150, 210])
     parent_points = tuple(
         pivot.model_copy(update={"index": index, "scale": 3.8})
-        for pivot, index in zip(parent_pivots, (0, 150, 1000), strict=True)
+        for pivot, index in zip(parent_pivots, (0, 150, 300, 1000), strict=True)
     )
     parent = Candidate(ZIGZAG, parent_points, parent_points[-1], 1, "COMPLETE", (), (3.8,))
-    _, child_pivots = make_pivots([100, 130, 110, 200])
+    _, child_pivots = make_pivots([100, 130, 115, 160, 145, 200])
     child_points = tuple(
         pivot.model_copy(update={"index": index, "scale": 1.4})
-        for pivot, index in zip(child_pivots, (0, 50, 100, 150), strict=True)
+        for pivot, index in zip(child_pivots, (0, 25, 50, 75, 100, 150), strict=True)
     )
-    child = Candidate(ZIGZAG, child_points, child_points[-1], 1, "COMPLETE", (), (1.4,))
+    child = Candidate(IMPULSE, child_points, child_points[-1], 1, "COMPLETE", (), (1.4,))
     exact = attach_parent_context([parent, child], "1d")[child.key]
     assert exact.status == "VERIFIED"
     assert exact.relation == "EXACT_LEG"
     assert exact.wave_label == "A"
 
+    wrong_end = child_points[-1].model_copy(update={"price": 199})
+    mismatched = Candidate(
+        IMPULSE, (*child_points[:-1], wrong_end), wrong_end, 1, "COMPLETE", (), (1.4,)
+    )
+    assert attach_parent_context([parent, mismatched], "1d")[mismatched.key].status == "UNKNOWN"
+
+    _, corrective_pivots = make_pivots([100, 130, 115, 200])
+    corrective_points = tuple(
+        pivot.model_copy(update={"index": index})
+        for pivot, index in zip(corrective_pivots, (0, 50, 100, 150), strict=True)
+    )
+    corrective = Candidate(
+        ZIGZAG, corrective_points, corrective_points[-1], 1, "COMPLETE", (), (1.4,)
+    )
+    assert attach_parent_context([parent, corrective], "1d")[corrective.key].status == "UNKNOWN"
+
     developing_parent = Candidate(
         ZIGZAG,
         parent_points[:2],
-        parent_points[2],
+        parent_points[2].model_copy(update={"state": "DEVELOPING", "confirmed_at": None}),
         1,
         "B_DEVELOPING",
         (),
         (3.8,),
     )
-    _, down_pivots = make_pivots([190, 170, 180, 150])
+    _, down_pivots = make_pivots([200, 170, 180, 150])
     down_points = tuple(
-        pivot.model_copy(update={"index": index, "scale": 1.4})
-        for pivot, index in zip(down_pivots, (180, 220, 260, 300), strict=True)
+        pivot.model_copy(update={"index": index, "kind": "HIGH" if pivot.kind == "LOW" else "LOW"})
+        for pivot, index in zip(down_pivots, (150, 220, 260, 300), strict=True)
     )
     down = Candidate(ZIGZAG, down_points, down_points[-1], -1, "COMPLETE", (), (1.4,))
     provisional = attach_parent_context([developing_parent, down], "1d")[down.key]
     assert provisional.status == "PROVISIONAL"
+    assert provisional.relation == "EXACT_LEG"
     assert provisional.wave_label == "B"
 
 
@@ -516,6 +545,188 @@ def test_parent_context_is_unknown_when_child_crosses_a_parent_pivot():
     assert attach_parent_context([parent, child], "1d")[child.key].status == "UNKNOWN"
 
 
+def test_triangle_child_permissions_allow_only_provisional_nested_e():
+    for leg_index in range(4):
+        allowed = allowed_child_templates("TRIANGLE", leg_index)
+        assert "FLAT" in allowed
+        assert "TRIANGLE" not in allowed
+    assert "FLAT" in allowed_child_templates("TRIANGLE", 4)
+    assert "TRIANGLE" in allowed_child_templates("TRIANGLE", 4)
+    assert allowed_child_templates("TRIANGLE", 5) == ()
+    assert allowed_child_templates("ZIGZAG_ABC", 3) == ()
+
+
+def test_triangle_e_leg_accepts_flat_and_marks_nested_triangle_provisional():
+    parent_spec = [(0, 100), (100, 150), (200, 120), (300, 155), (400, 110), (500, 160)]
+    triangle_spec = [(400, 110), (420, 145), (440, 120), (460, 150), (480, 118), (500, 160)]
+    flat_spec = [(400, 110), (430, 145), (470, 111), (500, 160)]
+
+    def build(child_spec, child_template):
+        path = sorted(dict(parent_spec + child_spec).items())
+        prices = [0.0] * (path[-1][0] + 1)
+        for (left, start), (right, end) in zip(path, path[1:], strict=False):
+            for index in range(left, right + 1):
+                prices[index] = start + (end - start) * (index - left) / (right - left)
+        bars = tuple(make_bar(index, price) for index, price in enumerate(prices))
+
+        def pivots(spec, scale):
+            return tuple(
+                PivotPoint(
+                    pivot_id=f"p{index}",
+                    index=index,
+                    extreme_bar_id=bars[index].bar_id,
+                    extreme_at=bars[index].start_at,
+                    confirmed_at=bars[index].end_at,
+                    price=price,
+                    kind="LOW" if position % 2 == 0 else "HIGH",
+                    state="CONFIRMED",
+                    scale=scale,
+                    threshold_at_extreme=1,
+                )
+                for position, (index, price) in enumerate(spec)
+            )
+
+        def candidate(template, points):
+            rules = check_pattern(template.name, points, bars, 1, developing=False)
+            assert all(rule.status == "PASS" for rule in rules), rules
+            return Candidate(template, points, points[-1], 1, "COMPLETE", rules, (points[0].scale,))
+
+        return candidate(TRIANGLE, pivots(parent_spec, 3.8)), candidate(
+            child_template, pivots(child_spec, 2.4)
+        )
+
+    parent, triangle_child = build(triangle_spec, TRIANGLE)
+    triangle_link = attach_parent_context([parent, triangle_child], "1d")[triangle_child.key]
+    assert triangle_link.status == "PROVISIONAL"
+    assert triangle_link.relation == "EXACT_LEG"
+    assert triangle_link.parent_pattern == "TRIANGLE"
+    assert triangle_link.wave_label == "E"
+
+    parent, flat_child = build(flat_spec, FLAT)
+    flat_link = attach_parent_context([parent, flat_child], "1d")[flat_child.key]
+    assert flat_link.status == "VERIFIED"
+    assert flat_link.relation == "EXACT_LEG"
+    assert flat_link.parent_pattern == "TRIANGLE"
+    assert flat_link.wave_label == "E"
+
+
+def test_triangle_group_policy_counts_wxy_as_complex():
+    def evidence(patterns):
+        return tuple(
+            SubwaveLegEvidence(
+                leg=f"l{index}",
+                status="VERIFIED",
+                pattern=pattern,
+                point_count=4,
+                scale=2.4,
+                depth=1,
+                reason="test",
+            )
+            for index, pattern in enumerate(patterns)
+        )
+
+    assert classify_triangle_legs(evidence(["ZIGZAG_ABC"] * 5))["classic"]
+    assert classify_triangle_legs(evidence(["ZIGZAG_ABC"] * 4 + ["FLAT"]))["classic"]
+    assert not classify_triangle_legs(evidence(["ZIGZAG_ABC"] * 3 + ["FLAT"] * 2))["classic"]
+    assert not classify_triangle_legs(evidence(["FLAT"] * 5))["classic"]
+
+    wxy_two = classify_triangle_legs(evidence(["ZIGZAG_ABC"] * 3 + ["WXY"] * 2))
+    assert wxy_two["zigzag_legs"] == 5
+    assert wxy_two["complex_legs"] == 2
+    assert not wxy_two["classic"]
+
+    wxy_one = classify_triangle_legs(evidence(["ZIGZAG_ABC"] * 4 + ["WXY"]))
+    assert wxy_one["zigzag_legs"] == 5
+    assert wxy_one["complex_legs"] == 1
+    assert wxy_one["classic"]
+
+
+def _triangle_child_fixture(mode: str, direction: int = 1):
+    outer = ((0, 100), (100, 180), (220, 110), (320, 166), (430, 125), (520, 154))
+    path = list(outer)
+    finer_only = set()
+    for leg, ((left, start), (right, end)) in enumerate(zip(outer, outer[1:], strict=False)):
+        if mode == "alternates" and leg < 2:
+            width = end - start
+            indices = [left + (right - left) * offset // 5 for offset in range(1, 5)]
+            path.extend(
+                zip(
+                    indices,
+                    (start + 0.55 * width, start + 0.02 * width, end, start + 0.04 * width),
+                    strict=True,
+                )
+            )
+            finer_only.update(indices[:2])
+        else:
+            a, b = (
+                (end, start)
+                if mode == "five_flats"
+                else (start + 0.7 * (end - start), start + 0.35 * (end - start))
+            )
+            step = (right - left) // 3
+            path.extend(((left + step, a), (left + 2 * step, b)))
+    path.sort()
+    if direction < 0:
+        path = [(index, 300 - price) for index, price in path]
+    prices = [0.0] * (path[-1][0] + 1)
+    for (left, start), (right, end) in zip(path, path[1:], strict=False):
+        for index in range(left, right + 1):
+            prices[index] = start + (end - start) * (index - left) / (right - left)
+    bars = tuple(make_bar(index, price) for index, price in enumerate(prices))
+    finer = tuple(
+        PivotPoint(
+            pivot_id=f"p{index}",
+            index=index,
+            extreme_bar_id=bars[index].bar_id,
+            extreme_at=bars[index].start_at,
+            confirmed_at=bars[index].end_at,
+            price=price,
+            kind="LOW" if (position % 2 == 0) == (direction > 0) else "HIGH",
+            state="CONFIRMED",
+            scale=1.4,
+            threshold_at_extreme=1,
+        )
+        for position, (index, price) in enumerate(path)
+    )
+    coarser = tuple(p.model_copy(update={"scale": 2.4}) for p in finer if p.index not in finer_only)
+    by_index = {point.index: point for point in finer}
+    parent_points = tuple(by_index[index].model_copy(update={"scale": 3.8}) for index, _ in outer)
+    rules = check_pattern("TRIANGLE", parent_points, bars, direction, developing=False)
+    assert all(rule.status == "PASS" for rule in rules), rules
+    parent = Candidate(
+        TRIANGLE, parent_points, parent_points[-1], direction, "COMPLETE", rules, (3.8,)
+    )
+    return bars, parent, coarser, finer
+
+
+def test_triangle_group_policy_rejects_five_flats_and_accepts_five_zigzags():
+    bars, parent, coarser, _ = _triangle_child_fixture("five_flats")
+    flats = certify_subwaves(parent, [ZigZagResult(coarser, None)], [2.4], 1, bars)
+    assert flats.status == "UNVERIFIED"
+    assert flats.fit == pytest.approx(0.0)
+    assert [item.pattern for item in flats.evidence] == ["FLAT"] * 5
+
+    bars, parent, coarser, _ = _triangle_child_fixture("five_zigzags")
+    zigzags = certify_subwaves(parent, [ZigZagResult(coarser, None)], [2.4], 1, bars)
+    assert zigzags.status == "VERIFIED"
+    assert zigzags.fit == pytest.approx(1.0)
+    assert [item.pattern for item in zigzags.evidence] == ["ZIGZAG_ABC"] * 5
+
+
+@pytest.mark.parametrize("direction", [1, -1])
+@pytest.mark.parametrize("depth", [1, 2])
+def test_classic_triangle_finds_zigzag_alternatives_at_finer_scale(direction, depth):
+    bars, parent, coarser, finer = _triangle_child_fixture("alternates", direction)
+    zigzags = [ZigZagResult(finer, None), ZigZagResult(coarser, None)]
+    loose = certify_subwaves(parent, zigzags, [1.4, 2.4], depth, bars, classic_triangles=False)
+    assert [item.pattern for item in loose.evidence][:2] == ["FLAT", "FLAT"]
+    classic = certify_subwaves(parent, zigzags, [1.4, 2.4], depth, bars)
+    assert classic.status == "VERIFIED"
+    assert classic.fit == pytest.approx(1.0)
+    assert sum(item.pattern == "ZIGZAG_ABC" for item in classic.evidence) >= 4
+    assert any(item.scale == 1.4 for item in classic.evidence[:2])
+
+
 def test_wave_degree_thresholds():
     _, pivots = make_pivots([100, 120, 110, 150, 135, 160])
     start = pivots[0].model_copy(update={"index": 0})
@@ -527,7 +738,8 @@ def test_wave_degree_thresholds():
     assert wave_degree((start, minor), "1d") == "MINOR"
 
 
-def test_subwave_certification_accepts_complete_five_three_structure():
+@pytest.mark.parametrize("third_is_diagonal", [False, True])
+def test_subwave_certification_requires_impulse_in_third_wave(third_is_diagonal):
     parent_prices = [100, 120, 110, 150, 135, 160]
     parent_indices = [0, 10, 20, 30, 40, 50]
     inner = {
@@ -548,6 +760,10 @@ def test_subwave_certification_accepts_complete_five_three_structure():
         46: (155, "HIGH"),
         48: (148, "LOW"),
     }
+    if third_is_diagonal:
+        # Contracting diagonal scaled from [100,130,115,141,128,149] onto [110,150].
+        for index, offset in zip((22, 24, 26, 28), (30, 15, 41, 28), strict=True):
+            inner[index] = (110 + offset * 40 / 49, inner[index][1])
     path = sorted(
         [
             *zip(parent_indices, parent_prices, strict=True),
@@ -592,6 +808,22 @@ def test_subwave_certification_accepts_complete_five_three_structure():
     )
     candidate = Candidate(IMPULSE, points, points[-1], 1, "COMPLETE", (), (3.8,))
     result = certify_subwaves(candidate, [ZigZagResult(finer, finer[-1])], [2.4], 1, bars)
+    third_template = DIAGONAL if third_is_diagonal else IMPULSE
+    third = (points[2], *(p for p in finer if 20 < p.index < 30), points[3])
+    rules = check_pattern(third_template.name, third, bars, 1, developing=False)
+    assert all(rule.status == "PASS" for rule in rules)
+    child = Candidate(third_template, third, third[-1], 1, "COMPLETE", rules, (2.4,))
+    link = attach_parent_context([candidate, child], "1w")[child.key]
+    if third_is_diagonal:
+        assert link.status == "UNKNOWN"
+        assert result.status == "UNVERIFIED"
+        assert result.fit == pytest.approx(0.8)
+        assert result.evidence[2].leg == "2->3"
+        assert result.evidence[2].status == "UNVERIFIED"
+        assert result.evidence[2].pattern is None
+        return
+    assert link.status == "VERIFIED"
+    assert link.wave_label == "3"
     assert result.status == "VERIFIED"
     assert result.fit == pytest.approx(1.0)
     assert [item.status for item in result.evidence] == ["VERIFIED"] * 5

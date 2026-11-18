@@ -1,0 +1,837 @@
+{
+  "reviewed_commit": "0f566766d26dbb43a771cf38804143477226ad93",
+  "source_sha256": "6176f3f790cf8560a6657a3033dacafce0e16576e0440de3ba9514c0e39673f4",
+  "probe_sha256": "d8e38e9c38aae0f8822db1eccd7b5a2df56d1247e4ab694db646ae12c9660d94",
+  "engine_version": "ew-rules-v3/zigzag-v1/score-v2/subwave-v3/projection-v4/report-v4/search-v2/0.1.0",
+  "validated_at": "2026-11-18T06:13:55.781781+00:00",
+  "checks": {
+    "P3-R01": [
+      {
+        "direction": 1,
+        "parent_pattern": "ZIGZAG_ABC",
+        "child_pattern": "ZIGZAG_ABC",
+        "parent_hard_rule_failures": [],
+        "child_hard_rule_failures": [],
+        "observed": {
+          "status": "VERIFIED",
+          "relation": "EXACT_LEG",
+          "parent_key": "10c1b4c29bc4e144d0ea30da",
+          "parent_pattern": "ZIGZAG_ABC",
+          "parent_degree": "PRIMARY",
+          "wave_label": "C",
+          "leg_span": 100,
+          "reason": "matches ZIGZAG_ABC wave C (10c1b4c29bc4e144d0ea30da)"
+        },
+        "expected": "A zigzag cannot fill the entire motive C leg of a zigzag",
+        "status": "FAIL"
+      },
+      {
+        "direction": -1,
+        "parent_pattern": "ZIGZAG_ABC",
+        "child_pattern": "ZIGZAG_ABC",
+        "parent_hard_rule_failures": [],
+        "child_hard_rule_failures": [],
+        "observed": {
+          "status": "VERIFIED",
+          "relation": "EXACT_LEG",
+          "parent_key": "573517b592ca6665622f9e04",
+          "parent_pattern": "ZIGZAG_ABC",
+          "parent_degree": "PRIMARY",
+          "wave_label": "C",
+          "leg_span": 100,
+          "reason": "matches ZIGZAG_ABC wave C (573517b592ca6665622f9e04)"
+        },
+        "expected": "A zigzag cannot fill the entire motive C leg of a zigzag",
+        "status": "FAIL"
+      }
+    ],
+    "P3-R02": [
+      {
+        "direction": 1,
+        "parent_points": [
+          100.0,
+          120.0,
+          110.0,
+          150.0,
+          135.0,
+          160.0
+        ],
+        "parent_hard_rule_failures": [],
+        "observed": {
+          "status": "VERIFIED",
+          "fit": 1.0,
+          "evidence": [
+            {
+              "leg": "0->1",
+              "status": "VERIFIED",
+              "pattern": "IMPULSE",
+              "point_count": 6,
+              "scale": 2.4,
+              "depth": 1,
+              "reason": "IMPULSE 子结构通过硬规则"
+            },
+            {
+              "leg": "1->2",
+              "status": "VERIFIED",
+              "pattern": "ZIGZAG_ABC",
+              "point_count": 4,
+              "scale": 2.4,
+              "depth": 1,
+              "reason": "ZIGZAG_ABC 子结构通过硬规则"
+            },
+            {
+              "leg": "2->3",
+              "status": "VERIFIED",
+              "pattern": "DIAGONAL",
+              "point_count": 6,
+              "scale": 2.4,
+              "depth": 1,
+              "reason": "DIAGONAL 子结构通过硬规则"
+            },
+            {
+              "leg": "3->4",
+              "status": "VERIFIED",
+              "pattern": "ZIGZAG_ABC",
+              "point_count": 4,
+              "scale": 2.4,
+              "depth": 1,
+              "reason": "ZIGZAG_ABC 子结构通过硬规则"
+            },
+            {
+              "leg": "4->5",
+              "status": "VERIFIED",
+              "pattern": "IMPULSE",
+              "point_count": 6,
+              "scale": 2.4,
+              "depth": 1,
+              "reason": "IMPULSE 子结构通过硬规则"
+            }
+          ],
+          "depth": 1
+        },
+        "subwave_score": {
+          "feature": "subwave_structure",
+          "group": "subwaves",
+          "weight": 15.0,
+          "status": "AVAILABLE",
+          "value": 1.0,
+          "fit": 1.0,
+          "explanation": "子浪规则认证拟合；仅对通过硬规则的子结构计分"
+        },
+        "awarded_subwave_points": 15.0,
+        "third_wave_points": [
+          110.0,
+          134.48979591836735,
+          122.24489795918367,
+          143.46938775510205,
+          132.85714285714286,
+          150.0
+        ],
+        "third_as_impulse_failures": [
+          "W4_NO_OVERLAP"
+        ],
+        "expected": "Impulse subwave 3 must itself be an impulse, never a diagonal",
+        "status": "FAIL"
+      },
+      {
+        "direction": -1,
+        "parent_points": [
+          200.0,
+          180.0,
+          190.0,
+          150.0,
+          165.0,
+          140.0
+        ],
+        "parent_hard_rule_failures": [],
+        "observed": {
+          "status": "VERIFIED",
+          "fit": 1.0,
+          "evidence": [
+            {
+              "leg": "0->1",
+              "status": "VERIFIED",
+              "pattern": "IMPULSE",
+              "point_count": 6,
+              "scale": 2.4,
+              "depth": 1,
+              "reason": "IMPULSE 子结构通过硬规则"
+            },
+            {
+              "leg": "1->2",
+              "status": "VERIFIED",
+              "pattern": "ZIGZAG_ABC",
+              "point_count": 4,
+              "scale": 2.4,
+              "depth": 1,
+              "reason": "ZIGZAG_ABC 子结构通过硬规则"
+            },
+            {
+              "leg": "2->3",
+              "status": "VERIFIED",
+              "pattern": "DIAGONAL",
+              "point_count": 6,
+              "scale": 2.4,
+              "depth": 1,
+              "reason": "DIAGONAL 子结构通过硬规则"
+            },
+            {
+              "leg": "3->4",
+              "status": "VERIFIED",
+              "pattern": "ZIGZAG_ABC",
+              "point_count": 4,
+              "scale": 2.4,
+              "depth": 1,
+              "reason": "ZIGZAG_ABC 子结构通过硬规则"
+            },
+            {
+              "leg": "4->5",
+              "status": "VERIFIED",
+              "pattern": "IMPULSE",
+              "point_count": 6,
+              "scale": 2.4,
+              "depth": 1,
+              "reason": "IMPULSE 子结构通过硬规则"
+            }
+          ],
+          "depth": 1
+        },
+        "subwave_score": {
+          "feature": "subwave_structure",
+          "group": "subwaves",
+          "weight": 15.0,
+          "status": "AVAILABLE",
+          "value": 1.0,
+          "fit": 1.0,
+          "explanation": "子浪规则认证拟合；仅对通过硬规则的子结构计分"
+        },
+        "awarded_subwave_points": 15.0,
+        "third_wave_points": [
+          190.0,
+          165.51020408163265,
+          177.75510204081633,
+          156.53061224489795,
+          167.14285714285714,
+          150.0
+        ],
+        "third_as_impulse_failures": [
+          "W4_NO_OVERLAP"
+        ],
+        "expected": "Impulse subwave 3 must itself be an impulse, never a diagonal",
+        "status": "FAIL"
+      }
+    ]
+  },
+  "positive_controls": {
+    "exact_motive_C": [
+      {
+        "direction": 1,
+        "parent_pattern": "ZIGZAG_ABC",
+        "child_pattern": "IMPULSE",
+        "parent_hard_rule_failures": [],
+        "child_hard_rule_failures": [],
+        "observed": {
+          "status": "VERIFIED",
+          "relation": "EXACT_LEG",
+          "parent_key": "10c1b4c29bc4e144d0ea30da",
+          "parent_pattern": "ZIGZAG_ABC",
+          "parent_degree": "PRIMARY",
+          "wave_label": "C",
+          "leg_span": 100,
+          "reason": "matches ZIGZAG_ABC wave C (10c1b4c29bc4e144d0ea30da)"
+        },
+        "status": "PASS"
+      },
+      {
+        "direction": -1,
+        "parent_pattern": "ZIGZAG_ABC",
+        "child_pattern": "IMPULSE",
+        "parent_hard_rule_failures": [],
+        "child_hard_rule_failures": [],
+        "observed": {
+          "status": "VERIFIED",
+          "relation": "EXACT_LEG",
+          "parent_key": "573517b592ca6665622f9e04",
+          "parent_pattern": "ZIGZAG_ABC",
+          "parent_degree": "PRIMARY",
+          "wave_label": "C",
+          "leg_span": 100,
+          "reason": "matches ZIGZAG_ABC wave C (573517b592ca6665622f9e04)"
+        },
+        "status": "PASS"
+      }
+    ],
+    "five_three": [
+      {
+        "direction": 1,
+        "parent_points": [
+          100.0,
+          120.0,
+          110.0,
+          150.0,
+          135.0,
+          160.0
+        ],
+        "parent_hard_rule_failures": [],
+        "observed": {
+          "status": "VERIFIED",
+          "fit": 1.0,
+          "evidence": [
+            {
+              "leg": "0->1",
+              "status": "VERIFIED",
+              "pattern": "IMPULSE",
+              "point_count": 6,
+              "scale": 2.4,
+              "depth": 1,
+              "reason": "IMPULSE 子结构通过硬规则"
+            },
+            {
+              "leg": "1->2",
+              "status": "VERIFIED",
+              "pattern": "ZIGZAG_ABC",
+              "point_count": 4,
+              "scale": 2.4,
+              "depth": 1,
+              "reason": "ZIGZAG_ABC 子结构通过硬规则"
+            },
+            {
+              "leg": "2->3",
+              "status": "VERIFIED",
+              "pattern": "IMPULSE",
+              "point_count": 6,
+              "scale": 2.4,
+              "depth": 1,
+              "reason": "IMPULSE 子结构通过硬规则"
+            },
+            {
+              "leg": "3->4",
+              "status": "VERIFIED",
+              "pattern": "ZIGZAG_ABC",
+              "point_count": 4,
+              "scale": 2.4,
+              "depth": 1,
+              "reason": "ZIGZAG_ABC 子结构通过硬规则"
+            },
+            {
+              "leg": "4->5",
+              "status": "VERIFIED",
+              "pattern": "IMPULSE",
+              "point_count": 6,
+              "scale": 2.4,
+              "depth": 1,
+              "reason": "IMPULSE 子结构通过硬规则"
+            }
+          ],
+          "depth": 1
+        },
+        "subwave_score": {
+          "feature": "subwave_structure",
+          "group": "subwaves",
+          "weight": 15.0,
+          "status": "AVAILABLE",
+          "value": 1.0,
+          "fit": 1.0,
+          "explanation": "子浪规则认证拟合；仅对通过硬规则的子结构计分"
+        },
+        "awarded_subwave_points": 15.0,
+        "status": "PASS"
+      },
+      {
+        "direction": -1,
+        "parent_points": [
+          200.0,
+          180.0,
+          190.0,
+          150.0,
+          165.0,
+          140.0
+        ],
+        "parent_hard_rule_failures": [],
+        "observed": {
+          "status": "VERIFIED",
+          "fit": 1.0,
+          "evidence": [
+            {
+              "leg": "0->1",
+              "status": "VERIFIED",
+              "pattern": "IMPULSE",
+              "point_count": 6,
+              "scale": 2.4,
+              "depth": 1,
+              "reason": "IMPULSE 子结构通过硬规则"
+            },
+            {
+              "leg": "1->2",
+              "status": "VERIFIED",
+              "pattern": "ZIGZAG_ABC",
+              "point_count": 4,
+              "scale": 2.4,
+              "depth": 1,
+              "reason": "ZIGZAG_ABC 子结构通过硬规则"
+            },
+            {
+              "leg": "2->3",
+              "status": "VERIFIED",
+              "pattern": "IMPULSE",
+              "point_count": 6,
+              "scale": 2.4,
+              "depth": 1,
+              "reason": "IMPULSE 子结构通过硬规则"
+            },
+            {
+              "leg": "3->4",
+              "status": "VERIFIED",
+              "pattern": "ZIGZAG_ABC",
+              "point_count": 4,
+              "scale": 2.4,
+              "depth": 1,
+              "reason": "ZIGZAG_ABC 子结构通过硬规则"
+            },
+            {
+              "leg": "4->5",
+              "status": "VERIFIED",
+              "pattern": "IMPULSE",
+              "point_count": 6,
+              "scale": 2.4,
+              "depth": 1,
+              "reason": "IMPULSE 子结构通过硬规则"
+            }
+          ],
+          "depth": 1
+        },
+        "subwave_score": {
+          "feature": "subwave_structure",
+          "group": "subwaves",
+          "weight": 15.0,
+          "status": "AVAILABLE",
+          "value": 1.0,
+          "fit": 1.0,
+          "explanation": "子浪规则认证拟合；仅对通过硬规则的子结构计分"
+        },
+        "awarded_subwave_points": 15.0,
+        "status": "PASS"
+      }
+    ]
+  },
+  "frozen_parent_counterexamples": [
+    {
+      "source_snapshot_id": "13b1fcba2dcaed829ea8afd0760d3d918d956018409abbe5a2eca62ed296febf",
+      "result_digest": "7743e1f96758b87753b069129235d94a98af3ab901fe27b1f5100ca28c98ee0a",
+      "config_hash": "9c752132a779983f8d705e0f0ac831306a63e564520352f5800e9b3c65dc1a72",
+      "scenario_id": "5834610ff7db5b795abe8d1a",
+      "parent_scenario_id": "fbc1f1e2fe37fc06d73db4d2",
+      "parent_pattern": "TRIANGLE",
+      "parent_stage": "D_DEVELOPING",
+      "parent_leg": "C",
+      "child_pattern": "IMPULSE",
+      "parent_relation": "EXACT_LEG",
+      "parent_context": "VERIFIED",
+      "parent_points": [
+        {
+          "pivot_id": "88267828e66b1277eea6818e",
+          "index": 692,
+          "extreme_bar_id": "d98daff6720c95283d7ecae7",
+          "extreme_at": "2024-09-18T01:30:00Z",
+          "confirmed_at": "2024-09-24T07:20:00Z",
+          "price": 7908.523,
+          "kind": "LOW",
+          "state": "CONFIRMED",
+          "scale": 3.8,
+          "threshold_at_extreme": 464.19342984380614
+        },
+        {
+          "pivot_id": "efafe4b82fe890b123c1fb34",
+          "index": 945,
+          "extreme_bar_id": "ea6e60d5cd01dd5ef2d04e65",
+          "extreme_at": "2025-10-09T01:30:00Z",
+          "confirmed_at": "2025-10-17T07:20:00Z",
+          "price": 13806.693,
+          "kind": "HIGH",
+          "state": "CONFIRMED",
+          "scale": 3.8,
+          "threshold_at_extreme": 981.8694208122351
+        },
+        {
+          "pivot_id": "80e39a2588e14f3a0b54de30",
+          "index": 977,
+          "extreme_bar_id": "c5cb1e784a541e9a8c54f790",
+          "extreme_at": "2025-11-24T01:30:00Z",
+          "confirmed_at": "2025-12-24T07:20:00Z",
+          "price": 12448.32,
+          "kind": "LOW",
+          "state": "CONFIRMED",
+          "scale": 3.8,
+          "threshold_at_extreme": 938.627166540225
+        },
+        {
+          "pivot_id": "47334c3549576c5860f98699",
+          "index": 1114,
+          "extreme_bar_id": "181ec6027868d914d1249505",
+          "extreme_at": "2026-06-22T01:30:00Z",
+          "confirmed_at": "2026-07-08T07:20:00Z",
+          "price": 16374.02,
+          "kind": "HIGH",
+          "state": "CONFIRMED",
+          "scale": 3.8,
+          "threshold_at_extreme": 1425.6903433369478
+        },
+        {
+          "pivot_id": "7d27cad2699a3c2d09f5e661",
+          "index": 1213,
+          "extreme_bar_id": "fc66c8baa1a93fa4a554a44e",
+          "extreme_at": "2026-11-16T01:30:00Z",
+          "confirmed_at": null,
+          "price": 10642.365,
+          "kind": "LOW",
+          "state": "DEVELOPING",
+          "scale": 3.8,
+          "threshold_at_extreme": 1192.786695167873
+        }
+      ],
+      "child_points": [
+        {
+          "pivot_id": "80e39a2588e14f3a0b54de30",
+          "index": 977,
+          "extreme_bar_id": "c5cb1e784a541e9a8c54f790",
+          "extreme_at": "2025-11-24T01:30:00Z",
+          "confirmed_at": "2025-12-24T07:20:00Z",
+          "price": 12448.32,
+          "kind": "LOW",
+          "state": "CONFIRMED",
+          "scale": 3.8,
+          "threshold_at_extreme": 938.627166540225
+        },
+        {
+          "pivot_id": "5a0b2371d1696031c089d859",
+          "index": 1037,
+          "extreme_bar_id": "ef13f5dc1048dc3a515236fc",
+          "extreme_at": "2026-02-26T01:30:00Z",
+          "confirmed_at": "2026-03-23T07:20:00Z",
+          "price": 14536.076,
+          "kind": "HIGH",
+          "state": "CONFIRMED",
+          "scale": 3.8,
+          "threshold_at_extreme": 831.915435860834
+        },
+        {
+          "pivot_id": "bfe65e291cb98b66316fdf7f",
+          "index": 1055,
+          "extreme_bar_id": "836aabf070b04cdf70d00ca0",
+          "extreme_at": "2026-03-24T01:30:00Z",
+          "confirmed_at": "2026-04-10T07:20:00Z",
+          "price": 13169.251,
+          "kind": "LOW",
+          "state": "CONFIRMED",
+          "scale": 3.8,
+          "threshold_at_extreme": 1111.3149257934454
+        },
+        {
+          "pivot_id": "cc306303c1a9b0e69103a227",
+          "index": 1088,
+          "extreme_bar_id": "6b7b3ba24f95cedbe545be96",
+          "extreme_at": "2026-05-14T01:30:00Z",
+          "confirmed_at": "2026-06-08T07:20:00Z",
+          "price": 16207.752,
+          "kind": "HIGH",
+          "state": "CONFIRMED",
+          "scale": 3.8,
+          "threshold_at_extreme": 1094.6632220132244
+        },
+        {
+          "pivot_id": "bc2dc6c925f2435ca2bc754f",
+          "index": 1105,
+          "extreme_bar_id": "8dc2cedb735d74babdf55b57",
+          "extreme_at": "2026-06-08T01:30:00Z",
+          "confirmed_at": "2026-06-22T07:20:00Z",
+          "price": 14681.642,
+          "kind": "LOW",
+          "state": "CONFIRMED",
+          "scale": 3.8,
+          "threshold_at_extreme": 1420.607323193146
+        },
+        {
+          "pivot_id": "47334c3549576c5860f98699",
+          "index": 1114,
+          "extreme_bar_id": "181ec6027868d914d1249505",
+          "extreme_at": "2026-06-22T01:30:00Z",
+          "confirmed_at": "2026-07-08T07:20:00Z",
+          "price": 16374.02,
+          "kind": "HIGH",
+          "state": "CONFIRMED",
+          "scale": 3.8,
+          "threshold_at_extreme": 1425.6903433369478
+        }
+      ],
+      "parent_hard_rule_failures": [],
+      "child_hard_rule_failures": []
+    }
+  ],
+  "baseline_regression": {
+    "source_sha256": "6176f3f790cf8560a6657a3033dacafce0e16576e0440de3ba9514c0e39673f4",
+    "probe_sha256": "3a034005cafd6d1aea919b20faafb4f69ae8da6b3a7b53b655ad568a6b140973",
+    "checks": {
+      "ENG-R01": {
+        "status": "PASS",
+        "leg_lengths": [
+          30,
+          20,
+          32
+        ],
+        "failed_rules": {
+          "1": [
+            "DIAGONAL_SHAPE",
+            "W3_NOT_SHORTEST"
+          ],
+          "-1": [
+            "DIAGONAL_SHAPE",
+            "W3_NOT_SHORTEST"
+          ]
+        }
+      },
+      "ENG-R02": {
+        "status": "PASS",
+        "rule": "FAIL",
+        "ac_slope": 7,
+        "bd_slope": 0.1485148514851485
+      },
+      "ENG-R03": {
+        "status": "PASS",
+        "hard_rule_failures": [],
+        "crossed_conditions": []
+      },
+      "ENG-R04": {
+        "status": "PASS",
+        "base_fit": null,
+        "outside_only_fit": null
+      },
+      "ENG-R05": {
+        "status": "PASS",
+        "actual_config": "4515b976be9aadcb10a7f365a12829938f5ffb050830018b17a023f33215526d",
+        "expected_config": "4515b976be9aadcb10a7f365a12829938f5ffb050830018b17a023f33215526d"
+      },
+      "ENG-R06": {
+        "status": "PASS",
+        "analyze_with_allow_gaps": "OK",
+        "cli_replay_with_allow_gaps": "OK",
+        "cli_replay_strict": "INSUFFICIENT_DATA",
+        "same_result_digest": true,
+        "manifest_allow_gaps": true,
+        "prefixes_checked_with_api": 10
+      }
+    },
+    "frozen_cases": [
+      {
+        "label": "sse_long",
+        "suite": "validation_20261118_long_history_v3",
+        "status": "OK",
+        "prior_status": "OK",
+        "prior_result_digest": "7b1b4e1d70edac3f244301a721036804e17d95672e82e8025ae14414df7bbd84",
+        "result_digest": "7b1b4e1d70edac3f244301a721036804e17d95672e82e8025ae14414df7bbd84",
+        "input_snapshot_id": "6f21546d3f70ccc998a0c08eccec30b56b30a70df37c31237e6ad79f29e47ec6",
+        "report": "reports/independent-p3-20261118/baseline/CN/000001.SH/1w/2026-11-13/56cd3dbafef6122a043eeef53ca7ecb665d9d6bc80575d8d932af6b4ca1e5b2e"
+      },
+      {
+        "label": "szcomp_long",
+        "suite": "validation_20261118_long_history_v3",
+        "status": "OK",
+        "prior_status": "OK",
+        "prior_result_digest": "50117418b2a56ce9f5415da667d339f1dce67660cfe6e395b192f63d2c843900",
+        "result_digest": "50117418b2a56ce9f5415da667d339f1dce67660cfe6e395b192f63d2c843900",
+        "input_snapshot_id": "4a12a301decc2fabc96c90d499c698656dc53802ca9e53a8e6a895685f48ae75",
+        "report": "reports/independent-p3-20261118/baseline/CN/399001.SZ/1w/2026-11-13/e2e38dfd43ce0e6f3cc0f74166c3d50a3f6af1cd7a8ddbbbdade40ea1aab5d75"
+      },
+      {
+        "label": "csi300_long",
+        "suite": "validation_20261118_long_history_v3",
+        "status": "OK",
+        "prior_status": "OK",
+        "prior_result_digest": "77c4141a7a20762626b1fa023c722f3cc03f820de41c2b04307c2e6bb1dad886",
+        "result_digest": "77c4141a7a20762626b1fa023c722f3cc03f820de41c2b04307c2e6bb1dad886",
+        "input_snapshot_id": "cc7f6550d1f1f51dfa8d8518a9298fd4ebd6572f09b2ae38c6c58672f0f7b684",
+        "report": "reports/independent-p3-20261118/baseline/CN/000300.SH/1w/2026-11-13/b71ecf49a75838fa8688f98184512118c438c6f33217656caec2d9bdd000b860"
+      },
+      {
+        "label": "pingan_long",
+        "suite": "validation_20261118_long_history_v3",
+        "status": "OK",
+        "prior_status": "OK",
+        "prior_result_digest": "c698cf48f3a21edefa616c8ace5a68bff63aa325516128f90ad2be0d0a79ad35",
+        "result_digest": "c698cf48f3a21edefa616c8ace5a68bff63aa325516128f90ad2be0d0a79ad35",
+        "input_snapshot_id": "27296573c2f6db3b4ac9ec43f8b8fa6f307c7e364e448de767077205d32c60ae",
+        "report": "reports/independent-p3-20261118/baseline/CN/000001.SZ/1w/2026-11-13/ae378d2e66f2ca06e8623d11328ee83dd8cae376cec197675c6b325623b34434"
+      },
+      {
+        "label": "maotai_long",
+        "suite": "validation_20261118_long_history_v3",
+        "status": "OK",
+        "prior_status": "OK",
+        "prior_result_digest": "0df1590cee4b50948b9a2ec0ea3d9d4ac1f7fa3ee33a595d760770679bf968a2",
+        "result_digest": "0df1590cee4b50948b9a2ec0ea3d9d4ac1f7fa3ee33a595d760770679bf968a2",
+        "input_snapshot_id": "62831f09054c73de7a68a1de4a4d7222b0387d1eb0151aaccc8ce2a478a9d6c2",
+        "report": "reports/independent-p3-20261118/baseline/CN/600519.SH/1w/2026-11-13/4a061079ecc2408ab98f65d15d815e379cbf1f4224ed7e9c35c9e27e5728199f"
+      },
+      {
+        "label": "star50_day",
+        "suite": "validation_20261118_cn_index_v3",
+        "status": "OK",
+        "prior_status": "OK",
+        "prior_result_digest": "94bf07027a3b1bc8367500060c1e9341079a58818aa63050107850e85fd75928",
+        "result_digest": "94bf07027a3b1bc8367500060c1e9341079a58818aa63050107850e85fd75928",
+        "input_snapshot_id": "e36c70b2180c7b4ba3886d061c33a938e695ddf4e4aebc4cdfa2a4bee8f5dfa8",
+        "report": "reports/independent-p3-20261118/baseline/CN/000688.SH/1d/2026-11-16/a64f7ff19f67f184ecb7d2aa2114459058d8dc7cd6eddd55861850a19cb18e1e"
+      },
+      {
+        "label": "csi300_day",
+        "suite": "validation_20261118_cn_index_v3",
+        "status": "OK",
+        "prior_status": "OK",
+        "prior_result_digest": "b3c125a5c711894e2fa6f019feaed0cdebb365a9d82909746d4b92f7502f07dc",
+        "result_digest": "b3c125a5c711894e2fa6f019feaed0cdebb365a9d82909746d4b92f7502f07dc",
+        "input_snapshot_id": "32d2718be006f90841f91e7f4941d9ae87be26217d01f272a81aa5dac9404dcc",
+        "report": "reports/independent-p3-20261118/baseline/CN/000300.SH/1d/2026-11-16/4f883cce8fa18d07f558f39903cbed5622295fb45be7f58eaa692eb571490836"
+      },
+      {
+        "label": "csi300_week",
+        "suite": "validation_20261118_cn_index_v3",
+        "status": "OK",
+        "prior_status": "OK",
+        "prior_result_digest": "e126167115b04e5779389d6c5b42728eae73f697886a1b17e4908b8df016d5ee",
+        "result_digest": "e126167115b04e5779389d6c5b42728eae73f697886a1b17e4908b8df016d5ee",
+        "input_snapshot_id": "56590a8167542bfe73bdae581f1b197da54e9ae14a23136bd39e74203c7d3d4d",
+        "report": "reports/independent-p3-20261118/baseline/CN/000300.SH/1w/2026-11-13/bf541c662abb986f289740d926707f4147a84b3ec3c916aa0dcde4878e878a52"
+      },
+      {
+        "label": "szcomp_day",
+        "suite": "validation_20261118_cn_index_v3",
+        "status": "OK",
+        "prior_status": "OK",
+        "prior_result_digest": "7743e1f96758b87753b069129235d94a98af3ab901fe27b1f5100ca28c98ee0a",
+        "result_digest": "7743e1f96758b87753b069129235d94a98af3ab901fe27b1f5100ca28c98ee0a",
+        "input_snapshot_id": "13b1fcba2dcaed829ea8afd0760d3d918d956018409abbe5a2eca62ed296febf",
+        "report": "reports/independent-p3-20261118/baseline/CN/399001.SZ/1d/2026-11-16/9ac4fef0f9cfe1dc0807ddf70c102e778447f1373580dac0a0f195658bd494aa"
+      },
+      {
+        "label": "bse50_day",
+        "suite": "validation_20261118_cn_index_v3",
+        "status": "OK",
+        "prior_status": "OK",
+        "prior_result_digest": "f1d89e3fd4fb3b7cbe9e1cfdb2f167914927f3c89d31b40d31360b400803c26a",
+        "result_digest": "f1d89e3fd4fb3b7cbe9e1cfdb2f167914927f3c89d31b40d31360b400803c26a",
+        "input_snapshot_id": "13fae49950965fcdbedd8102423e20eb9897d5eab3fc9d1b593c15da4e5cca19",
+        "report": "reports/independent-p3-20261118/baseline/CN/899050.BJ/1d/2026-11-16/f5d8833706a156ff082bed35b548e465a60cd0d4c5e5e94addd18e01473beb26"
+      },
+      {
+        "label": "ssecomp_day",
+        "suite": "validation_20261118_cn_index_v3",
+        "status": "OK",
+        "prior_status": "OK",
+        "prior_result_digest": "e13b0b6ab88a94ec243cc84fdad675ea3142ffa2b5e767a7475e02c0087e7cba",
+        "result_digest": "e13b0b6ab88a94ec243cc84fdad675ea3142ffa2b5e767a7475e02c0087e7cba",
+        "input_snapshot_id": "01f6f374e92b4d7689f5d64e0d6990574282fbab60749f0bf736cd127c8e899a",
+        "report": "reports/independent-p3-20261118/baseline/CN/000001.SH/1d/2026-11-16/d351904a0ab02a205f3dd4a4f2a7c5e7eb673e1d8aba064621c872cb7fa414b2"
+      },
+      {
+        "label": "pingan_day",
+        "suite": "validation_20261118_cn_index_v3",
+        "status": "UNCLEAR",
+        "prior_status": "UNCLEAR",
+        "prior_result_digest": "28350307f6f3da48337423690db1d2db01cfbf8e2dbfa28ecf84ad440e17c05e",
+        "result_digest": "28350307f6f3da48337423690db1d2db01cfbf8e2dbfa28ecf84ad440e17c05e",
+        "input_snapshot_id": "e15f336b000c27992f892babe72378c73866b316f9c89c410c4ccaf8908da24e",
+        "report": "reports/independent-p3-20261118/baseline/CN/000001.SZ/1d/2026-11-16/d44c55a41e893970155c074947cfc2d049665db956d32a1f28fab68619f2a69a"
+      },
+      {
+        "label": "maotai_day",
+        "suite": "validation_20261118_ext5_v3",
+        "status": "OK",
+        "prior_status": "OK",
+        "prior_result_digest": "44afb3cf9ef693688a5688cee02028a0330272794cd1c3f3c0544a24584a0e52",
+        "result_digest": "44afb3cf9ef693688a5688cee02028a0330272794cd1c3f3c0544a24584a0e52",
+        "input_snapshot_id": "1b89533b62b28eacc88ed5f95c7e4da2478679b2b7bb5a247d6ee111d5fee124",
+        "report": "reports/independent-p3-20261118/baseline/CN/600519.SH/1d/2026-11-16/db7cd56b6e233d900b8758cf79cfd92e1f056381146bc77d15a1f9d92c73f4b5"
+      },
+      {
+        "label": "maotai_week",
+        "suite": "validation_20261118_ext5_v3",
+        "status": "OK",
+        "prior_status": "OK",
+        "prior_result_digest": "9c51228405f221776acaa2882bf7f2249ad0e20963256bf6faef1e6076abfcf7",
+        "result_digest": "9c51228405f221776acaa2882bf7f2249ad0e20963256bf6faef1e6076abfcf7",
+        "input_snapshot_id": "7ac5f7eb7e138256946d9a0436645de756a78abc59ce70f68f7e30757c7513bc",
+        "report": "reports/independent-p3-20261118/baseline/CN/600519.SH/1w/2026-11-13/938f26306e2b24e34b3911a65a552548375067210c3e26f42ec6114129b297c3"
+      },
+      {
+        "label": "maotai_hour",
+        "suite": "validation_20261118_ext5_v3",
+        "status": "UNCLEAR",
+        "prior_status": "UNCLEAR",
+        "prior_result_digest": "5771aefc205b5364ef0a0ab81d5489a494f617d756a511155a192cf5264215a8",
+        "result_digest": "5771aefc205b5364ef0a0ab81d5489a494f617d756a511155a192cf5264215a8",
+        "input_snapshot_id": "00d67c91c914c115fe3a6dbd33c3ecfa4ff945133056164e0ef5cdb591e83118",
+        "report": "reports/independent-p3-20261118/baseline/CN/600519.SH/60m/2026-11-16/66bfc867f119936f6930c7a0dc60b8da2e8716c0f1b43a5dee749f8d758cc243"
+      },
+      {
+        "label": "maotai_5m",
+        "suite": "validation_20261118_ext5_v3",
+        "status": "OK",
+        "prior_status": "OK",
+        "prior_result_digest": "22d44b4076f7d6f3105c5d5d509666342a2e30f4636dec83ae44a1d711fa9f85",
+        "result_digest": "22d44b4076f7d6f3105c5d5d509666342a2e30f4636dec83ae44a1d711fa9f85",
+        "input_snapshot_id": "eb270f1681277487b446b23f0487a8f5c9ac120bc817b844f08cfbc25cf42a29",
+        "report": "reports/independent-p3-20261118/baseline/CN/600519.SH/5m/2026-11-16/0f54a7428d1d150ba14a993d10bf25da40dfb9355db5117445053dd0d4e4b7ec"
+      },
+      {
+        "label": "maotai_1m",
+        "suite": "validation_20261118_ext5_v3",
+        "status": "OK",
+        "prior_status": "OK",
+        "prior_result_digest": "1dd2b4399af013fdee97dad5cecff557178c914c94147debcf117f1185a01a3a",
+        "result_digest": "1dd2b4399af013fdee97dad5cecff557178c914c94147debcf117f1185a01a3a",
+        "input_snapshot_id": "0312bbad8528c7dfdbbfca54eae262c5d25663799f15429a7f180023beb6fec2",
+        "report": "reports/independent-p3-20261118/baseline/CN/600519.SH/1m/2026-11-16/f585e3f316afc41da781d34c9bbd0a134dda8a42a9f5f7dc56cd6986b91e3871"
+      },
+      {
+        "label": "maotai_15m",
+        "suite": "validation_20261118_ext5_v3",
+        "status": "OK",
+        "prior_status": "OK",
+        "prior_result_digest": "c087fd0efdd235f26397d61152170f1c197b8dce46d0cca6955c946318dc7e40",
+        "result_digest": "c087fd0efdd235f26397d61152170f1c197b8dce46d0cca6955c946318dc7e40",
+        "input_snapshot_id": "6f116b759b14021bb1fd45b4ace0ed94770cec78712a6ab87b883bcfabb27b9c",
+        "report": "reports/independent-p3-20261118/baseline/CN/600519.SH/15m/2026-11-16/f05b64e9e045de99e7ef7b74dac80e7515a601a78a179fca711d2ec88ceb8902"
+      },
+      {
+        "label": "maotai_30m",
+        "suite": "validation_20261118_ext5_v3",
+        "status": "OK",
+        "prior_status": "OK",
+        "prior_result_digest": "b0745cbcc2d5048dce958b2bd9828c9d358b4953381e0e28bf538bfab436a333",
+        "result_digest": "b0745cbcc2d5048dce958b2bd9828c9d358b4953381e0e28bf538bfab436a333",
+        "input_snapshot_id": "fe40715ff916efb5174f2964e36aab010fd5801d63e1e4ed08e10a62d5de15f7",
+        "report": "reports/independent-p3-20261118/baseline/CN/600519.SH/30m/2026-11-16/c1091fa13d70d7302149fa43d6c54e8dfe56ee8a827b1af5cf878d31f3b26cbc"
+      },
+      {
+        "label": "pingan_day",
+        "suite": "validation_20261118_ext5_v3",
+        "status": "UNCLEAR",
+        "prior_status": "UNCLEAR",
+        "prior_result_digest": "91a86fd661dbd6ee7b94b91ba3e67a1529ddcc027350ea781e417a2246e61ea6",
+        "result_digest": "91a86fd661dbd6ee7b94b91ba3e67a1529ddcc027350ea781e417a2246e61ea6",
+        "input_snapshot_id": "2b999d695f9a4d69b01fc8f8a1c0ef94e13cfd922fe1ae90f6712e8a792568f4",
+        "report": "reports/independent-p3-20261118/baseline/CN/000001.SZ/1d/2026-11-16/8061a19202384fecc23c0fd78b5339cd1ce22875a49f4703f3ab586a75296297"
+      },
+      {
+        "label": "catl_day",
+        "suite": "validation_20261118_ext5_v3",
+        "status": "OK",
+        "prior_status": "OK",
+        "prior_result_digest": "6de69d4ddf5876e6aad34caf2c00f7d9cd9dd4ea13f311e64572148da6d2d959",
+        "result_digest": "6de69d4ddf5876e6aad34caf2c00f7d9cd9dd4ea13f311e64572148da6d2d959",
+        "input_snapshot_id": "25e8ab0aa16c69cd4a32b168bb36f05ed68075cf1fb4262555d918c9e3fa6cf9",
+        "report": "reports/independent-p3-20261118/baseline/CN/300750.SZ/1d/2026-11-16/71ac56546a30c1727d88bae6fbf031f17e96ead6a377d6a5670f5a3293bc1b02"
+      }
+    ]
+  },
+  "baseline_digest_matches": 21
+}

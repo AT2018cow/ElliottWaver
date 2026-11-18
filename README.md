@@ -84,9 +84,9 @@ SNAPSHOT_ID='替换为完整snapshot_id'
 .venv/bin/ruff format --check src tests scripts
 ```
 
-本次 171 项测试通过。引擎修复使用 21 组冻结真实快照复验，覆盖个股多周期、沪深京指数和长历史周线。美股适配器的现有证据为冻结 HTTP 契约测试。详见 [验收记录索引](docs/reviews/README.md)。
+本次 180 项测试通过。引擎修复使用 21 组冻结真实快照复验，覆盖个股多周期、沪深京指数和长历史周线。美股适配器的现有证据为冻结 HTTP 契约测试。详见 [验收记录索引](docs/reviews/README.md)。
 
-当前枚举普通推动浪、ABC 锯齿，以及端点级的三角形、平台、楔形和双锯齿 WXY。P3 已加入父级包含关系和规则级子浪认证：父级输出 `VERIFIED / PROVISIONAL / UNKNOWN`，子浪逐腿输出 `VERIFIED / UNVERIFIED / UNAVAILABLE`。完整无限递归、复杂组合调整、概率校准、北交所个股和 Web 仍是后续阶段。子浪没有取得证据时明确显示 `UNAVAILABLE`，配置不能将其伪装为已认证。
+当前枚举普通推动浪、ABC 锯齿，以及端点级的三角形、平台、楔形和双锯齿 WXY。父级认证要求端点吻合且子模板符合浪段规则，只有时间包含时标记 `PROVISIONAL`。子浪认证使用相同的浪段规则，逐腿报告 `VERIFIED / UNVERIFIED / UNAVAILABLE`；已完成收敛三角形还要求至少四腿为锯齿族、复杂腿最多一条，E 腿嵌套只标记 `PROVISIONAL`。
 
 - [原始系统设计](DESIGN.md)：产品目标、核心思路和交互设想。
 - [中文使用手册](docs/USER_GUIDE.md)：安装、实际操作、结果解读、配置及排错。

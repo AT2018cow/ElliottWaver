@@ -6,10 +6,11 @@ from eliotbot.config import SearchConfig, Settings
 from eliotbot.engine.degree import wave_degree
 from eliotbot.engine.indicators import calculate, ema
 from eliotbot.engine.matcher import Candidate, search
+from eliotbot.engine.parents import attach_parent_context
 from eliotbot.engine.projector import project
 from eliotbot.engine.rules import check_pattern
 from eliotbot.engine.scorer import score, weight_scenarios
-from eliotbot.engine.subwaves import subwave_fit
+from eliotbot.engine.subwaves import SubwaveCertification, certify_subwaves
 from eliotbot.engine.templates import DIAGONAL, FLAT, IMPULSE, WXY, ZIGZAG
 from eliotbot.engine.zigzag import ZigZagResult, extract
 from eliotbot.schemas.market import AnalysisRequest, Bar
@@ -405,8 +406,9 @@ def test_wxy_y_projection_uses_its_own_endpoints_and_confirmation():
     assert zones and all(zone.low > 120 for zone in zones)
 
 
-def test_subwave_depth_two_uses_only_intervals_inside_one_parent_leg():
+def test_subwave_depth_two_ignores_pivots_outside_the_parent_legs():
     _, pivots = make_pivots([100, 120, 110, 130])
+    bars = tuple(make_bar(index, 100) for index in range(41))
 
     def at(indices):
         return tuple(
@@ -418,17 +420,100 @@ def test_subwave_depth_two_uses_only_intervals_inside_one_parent_leg():
     parent = Candidate(ZIGZAG, points, points[-1], 1, "COMPLETE", (), (3.8,))
     mid = ZigZagResult(at([0, 11, 16, 22, 40]), None)
     coarse = ZigZagResult(points, None)
-    baseline = subwave_fit(
-        parent, [ZigZagResult(at([12, 14]), None), mid, coarse], [1.4, 2.4, 3.8], 2
-    )
-    with_outside = subwave_fit(
+    baseline = certify_subwaves(
         parent,
-        [ZigZagResult(at([2, 4, 12, 14, 18, 19, 32, 34]), None), mid, coarse],
+        [ZigZagResult(at([12, 14]), None), mid, coarse],
         [1.4, 2.4, 3.8],
         2,
+        bars,
     )
-    assert baseline == pytest.approx(2 / 3)
-    assert with_outside == baseline
+    with_outside = certify_subwaves(
+        parent,
+        [ZigZagResult(at([2, 4, 12, 14, 32, 34]), None), mid, coarse],
+        [1.4, 2.4, 3.8],
+        2,
+        bars,
+    )
+    assert baseline.fit is None
+    assert with_outside.fit == baseline.fit
+
+
+def test_parent_context_links_child_inside_higher_degree_leg():
+    _, parent_pivots = make_pivots([100, 200, 150])
+    parent_points = tuple(
+        pivot.model_copy(update={"index": index, "scale": 3.8})
+        for pivot, index in zip(parent_pivots, (0, 150, 300), strict=True)
+    )
+    parent = Candidate(ZIGZAG, parent_points, parent_points[-1], 1, "COMPLETE", (), (3.8,))
+    _, child_pivots = make_pivots([110, 130, 120, 140])
+    child_points = tuple(
+        pivot.model_copy(update={"index": index, "scale": 1.4})
+        for pivot, index in zip(child_pivots, (20, 40, 60, 80), strict=True)
+    )
+    child = Candidate(ZIGZAG, child_points, child_points[-1], 1, "COMPLETE", (), (1.4,))
+
+    link = attach_parent_context([parent, child], "1d")[child.key]
+
+    assert link.status == "VERIFIED"
+    assert link.relation == "CONTAINED"
+    assert link.parent_key == parent.key
+    assert link.parent_pattern == "ZIGZAG_ABC"
+    assert link.parent_degree == "PRIMARY"
+    assert link.wave_label == "A"
+
+
+def test_parent_context_marks_exact_leg_and_developing_leg():
+    _, parent_pivots = make_pivots([100, 200, 150])
+    parent_points = tuple(
+        pivot.model_copy(update={"index": index, "scale": 3.8})
+        for pivot, index in zip(parent_pivots, (0, 150, 1000), strict=True)
+    )
+    parent = Candidate(ZIGZAG, parent_points, parent_points[-1], 1, "COMPLETE", (), (3.8,))
+    _, child_pivots = make_pivots([100, 130, 110, 200])
+    child_points = tuple(
+        pivot.model_copy(update={"index": index, "scale": 1.4})
+        for pivot, index in zip(child_pivots, (0, 50, 100, 150), strict=True)
+    )
+    child = Candidate(ZIGZAG, child_points, child_points[-1], 1, "COMPLETE", (), (1.4,))
+    exact = attach_parent_context([parent, child], "1d")[child.key]
+    assert exact.status == "VERIFIED"
+    assert exact.relation == "EXACT_LEG"
+    assert exact.wave_label == "A"
+
+    developing_parent = Candidate(
+        ZIGZAG,
+        parent_points[:2],
+        parent_points[2],
+        1,
+        "B_DEVELOPING",
+        (),
+        (3.8,),
+    )
+    _, down_pivots = make_pivots([190, 170, 180, 150])
+    down_points = tuple(
+        pivot.model_copy(update={"index": index, "scale": 1.4})
+        for pivot, index in zip(down_pivots, (180, 220, 260, 300), strict=True)
+    )
+    down = Candidate(ZIGZAG, down_points, down_points[-1], -1, "COMPLETE", (), (1.4,))
+    provisional = attach_parent_context([developing_parent, down], "1d")[down.key]
+    assert provisional.status == "PROVISIONAL"
+    assert provisional.wave_label == "B"
+
+
+def test_parent_context_is_unknown_when_child_crosses_a_parent_pivot():
+    _, parent_pivots = make_pivots([100, 200, 150])
+    parent_points = tuple(
+        pivot.model_copy(update={"index": index, "scale": 3.8})
+        for pivot, index in zip(parent_pivots, (0, 150, 300), strict=True)
+    )
+    parent = Candidate(ZIGZAG, parent_points, parent_points[-1], 1, "COMPLETE", (), (3.8,))
+    _, child_pivots = make_pivots([110, 130, 120, 140])
+    child_points = tuple(
+        pivot.model_copy(update={"index": index, "scale": 1.4})
+        for pivot, index in zip(child_pivots, (100, 200, 250, 300), strict=True)
+    )
+    child = Candidate(ZIGZAG, child_points, child_points[-1], 1, "COMPLETE", (), (1.4,))
+    assert attach_parent_context([parent, child], "1d")[child.key].status == "UNKNOWN"
 
 
 def test_wave_degree_thresholds():
@@ -442,45 +527,107 @@ def test_wave_degree_thresholds():
     assert wave_degree((start, minor), "1d") == "MINOR"
 
 
-def test_subwave_presence_counts_finer_pivots():
-    _, pivots = make_pivots([100, 120, 110, 150, 135, 160])
-    indices = (0, 10, 20, 30, 40, 50)
-    points = tuple(
-        pivot.model_copy(update={"index": index})
-        for pivot, index in zip(pivots, indices, strict=False)
+def test_subwave_certification_accepts_complete_five_three_structure():
+    parent_prices = [100, 120, 110, 150, 135, 160]
+    parent_indices = [0, 10, 20, 30, 40, 50]
+    inner = {
+        2: (105, "HIGH"),
+        4: (102, "LOW"),
+        6: (112, "HIGH"),
+        8: (106, "LOW"),
+        12: (116, "LOW"),
+        16: (119, "HIGH"),
+        22: (125, "HIGH"),
+        24: (118, "LOW"),
+        26: (140, "HIGH"),
+        28: (132, "LOW"),
+        32: (144, "LOW"),
+        36: (148, "HIGH"),
+        42: (145, "HIGH"),
+        44: (140, "LOW"),
+        46: (155, "HIGH"),
+        48: (148, "LOW"),
+    }
+    path = sorted(
+        [
+            *zip(parent_indices, parent_prices, strict=True),
+            *((index, price) for index, (price, _) in inner.items()),
+        ]
     )
-    candidate = Candidate(IMPULSE, points, points[-1], 1, "COMPLETE", (), (3.8,))
-
-    def pivot(index, price, kind):
-        return PivotPoint(
+    prices = [0.0] * (parent_indices[-1] + 1)
+    for (left, start), (right, end) in zip(path, path[1:], strict=False):
+        for index in range(left, right + 1):
+            fraction = (index - left) / (right - left)
+            prices[index] = start + fraction * (end - start)
+    bars = tuple(make_bar(index, price) for index, price in enumerate(prices))
+    points = tuple(
+        PivotPoint(
+            pivot_id=f"p{index}",
+            index=index,
+            extreme_bar_id=bars[index].bar_id,
+            extreme_at=bars[index].start_at,
+            confirmed_at=bars[index].end_at,
+            price=price,
+            kind="LOW" if index % 20 == 0 else "HIGH",
+            state="CONFIRMED",
+            scale=3.8,
+            threshold_at_extreme=1,
+        )
+        for index, price in zip(parent_indices, parent_prices, strict=True)
+    )
+    finer = tuple(
+        PivotPoint(
             pivot_id=f"f{index}",
             index=index,
-            extreme_bar_id=f"f{index}",
-            extreme_at=pivots[0].extreme_at,
-            confirmed_at=pivots[0].confirmed_at,
+            extreme_bar_id=bars[index].bar_id,
+            extreme_at=bars[index].start_at,
+            confirmed_at=bars[index].end_at,
             price=price,
             kind=kind,
             state="CONFIRMED",
             scale=2.4,
             threshold_at_extreme=1,
         )
-
-    finer = []
-    for base in (0, 20, 40):
-        for offset, kind in ((2, "HIGH"), (4, "LOW"), (6, "HIGH"), (8, "LOW")):
-            finer.append(pivot(base + offset, 110 + offset, kind))
-    for base in (10, 30):
-        for offset, kind in ((2, "LOW"), (4, "HIGH")):
-            finer.append(pivot(base + offset, 115 + offset, kind))
-    zigzag = ZigZagResult(tuple(finer), finer[-1])
-    assert subwave_fit(candidate, [zigzag], [2.4], 1) == pytest.approx(1.0)
-    assert subwave_fit(candidate, [ZigZagResult((), None)], [2.4], 1) == pytest.approx(0.0)
+        for index, (price, kind) in sorted(inner.items())
+    )
+    candidate = Candidate(IMPULSE, points, points[-1], 1, "COMPLETE", (), (3.8,))
+    result = certify_subwaves(candidate, [ZigZagResult(finer, finer[-1])], [2.4], 1, bars)
+    assert result.status == "VERIFIED"
+    assert result.fit == pytest.approx(1.0)
+    assert [item.status for item in result.evidence] == ["VERIFIED"] * 5
+    assert [item.pattern for item in result.evidence] == [
+        "IMPULSE",
+        "ZIGZAG_ABC",
+        "IMPULSE",
+        "ZIGZAG_ABC",
+        "IMPULSE",
+    ]
 
 
 def test_subwave_evidence_is_available_when_enabled(bundle, monkeypatch):
     import eliotbot.service as service_module
+    from eliotbot.schemas.wave import SubwaveLegEvidence
 
-    monkeypatch.setattr(service_module, "calculate_subwave_fit", lambda *args: 1.0)
+    monkeypatch.setattr(
+        service_module,
+        "certify_subwaves",
+        lambda *args: SubwaveCertification(
+            "VERIFIED",
+            1.0,
+            (
+                SubwaveLegEvidence(
+                    leg="0->1",
+                    status="VERIFIED",
+                    pattern="IMPULSE",
+                    point_count=6,
+                    scale=2.4,
+                    depth=1,
+                    reason="测试子结构",
+                ),
+            ),
+            1,
+        ),
+    )
     result = AnalysisService(Settings(search={"max_subwave_depth": 1})).analyze_bundle(
         AnalysisRequest(symbol="AAPL", as_of=bundle.as_of), bundle
     )
@@ -491,4 +638,5 @@ def test_subwave_evidence_is_available_when_enabled(bundle, monkeypatch):
         if item.feature == "subwave_structure"
     ]
     assert any(item.status == "AVAILABLE" for item in evidence)
-    assert any(scenario.subwave_status == "UNVERIFIED" for scenario in result.scenarios)
+    assert any(scenario.subwave_status == "VERIFIED" for scenario in result.scenarios)
+    assert any(scenario.subwave_evidence for scenario in result.scenarios)

@@ -14,6 +14,12 @@ from eliotbot.util import atomic_write, canonical_json, digest
 from eliotbot.visualization.chart_builder import build_plotly, render_html, svg_chart
 
 
+def _parent_summary(scenario) -> str:
+    if scenario.parent_context == "UNKNOWN":
+        return "UNKNOWN"
+    return f"{scenario.parent_context}/{scenario.parent_degree}/{scenario.parent_wave_label}"
+
+
 def markdown_report(result: AnalysisResult) -> str:
     lines = [
         f"# EliotBot · {result.instrument.canonical_symbol}",
@@ -28,12 +34,12 @@ def markdown_report(result: AnalysisResult) -> str:
         "",
         "候选权重仅表示本次枚举候选之间的相对评分，统计成功概率尚未校准。",
         "",
-        "| 剧本 | 浪级 | 当前阶段 | 质量分 | 证据覆盖 | 候选权重 |",
-        "| --- | --- | --- | --- | --- | --- |",
+        "| 剧本 | 浪级 | 父级 | 当前阶段 | 子浪 | 质量分 | 证据覆盖 | 候选权重 |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for i, scenario in enumerate(result.scenarios, 1):
         lines.append(
-            f"| S{i} | {scenario.degree} | {scenario.name} | {scenario.score.quality_score:.1f}/100 | {scenario.score.coverage:.1%} | {scenario.relative_weight:.1%} |"
+            f"| S{i} | {scenario.degree} | {_parent_summary(scenario)} | {scenario.name} | {scenario.subwave_status} | {scenario.score.quality_score:.1f}/100 | {scenario.score.coverage:.1%} | {scenario.relative_weight:.1%} |"
         )
     if not result.scenarios:
         lines += ["", "当前没有达到质量与证据门槛的候选，不强行给出数浪结论。"]
@@ -56,7 +62,14 @@ def markdown_report(result: AnalysisResult) -> str:
             "",
             f"## S{i} · {scenario.name}",
             "",
-            f"剧本 ID：`{scenario.scenario_id}`；下一段方向：{scenario.next_leg_bias}；子浪状态：{scenario.subwave_status}。",
+            f"剧本 ID：`{scenario.scenario_id}`；下一段方向：{scenario.next_leg_bias}。",
+            "",
+            (
+                f"父级上下文：{scenario.parent_context}；关系：{scenario.parent_relation}；"
+                f"父级模板：{scenario.parent_pattern or '—'}；父级浪级：{scenario.parent_degree or '—'}；"
+                f"父级浪段：{scenario.parent_wave_label or '—'}；父候选：`{scenario.parent_scenario_id or '—'}`。"
+            ),
+            f"子浪认证：{scenario.subwave_status}。",
             "",
             "### 关键条件",
             "",
@@ -69,6 +82,19 @@ def markdown_report(result: AnalysisResult) -> str:
             lines.append(
                 f"- {zone.label}：**{zone.low:.4f}–{zone.high:.4f}**；来源：{', '.join(zone.methods)}；独立方法数 {zone.independent_method_count}。"
             )
+        if scenario.subwave_evidence:
+            lines += [
+                "",
+                "### 子浪认证",
+                "",
+                "| 腿 | 状态 | 子模板 | 点数 | 尺度 | 深度 | 说明 |",
+                "| --- | --- | --- | ---: | ---: | ---: | --- |",
+            ]
+            for item in scenario.subwave_evidence:
+                scale = f"{item.scale:g}" if item.scale is not None else "—"
+                lines.append(
+                    f"| {item.leg} | {item.status} | {item.pattern or '—'} | {item.point_count} | {scale} | {item.depth} | {item.reason} |"
+                )
         lines += [
             "",
             "### 得分依据",

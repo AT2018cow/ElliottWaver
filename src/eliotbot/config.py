@@ -130,7 +130,7 @@ def large_degree_settings(settings: Settings) -> Settings:
 
 
 def long_term_settings(settings: Settings) -> Settings:
-    """Use the full 20-year download window and the wider large-degree search."""
+    """Use the full 20-year window, wider search and subwave certification."""
     analysis = settings.analysis.model_copy(
         update={
             "timeframe": "1w",
@@ -141,7 +141,9 @@ def long_term_settings(settings: Settings) -> Settings:
             "top_k": 8,
         }
     )
-    return large_degree_settings(settings.model_copy(update={"analysis": analysis}))
+    settings = large_degree_settings(settings.model_copy(update={"analysis": analysis}))
+    search = settings.search.model_copy(update={"max_subwave_depth": 1})
+    return settings.model_copy(update={"search": search})
 
 
 def load_settings(path: Path | None = None) -> Settings:

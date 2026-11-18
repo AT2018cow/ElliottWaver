@@ -230,7 +230,7 @@ def score(
             15,
             subwave_fit,
             subwave_fit,
-            "多尺度子浪存在性检查；未做完整规则认证",
+            "子浪规则认证拟合；仅对通过硬规则的子结构计分",
         )
     expected = sum(e.weight for e in evidence if e.status != "NOT_APPLICABLE")
     available = sum(e.weight for e in evidence if e.status == "AVAILABLE")

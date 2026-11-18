@@ -13,10 +13,11 @@ from eliotbot.data.router import route_symbol
 from eliotbot.engine.degree import wave_degree
 from eliotbot.engine.indicators import calculate
 from eliotbot.engine.matcher import Candidate, search
+from eliotbot.engine.parents import attach_parent_context
 from eliotbot.engine.projector import project
 from eliotbot.engine.scorer import score, weight_scenarios
 from eliotbot.engine.span_selector import require_history, select_anchors
-from eliotbot.engine.subwaves import subwave_fit as calculate_subwave_fit
+from eliotbot.engine.subwaves import SubwaveCertification, certify_subwaves
 from eliotbot.engine.zigzag import extract
 from eliotbot.errors import DataError, InputError
 from eliotbot.schemas.market import AnalysisRequest, MarketDataBundle
@@ -174,19 +175,23 @@ class AnalysisService:
         )
         if request.anchor and not candidates:
             warnings.append("EXPLICIT_ANCHOR_UNMATCHED: 指定锚点没有匹配合法的当前计数")
+        parent_links = attach_parent_context(candidates, request.timeframe)
         scenarios = []
         excluded: list[tuple[float, float, str, Candidate]] = []
         for candidate in candidates:
-            subwave = (
-                calculate_subwave_fit(
+            certification = (
+                certify_subwaves(
                     candidate,
                     zigzags,
                     config.analysis.scales,
                     config.search.max_subwave_depth,
+                    bars,
                 )
                 if config.search.max_subwave_depth > 0
-                else None
+                else SubwaveCertification("UNAVAILABLE", None, (), 0)
             )
+            subwave = certification.fit
+            parent = parent_links[candidate.key]
             breakdown = score(
                 candidate,
                 bars,
@@ -227,11 +232,17 @@ class AnalysisService:
                 timeframe=request.timeframe,
             )
             bias = -candidate.direction if candidate.stage == "COMPLETE" else candidate.direction
-            note = (
-                ("子浪结构尚未认证，当前为端点与价格规则候选",)
-                if subwave is None
-                else ("子浪为多尺度存在性检查，未做完整规则认证",)
-            )
+            if config.search.max_subwave_depth == 0:
+                note = ("未启用子浪认证；当前为端点与价格规则候选",)
+            elif certification.status == "VERIFIED":
+                note = ("子浪规则认证通过",)
+            elif certification.status == "UNVERIFIED":
+                note = ("子浪规则认证未完全通过，查看 subwave_evidence",)
+            else:
+                note = ("子浪证据不足，当前为端点与价格规则候选",)
+            if parent.status == "PROVISIONAL":
+                note += (f"PARENT_CONTEXT_PROVISIONAL: {parent.reason}",)
+                warnings.append(f"PARENT_CONTEXT_PROVISIONAL: {candidate.key} {parent.reason}")
             if not zones:
                 note += ("NO_FEASIBLE_TARGET: 当前没有符合方向及硬边界的未触及目标",)
             scenarios.append(
@@ -247,7 +258,14 @@ class AnalysisService:
                     next_leg_bias="UP" if bias > 0 else "DOWN",
                     stage=candidate.stage,
                     degree=wave_degree(candidate.points, request.timeframe),
-                    subwave_status="UNVERIFIED" if subwave is not None else "UNAVAILABLE",
+                    parent_context=parent.status,
+                    parent_relation=parent.relation,
+                    parent_scenario_id=parent.parent_key,
+                    parent_pattern=parent.parent_pattern,
+                    parent_degree=parent.parent_degree,
+                    parent_wave_label=parent.wave_label,
+                    subwave_status=certification.status,
+                    subwave_evidence=certification.evidence,
                     completed_waves=tuple(
                         WaveLabel(label=label, pivot=pivot)
                         for label, pivot in zip(

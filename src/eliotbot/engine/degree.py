@@ -1,11 +1,8 @@
 """Heuristic wave degree from the bar span of a candidate."""
 
 from collections.abc import Sequence
-from typing import Literal
 
-from eliotbot.schemas.wave import PivotPoint
-
-Degree = Literal["MINOR", "INTERMEDIATE", "PRIMARY", "CYCLE", "SUPERCYCLE", "UNKNOWN"]
+from eliotbot.schemas.wave import Degree, PivotPoint
 
 
 def wave_degree(points: Sequence[PivotPoint], timeframe: str) -> Degree:

@@ -192,11 +192,11 @@ A 股老指数/老股票原始数据可到 1990/1991 年；引擎日历从 **199
 # 只放宽搜索，不改变数据窗口
 .venv/bin/eliot analyze 000300.SH --large-degree --timeframe 1w
 
-# 子浪存在性检查（0/1/2）
+# 子浪规则认证（0/1/2）
 .venv/bin/eliot analyze 000001.SH --long-term --subwave-depth 1
 ```
 
-`--long-term` 等价于：`history_years=20`、`max_analysis_bars=5000`、默认 `1w`、`top_k=8`、`anchor_mode=spread`、`max_bridge_intervals=21`、`beam_width=512`、`max_expansions=200000`。`--large-degree` 只应用后三项搜索参数。
+`--long-term` 等价于：`history_years=20`、`max_analysis_bars=5000`、默认 `1w`、`top_k=8`、`anchor_mode=spread`、`max_bridge_intervals=21`、`beam_width=512`、`max_expansions=200000`、`max_subwave_depth=1`。`--large-degree` 只应用后三项搜索参数，不改变子浪深度。
 
 30 年以上日线会超过 `max_analysis_bars` 上限 5000；请用周线，或接受 `ANALYSIS_WINDOW_TRUNCATED` 警告。个股长历史通常有停牌缺口；`--allow-gaps` 会继续分析并给出 `ALLOWED_GAPS` 警告，不补造价格。
 
@@ -270,9 +270,11 @@ HTML 包含 K 线、成交量、MACD 三个面板。可以通过图上方的下�
 | `B_DEVELOPING / C_DEVELOPING` | ABC 模板中的 B 浪或 C 浪进行中 |
 | `COMPLETE` | 当前模板已完成；查看 `next_leg_bias` 判断程序评估的下一段方向 |
 | 浪级 | `MINOR / INTERMEDIATE / PRIMARY / CYCLE / SUPERCYCLE`；按候选 K 线跨度启发式划分，不同浪级不宜直接比较 |
-| 子浪状态 | 默认 `UNAVAILABLE`；`--subwave-depth 1/2` 时为 `UNVERIFIED`（多尺度存在性检查，不是完整认证） |
+| 父级上下文 | `VERIFIED` 表示候选完整落在更高浪级某一父腿内且方向一致；`PROVISIONAL` 表示父腿仍在进行中；`UNKNOWN` 表示本次枚举没有可验证父级 |
+| 父级关系 | `EXACT_LEG` 表示候选端点与父腿端点完全对齐；`CONTAINED` 表示候选完整落在父腿内部；`UNKNOWN` 表示没有父级 |
+| 子浪状态 | `VERIFIED` 表示所有已确认父腿都通过子模板硬规则；`UNVERIFIED` 表示部分腿失败或仍在进行中；`UNAVAILABLE` 表示没有足够细尺度证据 |
 
-当前枚举普通推动浪、ABC 锯齿、三角形、平台、楔形和双锯齿 WXY；新模板是端点级硬规则，内部子浪未完整认证。`pattern_direction` 是整个模板方向，`next_leg_bias` 是下一段方向，二者在完成态可能不同。
+当前枚举普通推动浪、ABC 锯齿、三角形、平台、楔形和双锯齿 WXY；新模板先按端点级硬规则筛选，再用可选子浪认证检查内部结构。复杂组合调整仍未覆盖。`pattern_direction` 是整个模板方向，`next_leg_bias` 是下一段方向，二者在完成态可能不同。
 
 ### 6.3 条件、目标与证据
 
@@ -300,11 +302,11 @@ HTML 包含 K 线、成交量、MACD 三个面板。可以通过图上方的下�
 
 三角形通过 A–C 与 B–D 轨道的斜率和宽度判断收敛或扩散。楔形采用收敛、非截短的端点模板，检查第 2 和第 4 浪的回撤边界、第 1 和第 4 浪重叠及第 3 浪长度。平台 B 至少回撤 A 的 90%，可越过 A 起点，C 须回到 A 端点附近。双锯齿 X 至少回撤 W 的 50% 且不能触及 W 起点，Y 完成时须越过 W 端点。这些规则用于筛选端点形态候选。
 
-`--subwave-depth 1/2` 启用多尺度子浪存在性检查。深度 2 只使用完整落在同一父浪段内的细尺度区间，无可用区间时使用深度 1 的结果。有证据的候选显示 `UNVERIFIED`。显式传 `--subwave-depth 0` 可覆盖 YAML 或环境变量配置并关闭检查。
+`--subwave-depth 1/2` 启用子浪规则认证：父腿端点加更细尺度确认拐点组成子候选，再用顶层硬规则检查 5 浪推动/楔形与 3 浪锯齿/平台。只有所有已确认父腿都通过才显示 `VERIFIED`；部分失败或父腿仍在进行中显示 `UNVERIFIED`；没有足够细尺度证据显示 `UNAVAILABLE`。深度 2 会在已认证的子结构上再用下一层更细尺度认证一层，缺少下一层证据时保留深度 1 结果。`--long-term` 默认深度 1；显式传 `--subwave-depth 0` 可覆盖 YAML 或环境变量配置并关闭检查。
 
 目标带、条件价和图中分析价格属于同一复权坐标；原始收盘价另存为 JSON 的 `latest_raw_close`。比较不同历史截止日期的 A 股结果时，还应核对复权基准和 `price_coordinate_id`。
 
-默认情况下内部子浪与父级位置尚未认证，子浪证据会显示 `UNAVAILABLE`，`calibrated_event_probability` 保持 `null`。启用 `--subwave-depth` 后也只做多尺度存在性检查，不认证完整 3/5 浪规则；规则通过表示当前已实现的端点及影线约束通过，不等于完整内部波浪结构已被认证。
+父级上下文只使用本次枚举到的候选建立关系，搜索未枚举到的更大结构不会凭空补造，仍为 `UNKNOWN`。子浪认证覆盖当前实现的 5 浪推动/楔形和 3 浪锯齿/平台，复杂组合调整、running flat、扩散楔形和截短五浪仍未覆盖。`calibrated_event_probability` 保持 `null`；规则通过表示当前端点、影线和子模板约束通过，不等于所有外部父级位置和复杂内部结构都已被认证。
 
 ## 7. 日期、时间和锚点
 
@@ -402,14 +404,14 @@ cp -n config.example.yaml config.yaml
 | `search.beam_width` | `128` | 搜索束宽；大级别模式 512 |
 | `search.max_expansions` | `50000` | 有限搜索的扩展预算；大级别模式 200000 |
 | `search.max_bridge_intervals` | `5` | 允许跳过的最大间隔（奇数 1–21）；大级别模式 21 |
-| `search.max_subwave_depth` | `0` | `0/1/2`；1/2 启用多尺度子浪存在性检查 |
+| `search.max_subwave_depth` | `0` | `0/1/2`；1 认证一层子浪，2 再向下认证一层 |
 | `data.us_feed` | `sip` | 默认美股 feed |
 | `data.delayed_access_buffer_minutes` | `20` | K 线结束后的可用时间缓冲 |
 | `cache.directory` | `.cache/eliotbot` | 本地快照与缓存位置 |
 | `output.directory` | `reports` | 真实分析默认报告根目录 |
 | `output.formats` | `[html, md]` | 默认报告格式；JSON 始终保存 |
 
-配置字段必须符合样例结构，未知字段会报错。`search.max_subwave_depth` 允许 `0/1/2`；`1/2` 只是多尺度存在性检查，不是完整子浪递归认证。`demo` 有独立的默认输出目录和格式，需要通过其 `--output-dir`、`--format` 修改。
+配置字段必须符合样例结构，未知字段会报错。`search.max_subwave_depth` 允许 `0/1/2`；`1` 对已确认父腿做一层子模板规则认证，`2` 再向下认证一层。`--long-term` 会把它设为 1，显式 `--subwave-depth 0` 可覆盖。`demo` 有独立的默认输出目录和格式，需要通过其 `--output-dir`、`--format` 修改。
 
 已暴露为命令参数的设置，其优先级为：显式命令参数 > `ELIOT_` 环境变量 > YAML 配置 > 内置默认值。例如只对一次调用改变候选数：
 
@@ -450,9 +452,9 @@ done
 | `--snapshot ID --offline` | 使用已有快照，不联网 |
 | `--allow-stale` | 显式接受快照覆盖不足，保留陈旧标记 |
 | `--allow-gaps` | 长历史个股停牌/未知缺口继续分析，输出 `ALLOWED_GAPS` |
-| `--long-term` | 20 年窗口、周线默认、Top-8、首尾锚点、大级别搜索 |
+| `--long-term` | 20 年窗口、周线默认、Top-8、首尾锚点、大级别搜索、深度 1 子浪认证 |
 | `--large-degree` | 只放宽桥接/beam/扩展预算，不改变数据窗口 |
-| `--subwave-depth 0/1/2` | 多尺度子浪存在性检查；不是完整子浪认证 |
+| `--subwave-depth 0/1/2` | 子浪规则认证深度；0 关闭，1 认证一层，2 再向下认证一层 |
 | `--output-dir PATH` | 报告根目录 |
 | `--format html,png,md` | 附加产物格式，JSON 和 manifest 始终保存 |
 | `--renderer plotly` | `plotly` 为默认交互图；`svg` 为另一渲染器，可直接导出 PNG |
@@ -489,7 +491,9 @@ done
 | `ANALYSIS_WINDOW_TRUNCATED` | 数据根数超过 `max_analysis_bars`，锚点只用最近 N 根；提高该值或改用周线 |
 | `ALLOWED_GAPS` | 显式 `--allow-gaps` 后忽略了停牌/未知缺口；结果保留该警告 |
 | `MIXED_DEGREE_SCENARIOS` | 同时展示了不同浪级的候选；先在同一浪级内比较 |
-| 子浪状态 `UNVERIFIED` | 启用了 `--subwave-depth`，但只做多尺度存在性检查，不是完整子浪认证 |
+| `PARENT_CONTEXT_PROVISIONAL` | 候选落在父级最后一条仍在进行的腿内；父级端点确认前不能当作已认证 |
+| 子浪状态 `UNVERIFIED` | 部分父腿子模板未通过，或父级最后一条腿仍在进行中；查看 `subwave_evidence` |
+| 子浪状态 `UNAVAILABLE` | 没有足够的更细尺度确认拐点；不是失败，但也不能当作已认证 |
 | 输入 `000688` 被当成深市个股或身份失败 | 上证指数要写 `000688.SH` 或 `sh000688`；`000001` / `000001.SZ` 默认是平安银行 |
 | `SH880xxx sector indices are not supported` | 同花顺行业指数当前未接入；请使用 `SH000*`、`SZ399*`、`BJ899*` 官方指数代码 |
 | 快照不存在 | 检查完整 ID、当前工作目录，以及是否使用相同 `cache.directory` |

@@ -1,6 +1,6 @@
 {
-  "source_sha256": "a4720d1bd356cb1064ef0df9205654d81669d524fbed9e2fcaed75537c383062",
-  "probe_sha256": "3f232e275de10f1eb4425c136a0c18241891c165e36e1271afd15a9b70f27e10",
+  "source_sha256": "6176f3f790cf8560a6657a3033dacafce0e16576e0440de3ba9514c0e39673f4",
+  "probe_sha256": "3a034005cafd6d1aea919b20faafb4f69ae8da6b3a7b53b655ad568a6b140973",
   "checks": {
     "ENG-R01": {
       "status": "PASS",
@@ -33,8 +33,8 @@
     },
     "ENG-R04": {
       "status": "PASS",
-      "base_fit": 0.0,
-      "outside_only_fit": 0.0
+      "base_fit": null,
+      "outside_only_fit": null
     },
     "ENG-R05": {
       "status": "PASS",
@@ -54,213 +54,213 @@
   "frozen_cases": [
     {
       "label": "sse_long",
-      "suite": "validation_long_history_20261118",
+      "suite": "validation_20261118_long_history_v3",
       "status": "OK",
       "prior_status": "OK",
-      "prior_result_digest": "86304b3b02fa62ed60da698812bfd55da6aa1f8c26de6f3529d5a25aa5109e5b",
-      "result_digest": "c86583097f6379a48588645c77f9221a01cc56d669480899133865a4ff201673",
+      "prior_result_digest": "7b1b4e1d70edac3f244301a721036804e17d95672e82e8025ae14414df7bbd84",
+      "result_digest": "7b1b4e1d70edac3f244301a721036804e17d95672e82e8025ae14414df7bbd84",
       "input_snapshot_id": "6f21546d3f70ccc998a0c08eccec30b56b30a70df37c31237e6ad79f29e47ec6",
-      "report": "reports/validation-engine-fix/CN/000001.SH/1w/2026-11-13/fa3fd08d3ecf4d85222299ef5861674bacaf761632c53d0f86ea3e631d8bdeea"
+      "report": "reports/validation-engine-fix/CN/000001.SH/1w/2026-11-13/56cd3dbafef6122a043eeef53ca7ecb665d9d6bc80575d8d932af6b4ca1e5b2e"
     },
     {
       "label": "szcomp_long",
-      "suite": "validation_long_history_20261118",
+      "suite": "validation_20261118_long_history_v3",
       "status": "OK",
       "prior_status": "OK",
-      "prior_result_digest": "f41137a25ebe6c6086bc0349d560bb769b98e2da090a4d0a1915c1acf097364d",
-      "result_digest": "cba78e3e35b1e41e4668e8c88ec8ccba3d3b4afa8940a6a116144f8f5f90f15b",
+      "prior_result_digest": "50117418b2a56ce9f5415da667d339f1dce67660cfe6e395b192f63d2c843900",
+      "result_digest": "50117418b2a56ce9f5415da667d339f1dce67660cfe6e395b192f63d2c843900",
       "input_snapshot_id": "4a12a301decc2fabc96c90d499c698656dc53802ca9e53a8e6a895685f48ae75",
-      "report": "reports/validation-engine-fix/CN/399001.SZ/1w/2026-11-13/45c5ec17b9a03f52f22a1dd7e4e88876f1c4e7a8dfabec9e27adedbfd838e547"
+      "report": "reports/validation-engine-fix/CN/399001.SZ/1w/2026-11-13/e2e38dfd43ce0e6f3cc0f74166c3d50a3f6af1cd7a8ddbbbdade40ea1aab5d75"
     },
     {
       "label": "csi300_long",
-      "suite": "validation_long_history_20261118",
+      "suite": "validation_20261118_long_history_v3",
       "status": "OK",
       "prior_status": "OK",
-      "prior_result_digest": "aa174e720c76c6f1eefcc05a6e18abf57c9dacbb2071db2c8bc704cda6917c8e",
-      "result_digest": "c664305b2d2c7076d434c30b31363a49bbc1de266d93f6b6e5c1787bd80539e0",
+      "prior_result_digest": "77c4141a7a20762626b1fa023c722f3cc03f820de41c2b04307c2e6bb1dad886",
+      "result_digest": "77c4141a7a20762626b1fa023c722f3cc03f820de41c2b04307c2e6bb1dad886",
       "input_snapshot_id": "cc7f6550d1f1f51dfa8d8518a9298fd4ebd6572f09b2ae38c6c58672f0f7b684",
-      "report": "reports/validation-engine-fix/CN/000300.SH/1w/2026-11-13/c6770309408561678c897582795ec67d4fbec4413d213bfe81c3c07b2956b5f2"
+      "report": "reports/validation-engine-fix/CN/000300.SH/1w/2026-11-13/b71ecf49a75838fa8688f98184512118c438c6f33217656caec2d9bdd000b860"
     },
     {
       "label": "pingan_long",
-      "suite": "validation_long_history_20261118",
+      "suite": "validation_20261118_long_history_v3",
       "status": "OK",
       "prior_status": "OK",
-      "prior_result_digest": "b0b144e12d81c38d2f10bba634f6eb5f441fbace9a7a6eb19d452db4a1ed02e5",
-      "result_digest": "2b5acca91d0351ff3bb0f45f974e850841a1c9abfb7617bcf587baa4852c29c0",
+      "prior_result_digest": "c698cf48f3a21edefa616c8ace5a68bff63aa325516128f90ad2be0d0a79ad35",
+      "result_digest": "c698cf48f3a21edefa616c8ace5a68bff63aa325516128f90ad2be0d0a79ad35",
       "input_snapshot_id": "27296573c2f6db3b4ac9ec43f8b8fa6f307c7e364e448de767077205d32c60ae",
-      "report": "reports/validation-engine-fix/CN/000001.SZ/1w/2026-11-13/57319ae937bb7379d6e3b9c2d2ad25945411beddb5924abd2f47675f9b92727e"
+      "report": "reports/validation-engine-fix/CN/000001.SZ/1w/2026-11-13/ae378d2e66f2ca06e8623d11328ee83dd8cae376cec197675c6b325623b34434"
     },
     {
       "label": "maotai_long",
-      "suite": "validation_long_history_20261118",
+      "suite": "validation_20261118_long_history_v3",
       "status": "OK",
       "prior_status": "OK",
-      "prior_result_digest": "9b090306319bf1da017c759577c4abc956db5f28f0c5b328949c8408750dec8d",
-      "result_digest": "2217ab5213165c909c73cda6f893a4128d13605077ab9df0dde79448fe452495",
+      "prior_result_digest": "0df1590cee4b50948b9a2ec0ea3d9d4ac1f7fa3ee33a595d760770679bf968a2",
+      "result_digest": "0df1590cee4b50948b9a2ec0ea3d9d4ac1f7fa3ee33a595d760770679bf968a2",
       "input_snapshot_id": "62831f09054c73de7a68a1de4a4d7222b0387d1eb0151aaccc8ce2a478a9d6c2",
-      "report": "reports/validation-engine-fix/CN/600519.SH/1w/2026-11-13/dfb9f461ace0289c2826b50f303ae840820be3fb6b1bca55716f69e4ad4f1c73"
+      "report": "reports/validation-engine-fix/CN/600519.SH/1w/2026-11-13/4a061079ecc2408ab98f65d15d815e379cbf1f4224ed7e9c35c9e27e5728199f"
     },
     {
       "label": "star50_day",
-      "suite": "validation_cn_index_20261117",
+      "suite": "validation_20261118_cn_index_v3",
       "status": "OK",
       "prior_status": "OK",
-      "prior_result_digest": "2e4d17be9d6e296422da1d88783188610ec9d5e7ef16cb7fb025a2f28f7adb15",
-      "result_digest": "31d42f9f66c0be2d6217c87f017bd777a182598aed931e7fbfb7ee345aa438ba",
+      "prior_result_digest": "94bf07027a3b1bc8367500060c1e9341079a58818aa63050107850e85fd75928",
+      "result_digest": "94bf07027a3b1bc8367500060c1e9341079a58818aa63050107850e85fd75928",
       "input_snapshot_id": "e36c70b2180c7b4ba3886d061c33a938e695ddf4e4aebc4cdfa2a4bee8f5dfa8",
-      "report": "reports/validation-engine-fix/CN/000688.SH/1d/2026-11-16/da7d73766586708bccd35943f33a88765a0da7fe119ffd850fa681cf62e9e49d"
+      "report": "reports/validation-engine-fix/CN/000688.SH/1d/2026-11-16/a64f7ff19f67f184ecb7d2aa2114459058d8dc7cd6eddd55861850a19cb18e1e"
     },
     {
       "label": "csi300_day",
-      "suite": "validation_cn_index_20261117",
+      "suite": "validation_20261118_cn_index_v3",
       "status": "OK",
       "prior_status": "OK",
-      "prior_result_digest": "fdd028e373de7a5657d8dc62ba309b78bd70b048ebc33308cfaa843bea51f480",
-      "result_digest": "17c08845dca3edc91c73cc81aec61d39ee43ba14af9e8826feb2dc247456200d",
+      "prior_result_digest": "b3c125a5c711894e2fa6f019feaed0cdebb365a9d82909746d4b92f7502f07dc",
+      "result_digest": "b3c125a5c711894e2fa6f019feaed0cdebb365a9d82909746d4b92f7502f07dc",
       "input_snapshot_id": "32d2718be006f90841f91e7f4941d9ae87be26217d01f272a81aa5dac9404dcc",
-      "report": "reports/validation-engine-fix/CN/000300.SH/1d/2026-11-16/18a8e6076770448a1903949a646a11fec29b6e2d3e94ed0c1a307c6056b92cfb"
+      "report": "reports/validation-engine-fix/CN/000300.SH/1d/2026-11-16/4f883cce8fa18d07f558f39903cbed5622295fb45be7f58eaa692eb571490836"
     },
     {
       "label": "csi300_week",
-      "suite": "validation_cn_index_20261117",
+      "suite": "validation_20261118_cn_index_v3",
       "status": "OK",
       "prior_status": "OK",
-      "prior_result_digest": "691e325ac8d4bd7f93c6f91bb3345cd79d6305ee3172ee18a8a04dafd378a16c",
-      "result_digest": "69f4d806b8ddaa8dc702c3c5c3de597126660f1630fdecc920d1afdfca250bc1",
+      "prior_result_digest": "e126167115b04e5779389d6c5b42728eae73f697886a1b17e4908b8df016d5ee",
+      "result_digest": "e126167115b04e5779389d6c5b42728eae73f697886a1b17e4908b8df016d5ee",
       "input_snapshot_id": "56590a8167542bfe73bdae581f1b197da54e9ae14a23136bd39e74203c7d3d4d",
-      "report": "reports/validation-engine-fix/CN/000300.SH/1w/2026-11-13/302bd2cdeca370a01b29fb5d6a6e217ee92ce7e92580310774f0636fd8a5ece4"
+      "report": "reports/validation-engine-fix/CN/000300.SH/1w/2026-11-13/bf541c662abb986f289740d926707f4147a84b3ec3c916aa0dcde4878e878a52"
     },
     {
       "label": "szcomp_day",
-      "suite": "validation_cn_index_20261117",
+      "suite": "validation_20261118_cn_index_v3",
       "status": "OK",
       "prior_status": "OK",
-      "prior_result_digest": "c8321fb989b011c9ea733eadf01179e2bfa47cecf45149c5780a6f9d8a984b16",
-      "result_digest": "bd5031abaf076f30802043835f859acdbf2900f83ef8240bc511b0cdb7469eaa",
+      "prior_result_digest": "7743e1f96758b87753b069129235d94a98af3ab901fe27b1f5100ca28c98ee0a",
+      "result_digest": "7743e1f96758b87753b069129235d94a98af3ab901fe27b1f5100ca28c98ee0a",
       "input_snapshot_id": "13b1fcba2dcaed829ea8afd0760d3d918d956018409abbe5a2eca62ed296febf",
-      "report": "reports/validation-engine-fix/CN/399001.SZ/1d/2026-11-16/34c8c636e778e73409cf6a972ac6d8eefb7270269b1294e36aa65849b42b6bc7"
+      "report": "reports/validation-engine-fix/CN/399001.SZ/1d/2026-11-16/9ac4fef0f9cfe1dc0807ddf70c102e778447f1373580dac0a0f195658bd494aa"
     },
     {
       "label": "bse50_day",
-      "suite": "validation_cn_index_20261117",
+      "suite": "validation_20261118_cn_index_v3",
       "status": "OK",
       "prior_status": "OK",
-      "prior_result_digest": "4faa40b36c481f92a9d4f1f4e1cd072c1827feb5bf6ea1ef4eb033572a743e7f",
-      "result_digest": "c43c2b7768dca2c5b31fb39831ef33ae5032e79ae7741a94b5dd07f0f0942fd4",
+      "prior_result_digest": "f1d89e3fd4fb3b7cbe9e1cfdb2f167914927f3c89d31b40d31360b400803c26a",
+      "result_digest": "f1d89e3fd4fb3b7cbe9e1cfdb2f167914927f3c89d31b40d31360b400803c26a",
       "input_snapshot_id": "13fae49950965fcdbedd8102423e20eb9897d5eab3fc9d1b593c15da4e5cca19",
-      "report": "reports/validation-engine-fix/CN/899050.BJ/1d/2026-11-16/2861eefd70b7a810065f7173eb4dc9548c13ba37f69459a3f7d3e66f397d302d"
+      "report": "reports/validation-engine-fix/CN/899050.BJ/1d/2026-11-16/f5d8833706a156ff082bed35b548e465a60cd0d4c5e5e94addd18e01473beb26"
     },
     {
       "label": "ssecomp_day",
-      "suite": "validation_cn_index_20261117",
+      "suite": "validation_20261118_cn_index_v3",
       "status": "OK",
       "prior_status": "OK",
-      "prior_result_digest": "e992528c97054c25026cd02f8d37a7b0661a1949204c526d6178a1fac1c92b74",
-      "result_digest": "8512171359524826c652a7e12a59b7c93faa3af7b3ad3c6943258c7163c47101",
+      "prior_result_digest": "e13b0b6ab88a94ec243cc84fdad675ea3142ffa2b5e767a7475e02c0087e7cba",
+      "result_digest": "e13b0b6ab88a94ec243cc84fdad675ea3142ffa2b5e767a7475e02c0087e7cba",
       "input_snapshot_id": "01f6f374e92b4d7689f5d64e0d6990574282fbab60749f0bf736cd127c8e899a",
-      "report": "reports/validation-engine-fix/CN/000001.SH/1d/2026-11-16/a788a6d8ac47ce0b9bb4a7e3e092febdd6c62ae8d901956a0f4f9265176bbe4c"
+      "report": "reports/validation-engine-fix/CN/000001.SH/1d/2026-11-16/d351904a0ab02a205f3dd4a4f2a7c5e7eb673e1d8aba064621c872cb7fa414b2"
     },
     {
       "label": "pingan_day",
-      "suite": "validation_cn_index_20261117",
+      "suite": "validation_20261118_cn_index_v3",
       "status": "UNCLEAR",
       "prior_status": "UNCLEAR",
-      "prior_result_digest": "be780bc28c6954be78a98cfeff5a9f3f37d6c8e0aab4997f240f72a878e5d310",
-      "result_digest": "3c6c63a7c483bc50cb702d94b0d1e5981cbc65e6d96751002cf9765771e5fe9a",
+      "prior_result_digest": "28350307f6f3da48337423690db1d2db01cfbf8e2dbfa28ecf84ad440e17c05e",
+      "result_digest": "28350307f6f3da48337423690db1d2db01cfbf8e2dbfa28ecf84ad440e17c05e",
       "input_snapshot_id": "e15f336b000c27992f892babe72378c73866b316f9c89c410c4ccaf8908da24e",
-      "report": "reports/validation-engine-fix/CN/000001.SZ/1d/2026-11-16/aa47c8898ce3da5f092ec828214042a54be537b7c90449f65ae574c05598003b"
+      "report": "reports/validation-engine-fix/CN/000001.SZ/1d/2026-11-16/d44c55a41e893970155c074947cfc2d049665db956d32a1f28fab68619f2a69a"
     },
     {
       "label": "maotai_day",
-      "suite": "validation_20261117_ext5_fixed",
+      "suite": "validation_20261118_ext5_v3",
       "status": "OK",
       "prior_status": "OK",
-      "prior_result_digest": "c4b0ca2bedde102ef388575187dfbb46f5e7114c905f98ea3a68eee8f84790fa",
-      "result_digest": "a61e6beb235d3e9f802b5c39edce076b5779f13a17cf6775b239e5fbade1de8d",
+      "prior_result_digest": "44afb3cf9ef693688a5688cee02028a0330272794cd1c3f3c0544a24584a0e52",
+      "result_digest": "44afb3cf9ef693688a5688cee02028a0330272794cd1c3f3c0544a24584a0e52",
       "input_snapshot_id": "1b89533b62b28eacc88ed5f95c7e4da2478679b2b7bb5a247d6ee111d5fee124",
-      "report": "reports/validation-engine-fix/CN/600519.SH/1d/2026-11-16/766b1c2733c13e5b46ffb6266f3d6fabb23bf5d88585f1f94ddd823330399e3e"
+      "report": "reports/validation-engine-fix/CN/600519.SH/1d/2026-11-16/db7cd56b6e233d900b8758cf79cfd92e1f056381146bc77d15a1f9d92c73f4b5"
     },
     {
       "label": "maotai_week",
-      "suite": "validation_20261117_ext5_fixed",
+      "suite": "validation_20261118_ext5_v3",
       "status": "OK",
       "prior_status": "OK",
-      "prior_result_digest": "c39b0d768d3543d96c61cf4cd773f867d12751fcfd22460d05130590a1e1ea62",
-      "result_digest": "a753a6097f9d8a9d77a0808a5e4806507a14b7f4150039857803c7c9b9cb0d85",
+      "prior_result_digest": "9c51228405f221776acaa2882bf7f2249ad0e20963256bf6faef1e6076abfcf7",
+      "result_digest": "9c51228405f221776acaa2882bf7f2249ad0e20963256bf6faef1e6076abfcf7",
       "input_snapshot_id": "7ac5f7eb7e138256946d9a0436645de756a78abc59ce70f68f7e30757c7513bc",
-      "report": "reports/validation-engine-fix/CN/600519.SH/1w/2026-11-13/d9d509cc95ba48ea35c27874b42f31e804c9c378802d05b07e016b10def711dc"
+      "report": "reports/validation-engine-fix/CN/600519.SH/1w/2026-11-13/938f26306e2b24e34b3911a65a552548375067210c3e26f42ec6114129b297c3"
     },
     {
       "label": "maotai_hour",
-      "suite": "validation_20261117_ext5_fixed",
+      "suite": "validation_20261118_ext5_v3",
       "status": "UNCLEAR",
       "prior_status": "UNCLEAR",
-      "prior_result_digest": "508b75c5b31a2fccc31ee85992e8de3699b6da755e057910205ba00493ed581d",
-      "result_digest": "9f7ee5dcb7a979840f1155f176e9a894b87e4073656e3a835823f7159cee82dd",
+      "prior_result_digest": "5771aefc205b5364ef0a0ab81d5489a494f617d756a511155a192cf5264215a8",
+      "result_digest": "5771aefc205b5364ef0a0ab81d5489a494f617d756a511155a192cf5264215a8",
       "input_snapshot_id": "00d67c91c914c115fe3a6dbd33c3ecfa4ff945133056164e0ef5cdb591e83118",
-      "report": "reports/validation-engine-fix/CN/600519.SH/60m/2026-11-16/3031918d99f3bd21237e286594edbe6a2a36e7d0b345c46b6d656d8e7abb8aa6"
+      "report": "reports/validation-engine-fix/CN/600519.SH/60m/2026-11-16/66bfc867f119936f6930c7a0dc60b8da2e8716c0f1b43a5dee749f8d758cc243"
     },
     {
       "label": "maotai_5m",
-      "suite": "validation_20261117_ext5_fixed",
+      "suite": "validation_20261118_ext5_v3",
       "status": "OK",
       "prior_status": "OK",
-      "prior_result_digest": "5bd58e3f03221933afc8644b1b8c26ab4975907acbdd49e803c53482baba6cd3",
-      "result_digest": "94d0fac945a1efba35efca51237b6284df98be05eba62827d3e5b15027ef655a",
+      "prior_result_digest": "22d44b4076f7d6f3105c5d5d509666342a2e30f4636dec83ae44a1d711fa9f85",
+      "result_digest": "22d44b4076f7d6f3105c5d5d509666342a2e30f4636dec83ae44a1d711fa9f85",
       "input_snapshot_id": "eb270f1681277487b446b23f0487a8f5c9ac120bc817b844f08cfbc25cf42a29",
-      "report": "reports/validation-engine-fix/CN/600519.SH/5m/2026-11-16/1c749dc01b6dfa0f2bbf6838ff29af2ca694170ea2b0d8c45f84a2d664097dc6"
+      "report": "reports/validation-engine-fix/CN/600519.SH/5m/2026-11-16/0f54a7428d1d150ba14a993d10bf25da40dfb9355db5117445053dd0d4e4b7ec"
     },
     {
       "label": "maotai_1m",
-      "suite": "validation_20261117_ext5_fixed",
+      "suite": "validation_20261118_ext5_v3",
       "status": "OK",
       "prior_status": "OK",
-      "prior_result_digest": "97cadd97ad95045d7db6b1265079baa505c9f52af48087e417e84506257d06de",
-      "result_digest": "4bdd31d7800452272e29185bfbf0f4eff24d2758ee97303a4032717d524ee5c2",
+      "prior_result_digest": "1dd2b4399af013fdee97dad5cecff557178c914c94147debcf117f1185a01a3a",
+      "result_digest": "1dd2b4399af013fdee97dad5cecff557178c914c94147debcf117f1185a01a3a",
       "input_snapshot_id": "0312bbad8528c7dfdbbfca54eae262c5d25663799f15429a7f180023beb6fec2",
-      "report": "reports/validation-engine-fix/CN/600519.SH/1m/2026-11-16/f38e2c7f28eb22fa2dc3190961c0045cbadb85e516fd3a689b2fd03a5ae3b3ad"
+      "report": "reports/validation-engine-fix/CN/600519.SH/1m/2026-11-16/f585e3f316afc41da781d34c9bbd0a134dda8a42a9f5f7dc56cd6986b91e3871"
     },
     {
       "label": "maotai_15m",
-      "suite": "validation_20261117_ext5_fixed",
+      "suite": "validation_20261118_ext5_v3",
       "status": "OK",
       "prior_status": "OK",
-      "prior_result_digest": "07c3b5440f43b601ec2f0431ad17332db045d36efc71ed8f8928272a06482676",
-      "result_digest": "58814c95b27a3d4d82cf871da7c946ccb620add3da5924a421707a49392c8e9f",
+      "prior_result_digest": "c087fd0efdd235f26397d61152170f1c197b8dce46d0cca6955c946318dc7e40",
+      "result_digest": "c087fd0efdd235f26397d61152170f1c197b8dce46d0cca6955c946318dc7e40",
       "input_snapshot_id": "6f116b759b14021bb1fd45b4ace0ed94770cec78712a6ab87b883bcfabb27b9c",
-      "report": "reports/validation-engine-fix/CN/600519.SH/15m/2026-11-16/fa304d702ed55a9975eb448c07d8466a5976cf558a915e36773b1412ffb78854"
+      "report": "reports/validation-engine-fix/CN/600519.SH/15m/2026-11-16/f05b64e9e045de99e7ef7b74dac80e7515a601a78a179fca711d2ec88ceb8902"
     },
     {
       "label": "maotai_30m",
-      "suite": "validation_20261117_ext5_fixed",
+      "suite": "validation_20261118_ext5_v3",
       "status": "OK",
       "prior_status": "OK",
-      "prior_result_digest": "75faede06930c3ba1cf655c30c017c82670e725d9a1fe5f42277edbfa52a3526",
-      "result_digest": "157e92be403ce9c031def5fa01fce8d14d34bd67bc40a70d6361908d95d41101",
+      "prior_result_digest": "b0745cbcc2d5048dce958b2bd9828c9d358b4953381e0e28bf538bfab436a333",
+      "result_digest": "b0745cbcc2d5048dce958b2bd9828c9d358b4953381e0e28bf538bfab436a333",
       "input_snapshot_id": "fe40715ff916efb5174f2964e36aab010fd5801d63e1e4ed08e10a62d5de15f7",
-      "report": "reports/validation-engine-fix/CN/600519.SH/30m/2026-11-16/490151956dbc2bb1adf2ba9f3e1bd8c3c1f637a99c2eeb560bf2c2b8977c6714"
+      "report": "reports/validation-engine-fix/CN/600519.SH/30m/2026-11-16/c1091fa13d70d7302149fa43d6c54e8dfe56ee8a827b1af5cf878d31f3b26cbc"
     },
     {
       "label": "pingan_day",
-      "suite": "validation_20261117_ext5_fixed",
+      "suite": "validation_20261118_ext5_v3",
       "status": "UNCLEAR",
       "prior_status": "UNCLEAR",
-      "prior_result_digest": "99cb1c6e1e84b2a53b9436cb7ca77ad9a0fa18eb0d998e2c97d4984cd14d74a6",
-      "result_digest": "78172a2f17a0e3fb7d7d54a35118897501ad1c5e01d4e0588c4646907c75c996",
+      "prior_result_digest": "91a86fd661dbd6ee7b94b91ba3e67a1529ddcc027350ea781e417a2246e61ea6",
+      "result_digest": "91a86fd661dbd6ee7b94b91ba3e67a1529ddcc027350ea781e417a2246e61ea6",
       "input_snapshot_id": "2b999d695f9a4d69b01fc8f8a1c0ef94e13cfd922fe1ae90f6712e8a792568f4",
-      "report": "reports/validation-engine-fix/CN/000001.SZ/1d/2026-11-16/8031b2ed2b6eeaff6f660fe14fc4678e6c626d9a69c9e362ab9465a1198b84ec"
+      "report": "reports/validation-engine-fix/CN/000001.SZ/1d/2026-11-16/8061a19202384fecc23c0fd78b5339cd1ce22875a49f4703f3ab586a75296297"
     },
     {
       "label": "catl_day",
-      "suite": "validation_20261117_ext5_fixed",
+      "suite": "validation_20261118_ext5_v3",
       "status": "OK",
       "prior_status": "OK",
-      "prior_result_digest": "14436ef7e5b6259fd93887b9b4b5583d3382585934d43e1ecb6b1287c363f169",
-      "result_digest": "2978315465779c8c20ca0abf6088cddedeef39f5b25e4d5a4bd913f811136c15",
+      "prior_result_digest": "6de69d4ddf5876e6aad34caf2c00f7d9cd9dd4ea13f311e64572148da6d2d959",
+      "result_digest": "6de69d4ddf5876e6aad34caf2c00f7d9cd9dd4ea13f311e64572148da6d2d959",
       "input_snapshot_id": "25e8ab0aa16c69cd4a32b168bb36f05ed68075cf1fb4262555d918c9e3fa6cf9",
-      "report": "reports/validation-engine-fix/CN/300750.SZ/1d/2026-11-16/b0dab0a4e04b992a7a97c66f204020dcca4f08d0105940ebd43e4ac74fab32ec"
+      "report": "reports/validation-engine-fix/CN/300750.SZ/1d/2026-11-16/71ac56546a30c1727d88bae6fbf031f17e96ead6a377d6a5670f5a3293bc1b02"
     }
   ]
 }

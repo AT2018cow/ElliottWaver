@@ -13,13 +13,22 @@ def render_result(result: AnalysisResult) -> None:
     console.print(
         f"{prefix}分析价格 {result.latest_price:.4f} · 结构歧义 {result.ambiguity} · 候选权重不是成功概率"
     )
-    table = Table("剧本", "浪级", "阶段", "质量", "证据覆盖", "候选权重", "第一目标")
+    table = Table(
+        "剧本", "浪级", "父级", "阶段", "子浪", "质量", "证据覆盖", "候选权重", "第一目标"
+    )
     for i, scenario in enumerate(result.scenarios, 1):
         zone = scenario.target_zones[0] if scenario.target_zones else None
+        parent = (
+            "UNKNOWN"
+            if scenario.parent_context == "UNKNOWN"
+            else f"{scenario.parent_context}/{scenario.parent_degree}/{scenario.parent_wave_label}"
+        )
         table.add_row(
             f"S{i}",
             scenario.degree,
+            parent,
             scenario.stage,
+            scenario.subwave_status,
             f"{scenario.score.quality_score:.1f}/100",
             f"{scenario.score.coverage:.0%}",
             f"{scenario.relative_weight:.1%}",

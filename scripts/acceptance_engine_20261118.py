@@ -15,7 +15,7 @@ from eliotbot.data.snapshots import SnapshotStore
 from eliotbot.engine.matcher import Candidate
 from eliotbot.engine.projector import project
 from eliotbot.engine.rules import check_pattern
-from eliotbot.engine.subwaves import subwave_fit
+from eliotbot.engine.subwaves import certify_subwaves
 from eliotbot.engine.templates import DIAGONAL, FLAT, TRIANGLE, ZIGZAG
 from eliotbot.engine.zigzag import ZigZagResult
 from eliotbot.evaluation.replay import replay
@@ -113,14 +113,18 @@ def geometry_checks() -> dict:
 
 
 def subwave_check() -> dict:
-    _, points = fixture([100, 120, 110, 130], [10, 20, 25, 30])
+    bars, points = fixture([100, 120, 110, 130], [10, 20, 25, 30])
     parent = Candidate(ZIGZAG, points, points[-1], 1, "COMPLETE", (), (3.8,))
     _, left_right = fixture([101, 132], [0, 40])
     _, outside = fixture([110, 102], [2, 4], direction=-1)
     mid = ZigZagResult(left_right, None)
     coarse = ZigZagResult(points, None)
-    base = subwave_fit(parent, [ZigZagResult((), None), mid, coarse], [1.4, 2.4, 3.8], 2)
-    changed = subwave_fit(parent, [ZigZagResult(outside, None), mid, coarse], [1.4, 2.4, 3.8], 2)
+    base = certify_subwaves(
+        parent, [ZigZagResult((), None), mid, coarse], [1.4, 2.4, 3.8], 2, bars
+    ).fit
+    changed = certify_subwaves(
+        parent, [ZigZagResult(outside, None), mid, coarse], [1.4, 2.4, 3.8], 2, bars
+    ).fit
     return {
         "status": "PASS" if base == changed else "FAIL",
         "base_fit": base,
@@ -153,9 +157,9 @@ def verify_report(report: Path, result_digest: str, snapshot_id: str) -> None:
 def frozen_checks(reports: Path) -> tuple[list[dict], dict, dict]:
     summary = []
     profiles = (
-        ("validation_long_history_20261118", ".cache/eliotbot", True),
-        ("validation_cn_index_20261117", ".cache/eliotbot", False),
-        ("validation_20261117_ext5_fixed", ".cache/live-smoke", False),
+        ("validation_20261118_long_history_v3", ".cache/eliotbot", True),
+        ("validation_20261118_cn_index_v3", ".cache/eliotbot", False),
+        ("validation_20261118_ext5_v3", ".cache/live-smoke", False),
     )
     prefix_count = 0
     for name, root, long in profiles:

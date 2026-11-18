@@ -7,6 +7,10 @@ from eliotbot.schemas.market import Contract, Instrument
 from eliotbot.timeframes import Timeframe
 
 Pattern = Literal["IMPULSE", "ZIGZAG_ABC", "TRIANGLE", "FLAT", "DIAGONAL", "WXY"]
+Degree = Literal["MINOR", "INTERMEDIATE", "PRIMARY", "CYCLE", "SUPERCYCLE", "UNKNOWN"]
+ParentContext = Literal["UNKNOWN", "VERIFIED", "PROVISIONAL"]
+ParentRelation = Literal["UNKNOWN", "EXACT_LEG", "CONTAINED"]
+SubwaveStatus = Literal["UNAVAILABLE", "UNVERIFIED", "VERIFIED"]
 
 
 class PivotPoint(Contract):
@@ -88,6 +92,16 @@ class ProjectedPoint(Contract):
     conditional: bool = True
 
 
+class SubwaveLegEvidence(Contract):
+    leg: str
+    status: SubwaveStatus
+    pattern: Pattern | None = None
+    point_count: int = Field(0, ge=0)
+    scale: float | None = Field(None, gt=0)
+    depth: int = Field(0, ge=0, le=2)
+    reason: str
+
+
 class WaveScenario(Contract):
     scenario_id: str
     name: str
@@ -95,11 +109,15 @@ class WaveScenario(Contract):
     pattern_direction: Literal["UP", "DOWN"]
     next_leg_bias: Literal["UP", "DOWN", "UNKNOWN"]
     stage: str
-    degree: Literal["MINOR", "INTERMEDIATE", "PRIMARY", "CYCLE", "SUPERCYCLE", "UNKNOWN"] = (
-        "UNKNOWN"
-    )
-    parent_context: Literal["UNKNOWN", "VERIFIED"] = "UNKNOWN"
-    subwave_status: Literal["UNVERIFIED", "VERIFIED", "UNAVAILABLE"] = "UNAVAILABLE"
+    degree: Degree = "UNKNOWN"
+    parent_context: ParentContext = "UNKNOWN"
+    parent_relation: ParentRelation = "UNKNOWN"
+    parent_scenario_id: str | None = None
+    parent_pattern: Pattern | None = None
+    parent_degree: Degree | None = None
+    parent_wave_label: str | None = None
+    subwave_status: SubwaveStatus = "UNAVAILABLE"
+    subwave_evidence: tuple[SubwaveLegEvidence, ...] = ()
     relative_weight: float = Field(0, ge=0, le=1)
     calibrated_event_probability: None = None
     completed_waves: tuple[WaveLabel, ...]

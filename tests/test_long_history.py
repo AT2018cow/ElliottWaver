@@ -88,6 +88,7 @@ def test_long_term_preset_uses_full_window_and_large_degree_search():
     assert long_term.search.max_bridge_intervals == 21
     assert long_term.search.beam_width == 512
     assert long_term.search.max_expansions == 200000
+    assert long_term.search.max_subwave_depth == 1
 
     large = large_degree_settings(settings)
     assert large.analysis == settings.analysis

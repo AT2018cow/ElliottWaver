@@ -22,7 +22,7 @@ v1 保留浪 5/浪 1 的原评分：核心 1.0/0.618、次优 1.618 权重 0.7�
 ew-rules-v1/zigzag-v1/score-v2/projection-v2/report-v2/0.1.0
 ```
 
-P0/P1/P2 之后当前标识为 `ew-rules-v2/zigzag-v1/score-v2/projection-v3/report-v3/search-v2/0.1.0`。
+P0/P1/P2 之后为 `ew-rules-v2/zigzag-v1/score-v2/projection-v3/report-v3/search-v2/0.1.0`；P3 后当前标识为 `ew-rules-v3/zigzag-v1/score-v2/subwave-v3/projection-v4/report-v4/search-v2/0.1.0`。
 
 验证脚本也移除了固定写入“81 tests passed”和“没有凭证”的元数据。冻结快照脚本只报告自己做过的检查，pytest 和在线联调标记为 `NOT_RUN_BY_THIS_SCRIPT`，本文件单独记录实际测试结果。
 

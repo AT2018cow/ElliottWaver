@@ -84,14 +84,14 @@ SNAPSHOT_ID='替换为完整snapshot_id'
 .venv/bin/ruff format --check src tests scripts
 ```
 
-本次 168 项测试通过。引擎修复使用 21 组冻结真实快照复验，覆盖个股多周期、沪深京指数和长历史周线。美股适配器的现有证据为冻结 HTTP 契约测试。详见 [验收记录索引](docs/reviews/README.md)。
+本次 171 项测试通过。引擎修复使用 21 组冻结真实快照复验，覆盖个股多周期、沪深京指数和长历史周线。美股适配器的现有证据为冻结 HTTP 契约测试。详见 [验收记录索引](docs/reviews/README.md)。
 
-当前枚举普通推动浪、ABC 锯齿，以及端点级的三角形、平台、楔形和双锯齿 WXY；`--subwave-depth` 提供多尺度子浪存在性检查。完整子浪递归、父级位置、扩散楔形、running flat、概率校准、北交所个股和 Web 仍是后续阶段。子浪分形没有取得证据时明确显示 `UNAVAILABLE`，配置不能将其伪装为已开启。
+当前枚举普通推动浪、ABC 锯齿，以及端点级的三角形、平台、楔形和双锯齿 WXY。P3 已加入父级包含关系和规则级子浪认证：父级输出 `VERIFIED / PROVISIONAL / UNKNOWN`，子浪逐腿输出 `VERIFIED / UNVERIFIED / UNAVAILABLE`。完整无限递归、复杂组合调整、概率校准、北交所个股和 Web 仍是后续阶段。子浪没有取得证据时明确显示 `UNAVAILABLE`，配置不能将其伪装为已认证。
 
 - [原始系统设计](DESIGN.md)：产品目标、核心思路和交互设想。
 - [中文使用手册](docs/USER_GUIDE.md)：安装、实际操作、结果解读、配置及排错。
 - [详细实现方案](docs/IMPLEMENTATION_PLAN.md)：参考代码依据、设计修订、数据契约、算法细节、开发任务和验收标准。
 - [实现及验收状态](docs/IMPLEMENTATION_STATUS.md)：当前完成范围、验收证据、已知边界和复现方式。
-- [真实快照验证摘要](docs/validation_20261117.json)：输入/结果身份、覆盖区间、规则和前缀一致性。
-- [沪深京指数验证摘要](docs/validation_cn_index_20261117.json)：指数日线/周线与个股回归的快照、状态和前缀一致性。
-- [长历史验证摘要](docs/validation_long_history_20261118.json)：1991–2026 A 股长历史、宽搜索、模板/子浪/浪级验证。
+- [个股多周期验证摘要 v3](docs/validation_20261118_ext5_v3.json)：输入/结果身份、覆盖区间、规则和前缀一致性。
+- [沪深京指数验证摘要 v3](docs/validation_20261118_cn_index_v3.json)：指数日线/周线与个股回归的快照、状态和前缀一致性。
+- [长历史验证摘要 v3](docs/validation_20261118_long_history_v3.json)：1991–2026 A 股长历史、父级上下文、子浪规则认证和浪级验证。

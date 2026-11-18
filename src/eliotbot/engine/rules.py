@@ -7,6 +7,17 @@ from eliotbot.schemas.market import Bar
 from eliotbot.schemas.wave import PivotPoint, RuleResult
 
 
+def _rail_widths(
+    points: Sequence[PivotPoint], q: Sequence[float], end_index: int
+) -> tuple[float, float]:
+    """Width between the 1–3 and 2–4 endpoint lines at the same bar indices."""
+    x1, x2, x3, x4 = (point.index for point in points[1:5])
+    upper = (q[3] - q[1]) / (x3 - x1)
+    lower = (q[4] - q[2]) / (x4 - x2)
+    width_at_second = q[1] + upper * (x2 - x1) - q[2]
+    return width_at_second, width_at_second + (upper - lower) * (end_index - x2)
+
+
 def check_pattern(
     pattern: str,
     points: Sequence[PivotPoint],
@@ -62,13 +73,12 @@ def check_pattern(
             else low >= q[j] - eps and high <= q[j - 1] + eps
         )
         rule(f"SEGMENT_EXTREMA_{j}", extrema_valid, "合并未隐藏更极端的内部影线")
-    if len(points) >= 3 and pattern != "FLAT":
+    if len(points) >= 3 and pattern == "WXY":
+        low, _ = extremes(2)
+        rule("X_ORIGIN", low > q[0] + eps, "双锯齿X不可触及W起点", low, q[0])
+    elif len(points) >= 3 and pattern not in {"FLAT", "TRIANGLE"}:
         low, _ = extremes(2)
         rule("W2_OR_B_ORIGIN", low > q[0] + eps, "浪2或锯齿B不可触及起点", low, q[0])
-    elif pattern == "FLAT" and len(points) >= 3:
-        rule("W2_OR_B_ORIGIN", None, "平台B允许超过起点，由B_DEEP检查")
-    else:
-        rule("W2_OR_B_ORIGIN", None, "尚无第二反向段")
     if pattern == "ZIGZAG_ABC":
         if len(points) == 4:
             rule(
@@ -80,77 +90,76 @@ def check_pattern(
             )
         return tuple(results)
     if pattern == "FLAT":
-        if len(points) == 4:
+        if len(points) >= 3:
             a = abs(q[1] - q[0])
             b = abs(q[1] - q[2])
-            rule("B_DEEP", b >= 0.9 * a - eps, "平台B至少回撤A的90%", b, 0.9 * a)
+            deep = b >= 0.9 * a - eps
+            rule(
+                "B_DEEP",
+                None if developing and len(points) == 3 and not deep else deep,
+                "平台B至少回撤A的90%",
+                b,
+                0.9 * a,
+            )
+        if len(points) == 4:
+            near = q[3] >= q[1] - 0.25 * a - eps
             rule(
                 "C_NEAR_A",
-                q[3] >= q[1] - 0.25 * a - eps,
+                None if developing and not near else near,
                 "平台C回到A终点附近或以上",
                 q[3],
                 q[1] - 0.25 * a,
             )
         return tuple(results)
     if pattern == "WXY":
-        if len(points) == 4:
+        if len(points) >= 3:
             a = abs(q[1] - q[0])
             x = abs(q[1] - q[2])
+            deep = x >= 0.5 * a - eps
             rule(
                 "X_RETRACE",
-                0.5 * a - eps <= x <= a + eps,
-                "WXY的X回撤W的50%-100%",
+                None if developing and len(points) == 3 and not deep else deep,
+                "双锯齿X至少回撤W的50%",
                 x,
-                a,
+                0.5 * a,
             )
-            rule("Y_BEYOND_W", q[3] > q[1] + eps, "WXY的Y超过W终点", q[3], q[1])
+        if len(points) == 4:
+            beyond = q[3] > q[1] + eps
+            rule(
+                "Y_BEYOND_W",
+                None if developing and not beyond else beyond,
+                "WXY的Y超过W终点",
+                q[3],
+                q[1],
+            )
         return tuple(results)
     if pattern == "TRIANGLE":
-        if len(points) == 6:
-            legs = [abs(q[index] - q[index - 1]) for index in range(1, 6)]
-            contracting = (
-                legs[2] < legs[0] - eps and legs[4] < legs[2] - eps and legs[3] < legs[1] - eps
-            )
-            expanding = (
-                legs[2] > legs[0] + eps and legs[4] > legs[2] + eps and legs[3] > legs[1] + eps
-            )
-            rule(
-                "TRIANGLE_SHAPE",
-                contracting or expanding,
-                "三角形应收敛或扩散",
-                legs[2] / legs[0] if legs[0] else None,
-                1.0,
-            )
+        shape = "A-C 与 B-D 须在观察区间内形成未交叉的收敛或扩散边界"
+        if len(points) < 5:
+            rule("TRIANGLE_SHAPE", None, shape)
         else:
-            rule("TRIANGLE_SHAPE", None, "三角形尚未完成")
+            end_index = len(bars) - 1 if developing else points[-1].index
+            initial, final = _rail_widths(points, q, end_index)
+            contracting = q[3] < q[1] - eps and q[4] > q[2] + eps
+            expanding = q[3] > q[1] + eps and q[4] < q[2] - eps
+            valid_rails = min(initial, final) > eps and (
+                (contracting and final < initial - eps) or (expanding and final > initial + eps)
+            )
+            # A provisional D can still move down, while A and C are already fixed.
+            if len(points) == 5 and developing:
+                possible = q[3] > q[1] + eps or contracting
+                valid = None if possible else False
+            elif valid_rails and len(points) == 6:
+                if contracting:
+                    valid = q[5] < q[3] - eps
+                else:
+                    beyond = q[5] > q[3] + eps
+                    valid = None if developing and not beyond else beyond
+            else:
+                valid = False
+            rule("TRIANGLE_SHAPE", valid, shape, final, initial)
         return tuple(results)
-    if pattern == "DIAGONAL":
-        if len(points) >= 4:
-            pending = developing and len(points) == 4 and q[3] <= q[1] + eps
-            rule(
-                "W3_PROGRESS",
-                None if pending else q[3] > q[1] + eps,
-                "完成浪3须越过浪1终点",
-                q[3],
-                q[1],
-            )
-        if len(points) >= 5:
-            rule(
-                "W4_OVERLAP",
-                q[4] <= q[1] + eps,
-                "楔形浪4与浪1重叠",
-                q[4],
-                q[1],
-            )
-        if len(points) >= 6:
-            rule(
-                "W5_PROGRESS",
-                None if q[5] <= q[3] + eps else True,
-                "楔形允许截断第五浪",
-                q[5],
-                q[3],
-            )
-        return tuple(results)
+    diagonal = pattern == "DIAGONAL"
     if len(points) >= 4:
         pending = developing and len(points) == 4 and q[3] <= q[1] + eps
         rule(
@@ -162,7 +171,32 @@ def check_pattern(
         )
     if len(points) >= 5:
         low, _ = extremes(4)
-        rule("W4_NO_OVERLAP", low > q[1] + eps, "普通推动浪4不进入浪1价格区", low, q[1])
+        if diagonal:
+            overlap = low <= q[1] + eps
+            rule(
+                "W4_OVERLAP",
+                None if len(points) == 5 and developing and not overlap else overlap,
+                "楔形浪4与浪1重叠",
+                low,
+                q[1],
+            )
+            rule("W4_NO_FULL_RETRACE", low > q[2] + eps, "楔形浪4不可完全回撤浪3", low, q[2])
+        else:
+            rule("W4_NO_OVERLAP", low > q[1] + eps, "普通推动浪4不进入浪1价格区", low, q[1])
+    if diagonal:
+        shape = "楔形的1-3与2-4轨道应收敛且不得在观察区间内相交"
+        if len(points) >= 6:
+            end_index = len(bars) - 1 if developing else points[-1].index
+            initial, final = _rail_widths(points, q, end_index)
+            rule(
+                "DIAGONAL_SHAPE",
+                q[4] > q[2] + eps and eps < final < initial - eps,
+                shape,
+                final,
+                initial,
+            )
+        else:
+            rule("DIAGONAL_SHAPE", None, shape)
     if len(points) >= 6:
         l1, l3, l5 = q[1] - q[0], q[3] - q[2], q[5] - q[4]
         pending = developing and q[5] <= q[3] + eps

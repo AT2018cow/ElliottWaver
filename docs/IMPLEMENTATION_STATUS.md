@@ -24,13 +24,13 @@
 ## 验证结果
 
 ```text
-python -m pytest tests -q              140 passed
+python -m pytest tests -q              168 passed
 ruff check src tests scripts           PASS
 ruff format --check src tests scripts  PASS
 pip check                             No broken requirements found
 ```
 
-测试在 Python 3.12 / Linux 环境执行。本次完整运行的 34 条告警来自 `exchange_calendars` 调用 NumPy 的 timedelta 弃用接口；当前用例通过，库升级时需重验。实际安装版本记录在 [requirements.lock](../requirements.lock)。
+测试在 Python 3.12 / Linux 环境执行。完整运行的 42 条告警来自 `exchange_calendars` 调用 NumPy 的 timedelta 弃用接口。实际安装版本记录在 [requirements.lock](../requirements.lock)。
 
 测试包含手算 ATR/EMA、拆股因子方向、非交易日因子、同价不同日期保留、拐点确认前不可用、逐前缀不变性、镜像规则、第五浪 155/156 边界、影线合并违规、缺特征不增权、分页与权限错误、快照篡改、导出中断、CLI 离线一致、事件同根歧义、时区等价、集合竞价、指数路由/无复权 provider/日线→周线/快照往返/分钟线拒绝及各主周期。
 
@@ -66,7 +66,7 @@ pip check                             No broken requirements found
 
 股票九组与指数验证的七组（5 个不同指数的 6 组指数/周期组合 + 平安个股回归）均通过规则检查、候选权重质量检查、抽样历史前缀一致性以及 JSON/MD/HTML 产物校验。原始记录的单次纯计算耗时约 0.07–0.25 秒，不包括下载、快照 I/O 与出图；新版本耗时见对应验证 JSON。这不是全市场性能或完整 p95 基准测试。
 
-长历史验证使用 `--long-term --subwave-depth 1 --allow-gaps`，结果见 [validation_long_history_20261118.json](validation_long_history_20261118.json)：
+初版长历史验证使用 `--long-term --subwave-depth 1 --allow-gaps`，下表来自 [初版长历史证据](validation_long_history_20261118.json)。修复后的同快照复验见 [引擎修复记录](reviews/2026-11-18-engine-fix.md)。
 
 | 标的 / 周期 | 根数 | 输入起始 | 数据截止 | 状态 | Top-K 候选 |
 | --- | ---: | --- | --- | --- | ---: |
@@ -80,7 +80,7 @@ pip check                             No broken requirements found
 
 完成态目标扩展、第五浪评分修正与 `EXCLUDED_STRUCTURE` 可见性变更不包含按证券代码分支的逻辑。DeepSeek 初版的九组证据保留在 [validation_20261117_ext5.json](validation_20261117_ext5.json)。其中部分样本的业务内容未变，但由于引擎版本参与摘要，所有样本都生成了新的结果 ID；业务内容一致不能等同于结果身份一致。
 
-验收修复后的最新证据见 [validation_20261117_ext5_fixed.json](validation_20261117_ext5_fixed.json)，修复与复验见[记录](reviews/2026-11-17-deepseek-ext5-fixed.md)。评分默认 `ew_score_v2`，可以显式选择保留旧公式的 `ew_score_v1`；两者使用不同配置摘要。引擎代码标识为 `ew-rules-v2/zigzag-v1/score-v2/projection-v3/report-v3/search-v2/0.1.0`，结果中的 `engine_version` 会追加当前 profile（例如 `.../0.1.0/ew_score_v2`），报告修复不会复用旧版本的报告目录。
+第五浪扩展的历史证据见 [validation_20261117_ext5_fixed.json](validation_20261117_ext5_fixed.json) 和 [复验记录](reviews/2026-11-17-deepseek-ext5-fixed.md)。评分默认 `ew_score_v2`，可用 `ew_score_v1` 选择旧公式。当前引擎代码标识为 `ew-rules-v3/zigzag-v1/score-v2/subwave-v2/projection-v4/report-v3/search-v2/0.1.0`。结果中的 `engine_version` 追加当前 profile，版本参与结果和报告身份。
 
 ### 真实路径发现并修正的边界
 

@@ -6,9 +6,11 @@ from zoneinfo import ZoneInfo
 from typer.testing import CliRunner
 
 from eliotbot.cli.main import app
+from eliotbot.config import Settings
 from eliotbot.data.calendar import load_calendar
 from eliotbot.data.periods import expected_starts
 from eliotbot.data.router import route_symbol
+from eliotbot.data.snapshots import SnapshotStore
 from eliotbot.schemas.market import AnalysisRequest
 from eliotbot.service import AnalysisService
 
@@ -56,6 +58,76 @@ def test_cli_replay_has_source_identity_and_content_hash(tmp_path, monkeypatch):
     manifest = json.loads((tmp_path / "replay.jsonl.manifest.json").read_text())
     assert manifest["source_snapshot_id"] == source
     assert manifest["reports"] == 1
+    assert manifest["allow_gaps"] is False
     assert (
         manifest["sha256"] == hashlib.sha256((tmp_path / "replay.jsonl").read_bytes()).hexdigest()
     )
+
+
+def test_analyze_explicit_zero_overrides_configured_subwave_depth(tmp_path, monkeypatch, bundle):
+    monkeypatch.chdir(tmp_path)
+    config = tmp_path / "analysis.yaml"
+    config.write_text("search:\n  max_subwave_depth: 1\n")
+    source = SnapshotStore(tmp_path / ".cache/eliotbot").save(bundle)
+    args = [
+        "analyze",
+        "AAPL",
+        "--snapshot",
+        source,
+        "--config",
+        str(config),
+        "--format",
+        "json",
+        "--json",
+    ]
+    runner = CliRunner()
+    configured = runner.invoke(app, args)
+    disabled = runner.invoke(app, [*args, "--subwave-depth", "0"])
+    assert configured.exit_code == disabled.exit_code == 0
+    assert (
+        json.loads(configured.stdout)["config_hash"]
+        == Settings(search={"max_subwave_depth": 1}).computation_hash
+    )
+    assert json.loads(disabled.stdout)["config_hash"] == Settings().computation_hash
+
+
+def test_allow_gaps_replay_matches_cli_analysis_and_records_policy(tmp_path, monkeypatch, bundle):
+    monkeypatch.chdir(tmp_path)
+    gapped = bundle.model_copy(
+        update={
+            "bars": bundle.bars[:210] + bundle.bars[211:],
+            "raw_bars": bundle.raw_bars[:210] + bundle.raw_bars[211:],
+        }
+    )
+    source = SnapshotStore(tmp_path / ".cache/eliotbot").save(gapped)
+    last = gapped.bars[-1]
+    runner = CliRunner()
+    analyzed = runner.invoke(
+        app,
+        [
+            "analyze",
+            "AAPL",
+            "--snapshot",
+            source,
+            "--allow-gaps",
+            "--as-of",
+            last.usable_at.isoformat(),
+            "--end",
+            last.session_date.isoformat(),
+            "--format",
+            "json",
+            "--json",
+        ],
+    )
+    assert analyzed.exit_code == 0, analyzed.output
+    args = ["replay", source, "--start", str(last.session_date), "--output", "replay.jsonl"]
+    strict = runner.invoke(app, args)
+    assert strict.exit_code == 0, strict.output
+    assert json.loads((tmp_path / "replay.jsonl").read_text())["status"] == "INSUFFICIENT_DATA"
+    allowed = runner.invoke(app, [*args, "--allow-gaps"])
+    assert allowed.exit_code == 0, allowed.output
+    manifest = json.loads((tmp_path / "replay.jsonl.manifest.json").read_text())
+    assert manifest["allow_gaps"] is True
+    row = json.loads((tmp_path / "replay.jsonl").read_text())
+    assert row["result_digest"] == json.loads(analyzed.stdout)["result_digest"]
+    assert any(w.startswith("ALLOWED_GAPS") for w in row["warnings"])

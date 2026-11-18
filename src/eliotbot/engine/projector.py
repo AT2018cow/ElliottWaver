@@ -24,6 +24,7 @@ def project(
     conditions: list[LevelCondition] = []
     targets: list[tuple[float, str]] = []
     cap: float | None = None
+    target_floor: float | None = None
     target_direction = s
 
     def condition(kind, price, upward, reason, inclusive=True):
@@ -63,14 +64,25 @@ def project(
         else:
             origin = p[4]
             if candidate.stage == "W4_DEVELOPING":
-                if candidate.template.name != "DIAGONAL":
+                if candidate.template.name == "DIAGONAL":
+                    condition("INVALIDATION", p[2], s < 0, "楔形浪4不可完全回撤浪3")
+                else:
                     condition("INVALIDATION", p[1], s < 0, "普通推动浪4不可与浪1重叠")
             else:
-                condition(
-                    "STAGE_EXIT", p[4], s < 0, "跌向镜像的浪4边界结束当前浪5阶段", inclusive=False
-                )
+                if candidate.template.name == "DIAGONAL":
+                    condition(
+                        "INVALIDATION", p[4], s < 0, "越过已确认浪4端点否定当前浪5", inclusive=False
+                    )
+                else:
+                    condition(
+                        "STAGE_EXIT",
+                        p[4],
+                        s < 0,
+                        "跌向镜像的浪4边界结束当前浪5阶段",
+                        inclusive=False,
+                    )
                 l3 = abs(p[3] - p[2])
-                if l3 < l1 and candidate.template.name != "DIAGONAL":
+                if l3 < l1:
                     cap = p[4] + s * l3
                     condition("INVALIDATION", cap, s > 0, "超过此长度将使浪3最短", inclusive=False)
             targets = [(origin + s * r * l1, "fibonacci_extension") for r in (0.618, 1.0)]
@@ -94,6 +106,33 @@ def project(
         else:
             condition("STAGE_EXIT", p[-1], s > 0, "三角形尚未完成", inclusive=False)
             targets = []
+    elif candidate.template.name == "FLAT":
+        a = abs(p[1] - p[0])
+        if candidate.stage == "B_DEVELOPING":
+            depth = p[1] - s * 0.9 * a
+            if s * (p[2] - depth) > tick:
+                condition("CONFIRMATION", depth, s < 0, "达到平台B的90%最低回撤")
+            condition("STAGE_EXIT", p[1], s > 0, "越过A端点时重新评估B浪", inclusive=False)
+        else:
+            condition("INVALIDATION", p[2], s < 0, "越过已确认B端点否定平台C", inclusive=False)
+            boundary = p[1] - s * 0.25 * a
+            if s * (boundary - current) > tick:
+                condition("CONFIRMATION", boundary, s > 0, "平台C进入A端点附近")
+        target_floor = p[1] - s * 0.25 * a
+        targets = [(p[2] + s * r * a, "fibonacci_extension") for r in (1.0, 1.618)]
+    elif candidate.template.name == "WXY":
+        w = abs(p[1] - p[0])
+        if candidate.stage == "X_DEVELOPING":
+            condition("INVALIDATION", p[0], s < 0, "双锯齿X不可触及W起点")
+            depth = p[1] - s * 0.5 * w
+            if s * (p[2] - depth) > tick:
+                condition("CONFIRMATION", depth, s < 0, "达到双锯齿X的50%最低回撤")
+        else:
+            condition("INVALIDATION", p[2], s < 0, "越过已确认X端点否定双锯齿Y", inclusive=False)
+        if s * (p[1] - current) > tick:
+            condition("CONFIRMATION", p[1], s > 0, "双锯齿Y越过W终点", inclusive=False)
+        target_floor = p[1] + s * tick
+        targets = [(p[2] + s * r * w, "fibonacci_extension") for r in (1.0, 1.618)]
     else:
         a = abs(p[1] - p[0])
         origin = p[2]
@@ -112,6 +151,7 @@ def project(
             if value > 0
             and target_direction * (value - current) > tick
             and (cap is None or s * (value - cap) <= 0)
+            and (target_floor is None or s * (value - target_floor) >= 0)
         ],
         key=lambda x: target_direction * (x[0] - current),
     )
@@ -134,6 +174,11 @@ def project(
                 high = min(high, cap)
             else:
                 low = max(low, cap)
+        if target_floor is not None:
+            if s > 0:
+                low = max(low, target_floor)
+            else:
+                high = min(high, target_floor)
         if 0 < low <= high:
             zones.append(
                 PriceZone(

@@ -10,7 +10,7 @@ from eliotbot.engine.projector import project
 from eliotbot.engine.rules import check_pattern
 from eliotbot.engine.scorer import score, weight_scenarios
 from eliotbot.engine.subwaves import subwave_fit
-from eliotbot.engine.templates import IMPULSE
+from eliotbot.engine.templates import DIAGONAL, FLAT, IMPULSE, WXY, ZIGZAG
 from eliotbot.engine.zigzag import ZigZagResult, extract
 from eliotbot.schemas.market import AnalysisRequest, Bar
 from eliotbot.schemas.wave import PivotPoint
@@ -264,7 +264,7 @@ def test_search_budget_is_global_and_visible(bundle):
     [
         ([100, 120, 101, 119], "FLAT"),
         ([100, 120, 105, 115, 108, 112], "TRIANGLE"),
-        ([100, 120, 110, 150, 118, 160], "DIAGONAL"),
+        ([100, 130, 115, 141, 128, 149], "DIAGONAL"),
         ([100, 120, 105, 130], "WXY"),
     ],
 )
@@ -279,7 +279,7 @@ def test_new_template_hard_rules(prices, pattern):
     [
         ([100, 120, 101, 119], "FLAT"),
         ([100, 120, 105, 115, 108, 112], "TRIANGLE"),
-        ([100, 120, 110, 150, 118, 160], "DIAGONAL"),
+        ([100, 130, 115, 141, 128, 149], "DIAGONAL"),
         ([100, 120, 105, 130], "WXY"),
     ],
 )
@@ -289,7 +289,146 @@ def test_new_templates_are_enumerated(prices, pattern):
     candidates, _ = search(
         bars, [zigzag], [bars[0].session_date], SearchConfig(max_bridge_intervals=5)
     )
-    assert any(candidate.template.name == pattern for candidate in candidates)
+    assert any(
+        candidate.template.name == pattern and candidate.stage == "COMPLETE"
+        for candidate in candidates
+    )
+
+
+def directed_pivots(prices, direction):
+    bars, points = make_pivots(prices if direction == 1 else [300 - p for p in prices])
+    if direction < 0:
+        points = tuple(
+            p.model_copy(update={"kind": "LOW" if p.kind == "HIGH" else "HIGH"}) for p in points
+        )
+    return bars, points
+
+
+@pytest.mark.parametrize("direction", [1, -1])
+@pytest.mark.parametrize(
+    "prices, rule_id",
+    [
+        ([100, 130, 125, 145, 128, 160], "W3_NOT_SHORTEST"),
+        ([100, 130, 115, 141, 115, 149], "W4_NO_FULL_RETRACE"),
+        ([100, 130, 112, 147, 128, 158], "DIAGONAL_SHAPE"),
+        ([100, 130, 115, 141, 128, 140], "W5_PROGRESS"),
+    ],
+)
+def test_diagonal_rejects_invalid_lengths_and_geometry(prices, rule_id, direction):
+    bars, points = directed_pivots(prices, direction)
+    rules = check_pattern("DIAGONAL", points, bars, direction, developing=False)
+    assert next(r.status for r in rules if r.rule_id == rule_id) == "FAIL"
+
+
+@pytest.mark.parametrize("direction", [1, -1])
+def test_diagonal_fifth_projection_respects_shortest_third_boundary(direction):
+    bars, points = directed_pivots([100, 130, 115, 141, 128, 149], direction)
+    rules = check_pattern("DIAGONAL", points, bars, direction, developing=True)
+    assert all(r.status == "PASS" for r in rules)
+    candidate = Candidate(
+        DIAGONAL, points[:-1], points[-1], direction, "W5_DEVELOPING", rules, (1.4,)
+    )
+    conditions, zones, _ = project(candidate, bars, 1, "test", bars[-1].end_at, 0.01)
+    cap = 154 if direction > 0 else 146
+    side, operator = ("HIGH", ">") if direction > 0 else ("LOW", "<")
+    assert any(
+        c.kind == "INVALIDATION" and c.price == cap and c.side == side and c.op == operator
+        for c in conditions
+    )
+    assert zones
+    assert all(zone.high <= cap if direction > 0 else zone.low >= cap for zone in zones)
+    breached_bars, breached_points = directed_pivots([100, 130, 115, 141, 128, 155], direction)
+    breached = check_pattern("DIAGONAL", breached_points, breached_bars, direction, developing=True)
+    assert next(r.status for r in breached if r.rule_id == "W5_LENGTH_CAP") == "FAIL"
+
+
+@pytest.mark.parametrize("direction", [1, -1])
+@pytest.mark.parametrize(
+    "prices, indices, developing, expected",
+    [
+        ([100, 120, 115, 134, 130, 148], [0, 10, 11, 12, 112, 113], False, "FAIL"),
+        ([100, 120, 105, 111, 109, 110], list(range(6)), False, "FAIL"),
+        ([100, 120, 109, 125, 105, 131], list(range(6)), False, "PASS"),
+        ([100, 120, 105, 115, 108], list(range(5)), True, "PENDING"),
+        ([100, 120, 109, 125, 105, 124], list(range(6)), True, "PENDING"),
+        ([100, 120, 109, 125, 105, 124], list(range(6)), False, "FAIL"),
+    ],
+)
+def test_triangle_tracks_rails_and_developing_leg(prices, indices, developing, expected, direction):
+    _, points = directed_pivots(prices, direction)
+    points = tuple(p.model_copy(update={"index": i}) for p, i in zip(points, indices, strict=True))
+    by_index = {p.index: p.price for p in points}
+    close = points[0].price
+    bars = []
+    for i in range(indices[-1] + 1):
+        close = by_index.get(i, close)
+        bars.append(make_bar(i, close))
+    rules = check_pattern("TRIANGLE", points, bars, direction, developing=developing)
+    assert next(r.status for r in rules if r.rule_id == "TRIANGLE_SHAPE") == expected
+    if expected != "FAIL":
+        assert not any(r.status == "FAIL" for r in rules)
+
+
+@pytest.mark.parametrize("direction", [1, -1])
+def test_flat_b_can_cross_a_origin_and_keeps_its_own_conditions(direction):
+    bars, points = directed_pivots([100, 120, 99], direction)
+    flat_rules = check_pattern("FLAT", points, bars, direction, developing=True)
+    assert next(r.status for r in flat_rules if r.rule_id == "B_DEEP") == "PASS"
+    zigzag_rules = check_pattern("ZIGZAG_ABC", points, bars, direction, developing=True)
+    assert next(r.status for r in zigzag_rules if r.rule_id == "W2_OR_B_ORIGIN") == "FAIL"
+    candidate = Candidate(
+        FLAT, points[:-1], points[-1], direction, "B_DEVELOPING", flat_rules, (1.4,)
+    )
+    conditions, zones, _ = project(candidate, bars, 1, "test", bars[-1].end_at, 0.01)
+    assert all(c.kind != "INVALIDATION" for c in conditions)
+    assert any(c.kind == "STAGE_EXIT" and c.price == points[1].price for c in conditions)
+    assert zones
+
+
+def test_wxy_y_projection_uses_its_own_endpoints_and_confirmation():
+    bars, points = make_pivots([100, 120, 105, 117], developing=True)
+    rules = check_pattern("WXY", points, bars, 1, developing=True)
+    x_retracement = next(r for r in rules if r.rule_id == "X_RETRACE")
+    assert (x_retracement.observed, x_retracement.boundary, x_retracement.status) == (
+        15,
+        10,
+        "PASS",
+    )
+    assert next(r.status for r in rules if r.rule_id == "Y_BEYOND_W") == "PENDING"
+    candidate = Candidate(WXY, points[:-1], points[-1], 1, "Y_DEVELOPING", rules, (1.4,))
+    conditions, zones, _ = project(candidate, bars, 1, "test", bars[-1].end_at, 0.01)
+    assert [(c.kind, c.side, c.op, c.price) for c in conditions] == [
+        ("INVALIDATION", "LOW", "<", 105),
+        ("CONFIRMATION", "HIGH", ">", 120),
+    ]
+    assert all("双锯齿" in c.reason for c in conditions)
+    assert zones and all(zone.low > 120 for zone in zones)
+
+
+def test_subwave_depth_two_uses_only_intervals_inside_one_parent_leg():
+    _, pivots = make_pivots([100, 120, 110, 130])
+
+    def at(indices):
+        return tuple(
+            pivots[i % len(pivots)].model_copy(update={"index": index})
+            for i, index in enumerate(indices)
+        )
+
+    points = at([10, 20, 25, 30])
+    parent = Candidate(ZIGZAG, points, points[-1], 1, "COMPLETE", (), (3.8,))
+    mid = ZigZagResult(at([0, 11, 16, 22, 40]), None)
+    coarse = ZigZagResult(points, None)
+    baseline = subwave_fit(
+        parent, [ZigZagResult(at([12, 14]), None), mid, coarse], [1.4, 2.4, 3.8], 2
+    )
+    with_outside = subwave_fit(
+        parent,
+        [ZigZagResult(at([2, 4, 12, 14, 18, 19, 32, 34]), None), mid, coarse],
+        [1.4, 2.4, 3.8],
+        2,
+    )
+    assert baseline == pytest.approx(2 / 3)
+    assert with_outside == baseline
 
 
 def test_wave_degree_thresholds():

@@ -1,0 +1,183 @@
+{
+  "source_sha256": "7018ebb1f447a95d33504953833068bc146df9d4835d425ecdb9a313ca7ccbb1",
+  "probe_sha256": "86895cc2028c77e581549bba94a2b1c02b9bfc541c66cf520ec3abf0f9e8eb2d",
+  "checks": {
+    "ENG-R01": {
+      "status": "FAIL",
+      "leg_lengths": [
+        30,
+        20,
+        32
+      ],
+      "failed_rules": {
+        "1": [],
+        "-1": []
+      }
+    },
+    "ENG-R02": {
+      "status": "FAIL",
+      "rule": "PASS",
+      "ac_slope": 7,
+      "bd_slope": 0.1485148514851485
+    },
+    "ENG-R03": {
+      "status": "FAIL",
+      "hard_rule_failures": [],
+      "crossed_conditions": [
+        {
+          "kind": "INVALIDATION",
+          "side": "LOW",
+          "op": "<=",
+          "price": 100.0,
+          "active_from": "2024-01-03T01:00:00Z",
+          "reason": "锯齿B不可完全回撤A",
+          "coordinate_id": "fixture"
+        }
+      ]
+    },
+    "ENG-R04": {
+      "status": "FAIL",
+      "base_fit": 0.0,
+      "outside_only_fit": 0.5
+    },
+    "ENG-R05": {
+      "status": "FAIL",
+      "actual_config": "f1f4f82a68af0acb2941862c7c0bd56574a301be9129c761a53c03244baf1dad",
+      "expected_config": "4515b976be9aadcb10a7f365a12829938f5ffb050830018b17a023f33215526d"
+    },
+    "ENG-R06": {
+      "status": "FAIL",
+      "analyze_with_allow_gaps": "OK",
+      "cli_replay": "INSUFFICIENT_DATA",
+      "prefixes_checked_with_api": 10
+    }
+  },
+  "frozen_cases": [
+    {
+      "label": "sse_long",
+      "suite": "validation_long_history_20261118",
+      "status": "OK",
+      "result_digest": "86304b3b02fa62ed60da698812bfd55da6aa1f8c26de6f3529d5a25aa5109e5b"
+    },
+    {
+      "label": "szcomp_long",
+      "suite": "validation_long_history_20261118",
+      "status": "OK",
+      "result_digest": "f41137a25ebe6c6086bc0349d560bb769b98e2da090a4d0a1915c1acf097364d"
+    },
+    {
+      "label": "csi300_long",
+      "suite": "validation_long_history_20261118",
+      "status": "OK",
+      "result_digest": "aa174e720c76c6f1eefcc05a6e18abf57c9dacbb2071db2c8bc704cda6917c8e"
+    },
+    {
+      "label": "pingan_long",
+      "suite": "validation_long_history_20261118",
+      "status": "OK",
+      "result_digest": "b0b144e12d81c38d2f10bba634f6eb5f441fbace9a7a6eb19d452db4a1ed02e5"
+    },
+    {
+      "label": "maotai_long",
+      "suite": "validation_long_history_20261118",
+      "status": "OK",
+      "result_digest": "9b090306319bf1da017c759577c4abc956db5f28f0c5b328949c8408750dec8d"
+    },
+    {
+      "label": "star50_day",
+      "suite": "validation_cn_index_20261117",
+      "status": "OK",
+      "result_digest": "2e4d17be9d6e296422da1d88783188610ec9d5e7ef16cb7fb025a2f28f7adb15"
+    },
+    {
+      "label": "csi300_day",
+      "suite": "validation_cn_index_20261117",
+      "status": "OK",
+      "result_digest": "fdd028e373de7a5657d8dc62ba309b78bd70b048ebc33308cfaa843bea51f480"
+    },
+    {
+      "label": "csi300_week",
+      "suite": "validation_cn_index_20261117",
+      "status": "OK",
+      "result_digest": "691e325ac8d4bd7f93c6f91bb3345cd79d6305ee3172ee18a8a04dafd378a16c"
+    },
+    {
+      "label": "szcomp_day",
+      "suite": "validation_cn_index_20261117",
+      "status": "OK",
+      "result_digest": "c8321fb989b011c9ea733eadf01179e2bfa47cecf45149c5780a6f9d8a984b16"
+    },
+    {
+      "label": "bse50_day",
+      "suite": "validation_cn_index_20261117",
+      "status": "OK",
+      "result_digest": "4faa40b36c481f92a9d4f1f4e1cd072c1827feb5bf6ea1ef4eb033572a743e7f"
+    },
+    {
+      "label": "ssecomp_day",
+      "suite": "validation_cn_index_20261117",
+      "status": "OK",
+      "result_digest": "e992528c97054c25026cd02f8d37a7b0661a1949204c526d6178a1fac1c92b74"
+    },
+    {
+      "label": "pingan_day",
+      "suite": "validation_cn_index_20261117",
+      "status": "UNCLEAR",
+      "result_digest": "be780bc28c6954be78a98cfeff5a9f3f37d6c8e0aab4997f240f72a878e5d310"
+    },
+    {
+      "label": "maotai_day",
+      "suite": "validation_20261117_ext5_fixed",
+      "status": "OK",
+      "result_digest": "c4b0ca2bedde102ef388575187dfbb46f5e7114c905f98ea3a68eee8f84790fa"
+    },
+    {
+      "label": "maotai_week",
+      "suite": "validation_20261117_ext5_fixed",
+      "status": "OK",
+      "result_digest": "c39b0d768d3543d96c61cf4cd773f867d12751fcfd22460d05130590a1e1ea62"
+    },
+    {
+      "label": "maotai_hour",
+      "suite": "validation_20261117_ext5_fixed",
+      "status": "UNCLEAR",
+      "result_digest": "508b75c5b31a2fccc31ee85992e8de3699b6da755e057910205ba00493ed581d"
+    },
+    {
+      "label": "maotai_5m",
+      "suite": "validation_20261117_ext5_fixed",
+      "status": "OK",
+      "result_digest": "5bd58e3f03221933afc8644b1b8c26ab4975907acbdd49e803c53482baba6cd3"
+    },
+    {
+      "label": "maotai_1m",
+      "suite": "validation_20261117_ext5_fixed",
+      "status": "OK",
+      "result_digest": "97cadd97ad95045d7db6b1265079baa505c9f52af48087e417e84506257d06de"
+    },
+    {
+      "label": "maotai_15m",
+      "suite": "validation_20261117_ext5_fixed",
+      "status": "OK",
+      "result_digest": "07c3b5440f43b601ec2f0431ad17332db045d36efc71ed8f8928272a06482676"
+    },
+    {
+      "label": "maotai_30m",
+      "suite": "validation_20261117_ext5_fixed",
+      "status": "OK",
+      "result_digest": "75faede06930c3ba1cf655c30c017c82670e725d9a1fe5f42277edbfa52a3526"
+    },
+    {
+      "label": "pingan_day",
+      "suite": "validation_20261117_ext5_fixed",
+      "status": "UNCLEAR",
+      "result_digest": "99cb1c6e1e84b2a53b9436cb7ca77ad9a0fa18eb0d998e2c97d4984cd14d74a6"
+    },
+    {
+      "label": "catl_day",
+      "suite": "validation_20261117_ext5_fixed",
+      "status": "OK",
+      "result_digest": "14436ef7e5b6259fd93887b9b4b5583d3382585934d43e1ecb6b1287c363f169"
+    }
+  ]
+}

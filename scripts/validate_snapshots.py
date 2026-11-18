@@ -28,7 +28,7 @@ def main():
     parser.add_argument("--config", type=Path)
     parser.add_argument("--long-term", action="store_true")
     parser.add_argument("--large-degree", action="store_true")
-    parser.add_argument("--subwave-depth", type=int, choices=(0, 1, 2), default=0)
+    parser.add_argument("--subwave-depth", type=int, choices=(0, 1, 2))
     parser.add_argument("--allow-gaps", action="store_true")
     parser.add_argument("--output", type=Path, default=Path("reports/snapshot-validation.json"))
     parser.add_argument("--reports", type=Path, default=Path("reports/validation"))
@@ -38,7 +38,7 @@ def main():
         settings = long_term_settings(settings)
     elif args.large_degree:
         settings = large_degree_settings(settings)
-    if args.subwave_depth:
+    if args.subwave_depth is not None:
         settings = settings.model_copy(
             update={
                 "search": settings.search.model_copy(

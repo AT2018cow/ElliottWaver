@@ -58,8 +58,9 @@ def subwave_fit(
 
     second = finer[1][1]
     sub_scores = []
+    parent_legs = tuple(pairwise(candidate.points))
     for left, right in pairwise(finer[0][1].confirmed):
-        if right.index <= candidate.points[0].index or left.index >= candidate.points[-1].index:
+        if not any(a.index <= left.index < right.index <= b.index for a, b in parent_legs):
             continue
         inside = [p for p in second.confirmed if left.index < p.index < right.index]
         sub_scores.append(min(1.0, len(inside) / 2))

@@ -75,17 +75,17 @@ def run_analyze(
     allow_gaps=False,
     long_term=False,
     large_degree=False,
-    subwave_depth=0,
+    subwave_depth=None,
     timeframe=None,
 ):
     settings = load_settings(Path(config) if config else None)
-    if subwave_depth not in {0, 1, 2}:
+    if subwave_depth is not None and subwave_depth not in {0, 1, 2}:
         raise InputError("--subwave-depth must be 0, 1, or 2")
     if long_term:
         settings = long_term_settings(settings)
     elif large_degree:
         settings = large_degree_settings(settings)
-    if subwave_depth:
+    if subwave_depth is not None:
         settings = settings.model_copy(
             update={
                 "search": settings.search.model_copy(update={"max_subwave_depth": subwave_depth})
@@ -255,7 +255,14 @@ def run_inspect(snapshot, *, config=None):
 
 @guarded
 def run_replay(
-    snapshot, *, start=None, end=None, step=1, output="reports/replay.jsonl", config=None
+    snapshot,
+    *,
+    start=None,
+    end=None,
+    step=1,
+    output="reports/replay.jsonl",
+    config=None,
+    allow_gaps=False,
 ):
     settings = load_settings(Path(config) if config else None)
     bundle = SnapshotStore(settings.cache.directory).load(snapshot)
@@ -270,7 +277,12 @@ def run_replay(
     try:
         with os.fdopen(fd, "w") as stream:
             for result in replay(
-                bundle, AnalysisService(settings), start=_day(start), end=_day(end), step=step
+                bundle,
+                AnalysisService(settings),
+                start=_day(start),
+                end=_day(end),
+                step=step,
+                allow_gaps=allow_gaps,
             ):
                 stream.write(canonical_json(result) + "\n")
                 count += 1
@@ -295,6 +307,7 @@ def run_replay(
                     "start": start,
                     "end": end,
                     "step": step,
+                    "allow_gaps": allow_gaps,
                     "reports": count,
                     "sha256": hashlib.sha256(destination.read_bytes()).hexdigest(),
                 }
@@ -372,8 +385,9 @@ def _argparse_app():
         analyze.add_argument(f"--{name}")
     analyze.add_argument("--top-k", type=int)
     analyze.add_argument("--renderer", choices=["plotly", "svg"], default="plotly")
-    for option in ("offline", "refresh", "allow-stale"):
+    for option in ("offline", "refresh", "allow-stale", "allow-gaps", "long-term", "large-degree"):
         analyze.add_argument(f"--{option}", action="store_true")
+    analyze.add_argument("--subwave-depth", type=int, choices=(0, 1, 2))
     analyze.add_argument("--open", dest="open_browser", action="store_true")
     analyze.add_argument("--json", dest="json_output", action="store_true")
     demo = sub.add_parser("demo")
@@ -392,6 +406,7 @@ def _argparse_app():
     for name in ("start", "end", "config"):
         replay_parser.add_argument(f"--{name}")
     replay_parser.add_argument("--step", type=int, default=1)
+    replay_parser.add_argument("--allow-gaps", action="store_true")
     replay_parser.add_argument("--output", default="reports/replay.jsonl")
     data = sub.add_parser("data").add_subparsers(dest="data_command", required=True)
     fetch = data.add_parser("fetch")
@@ -447,7 +462,7 @@ else:
         allow_gaps: bool = False,
         long_term: bool = False,
         large_degree: bool = False,
-        subwave_depth: int = 0,
+        subwave_depth: int | None = None,
         timeframe: str | None = None,
     ):
         run_analyze(**locals())
@@ -477,6 +492,7 @@ else:
         step: int = 1,
         output: Path = Path("reports/replay.jsonl"),
         config: Path | None = None,
+        allow_gaps: bool = False,
     ):
         run_replay(**locals())
 

@@ -17,7 +17,7 @@ import pyarrow.parquet as pq
 
 from eliotbot.errors import DataError
 from eliotbot.schemas.market import MarketDataBundle
-from eliotbot.util import atomic_write, canonical_json
+from eliotbot.util import atomic_write, canonical_json, digest
 
 SERIES_FIELDS = ("bars", "raw_bars", "auxiliary", "daily_context", "raw_daily_context")
 
@@ -26,8 +26,12 @@ class SnapshotStore:
     def __init__(self, root: Path):
         self.root = root
         self.root.mkdir(parents=True, exist_ok=True)
-        with closing(sqlite3.connect(self.root / "index.sqlite3")) as db:
-            db.execute("PRAGMA journal_mode=WAL")
+        with (
+            self.lock(digest("snapshot-index-init")),
+            closing(sqlite3.connect(self.root / "index.sqlite3")) as db,
+        ):
+            if db.execute("PRAGMA journal_mode").fetchone()[0] != "wal":
+                db.execute("PRAGMA journal_mode=WAL")
             db.execute(
                 "CREATE TABLE IF NOT EXISTS cache (key TEXT PRIMARY KEY, snapshot TEXT NOT NULL, fetched TEXT NOT NULL)"
             )

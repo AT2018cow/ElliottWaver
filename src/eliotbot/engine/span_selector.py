@@ -5,6 +5,7 @@ from eliotbot.config import AnalysisConfig
 from eliotbot.data.resample import weekly_bars
 from eliotbot.engine.indicators import calculate
 from eliotbot.engine.zigzag import extract
+from eliotbot.schemas.brief import BriefAnchor
 from eliotbot.schemas.market import AnalysisRequest, Bar, MarketDataBundle
 
 
@@ -13,13 +14,20 @@ def select_anchors(
     request: AnalysisRequest,
     config: AnalysisConfig,
 ) -> tuple[tuple[date, ...], tuple[str, ...]]:
+    anchors, warnings = select_anchor_details(bundle, request, config)
+    return tuple(sorted({item.date for item in anchors})), warnings
+
+
+def select_anchor_details(
+    bundle: MarketDataBundle, request: AnalysisRequest, config: AnalysisConfig
+) -> tuple[tuple[BriefAnchor, ...], tuple[str, ...]]:
     bars = bundle.bars
     if request.anchor:
         if request.anchor not in {b.session_date for b in bars}:
             from eliotbot.errors import InputError
 
             raise InputError("Explicit anchor must identify an available bar")
-        return (request.anchor,), ()
+        return (BriefAnchor(date=request.anchor, origin="EXPLICIT"),), ()
     earliest = max(0, len(bars) - config.max_analysis_bars)
     if request.start:
         earliest = max(
@@ -32,7 +40,7 @@ def select_anchors(
         weekly = weekly_bars(bundle.daily_context, bundle.sessions, monthly=True)
     else:
         weekly = bundle.daily_context
-    eligible: dict[str, list[date]] = {"LOW": [], "HIGH": []}
+    eligible: dict[str, list[BriefAnchor]] = {"LOW": [], "HIGH": []}
     if len(weekly) >= 15:
         zz = extract(weekly, calculate(weekly).atr, config.macro_scale, bundle.instrument.tick_size)
         for pivot in zz.confirmed:
@@ -50,10 +58,17 @@ def select_anchors(
             index = next(i for i, b in enumerate(bars) if b.start_at == daily.start_at)
             age = len(bars) - 1 - index
             if index >= earliest and config.min_anchor_bars <= age <= config.max_analysis_bars:
-                eligible[pivot.kind].append(daily.session_date)
+                eligible[pivot.kind].append(
+                    BriefAnchor(
+                        date=daily.session_date,
+                        origin="MACRO_LOW" if pivot.kind == "LOW" else "MACRO_HIGH",
+                        background_timeframe={"1d": "1w", "1w": "1mo"}.get(bundle.timeframe, "1d"),
+                        confirmed_at=pivot.confirmed_at,
+                    )
+                )
     limit = max(1, config.max_anchors // 2)
 
-    def choose(items: list[date]) -> list[date]:
+    def choose(items: list[BriefAnchor]) -> list[BriefAnchor]:
         if len(items) <= limit:
             return items
         if config.anchor_mode == "spread":
@@ -65,9 +80,15 @@ def select_anchors(
 
     anchors = choose(eligible["LOW"]) + choose(eligible["HIGH"])
     if anchors:
-        return tuple(sorted(set(anchors))[: config.max_anchors]), ()
+        days = sorted({anchor.date for anchor in anchors})[: config.max_anchors]
+        return tuple(
+            sorted(
+                {anchor for anchor in anchors if anchor.date in days},
+                key=lambda anchor: (anchor.date, anchor.origin, anchor.confirmed_at),
+            )
+        ), ()
     fallback = max(earliest, len(bars) - 252)
-    return (bars[fallback].session_date,), (
+    return (BriefAnchor(date=bars[fallback].session_date, origin="FALLBACK"),), (
         "ANCHOR_FALLBACK: 未找到已确认的合格背景周期锚点，使用明确标记的252根K线窗口",
     )
 

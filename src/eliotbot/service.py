@@ -1,5 +1,6 @@
 """Shared deterministic analysis facade used by CLI and replay."""
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -16,10 +17,11 @@ from eliotbot.engine.matcher import Candidate, search
 from eliotbot.engine.parents import attach_parent_context
 from eliotbot.engine.projector import project
 from eliotbot.engine.scorer import score, weight_scenarios
-from eliotbot.engine.span_selector import require_history, select_anchors
+from eliotbot.engine.span_selector import require_history, select_anchor_details
 from eliotbot.engine.subwaves import SubwaveCertification, certify_subwaves
 from eliotbot.engine.zigzag import extract
 from eliotbot.errors import DataError, InputError
+from eliotbot.schemas.brief import BriefAnchor
 from eliotbot.schemas.market import AnalysisRequest, MarketDataBundle
 from eliotbot.schemas.wave import AnalysisResult, SearchDiagnostics, WaveLabel, WaveScenario
 from eliotbot.util import digest
@@ -122,6 +124,13 @@ def prepare_bundle(request: AnalysisRequest, bundle: MarketDataBundle) -> Market
     )
 
 
+@dataclass(frozen=True)
+class AnalysisContext:
+    result: AnalysisResult
+    qualified: tuple[WaveScenario, ...]
+    anchors: tuple[BriefAnchor, ...]
+
+
 class AnalysisService:
     def __init__(self, settings: Settings | None = None):
         self.settings = settings or Settings()
@@ -132,11 +141,26 @@ class AnalysisService:
         return self.analyze_bundle(request, fetch_bundle(request, self.settings))
 
     def analyze_bundle(self, request: AnalysisRequest, bundle: MarketDataBundle) -> AnalysisResult:
-        bundle = prepare_bundle(request, bundle)
+        return self.analyze_prepared(request, prepare_bundle(request, bundle))
+
+    def analyze_prepared(
+        self, request: AnalysisRequest, bundle: MarketDataBundle
+    ) -> AnalysisResult:
+        return self.analyze_with_context(request, bundle).result
+
+    def weekly_background(self, request: AnalysisRequest, source: MarketDataBundle):
+        weekly_request = request.model_copy(update={"timeframe": "1w", "anchor": None})
+        prepared = prepare_bundle(weekly_request, source)
+        return self.analyze_with_context(weekly_request, prepared), prepared
+
+    def analyze_with_context(
+        self, request: AnalysisRequest, bundle: MarketDataBundle
+    ) -> AnalysisContext:
         bars = bundle.bars
         config = self.settings
         require_history(bars)
-        anchors, warnings = select_anchors(bundle, request, config.analysis)
+        anchor_details, warnings = select_anchor_details(bundle, request, config.analysis)
+        anchors = tuple(sorted({item.date for item in anchor_details}))
         warnings = list(bundle.provenance.warnings + warnings)
         if len(bars) > config.analysis.max_analysis_bars:
             warnings.append(
@@ -297,9 +321,11 @@ class AnalysisService:
             if message not in seen_excluded:
                 seen_excluded.add(message)
                 warnings.append(message)
-        displayed, omitted = weight_scenarios(
-            scenarios, config.scoring.temperature, request.top_k or config.analysis.top_k
+        qualified, _ = weight_scenarios(
+            scenarios, config.scoring.temperature, max(1, len(scenarios))
         )
+        displayed = qualified[: request.top_k or config.analysis.top_k]
+        omitted = max(0, 1 - sum(s.relative_weight for s in displayed)) if qualified else 0
         warnings.extend(
             f"PARENT_CONTEXT_PROVISIONAL: {scenario.scenario_id} "
             f"{parent_links[scenario.scenario_id].reason}"
@@ -372,4 +398,6 @@ class AnalysisService:
                 mode="json", exclude={"run_id", "result_digest", "analyzed_at", "mode"}
             )
         )
-        return result.model_copy(update={"result_digest": identity})
+        return AnalysisContext(
+            result.model_copy(update={"result_digest": identity}), qualified, anchor_details
+        )

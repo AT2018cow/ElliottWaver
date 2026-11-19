@@ -1,0 +1,76 @@
+{
+  "protocol_version": "1",
+  "protocol_id": "roadmap-repair-2026-heldout-smoke",
+  "cache_root": ".cache/eliotbot",
+  "samples": [
+    {
+      "symbol": "600519.SH",
+      "asset_type": "EQUITY",
+      "source_timeframe": "1d",
+      "snapshot_id": "d4ae9bb4f8ea0eb61eeedbc5c518a1794c9ba800ce4a58346a2c01e5289ae4d8"
+    },
+    {
+      "symbol": "000001.SZ",
+      "asset_type": "EQUITY",
+      "source_timeframe": "1d",
+      "snapshot_id": "e15f336b000c27992f892babe72378c73866b316f9c89c410c4ccaf8908da24e"
+    },
+    {
+      "symbol": "000001.SH",
+      "asset_type": "INDEX",
+      "source_timeframe": "1d",
+      "snapshot_id": "01f6f374e92b4d7689f5d64e0d6990574282fbab60749f0bf736cd127c8e899a"
+    },
+    {
+      "symbol": "000300.SH",
+      "asset_type": "INDEX",
+      "source_timeframe": "1d",
+      "snapshot_id": "b125c5228a182b35669c4f4f0d667de52e8cf8791d6b6220b8fb218af960abca"
+    }
+  ],
+  "grid": {
+    "start": "2023-01-01",
+    "end": "2026-09-30",
+    "cadence": "LAST_SESSION_OF_WEEK",
+    "outcome_as_of": "2026-09-30"
+  },
+  "splits": {
+    "train": {
+      "start": "2023-01-01",
+      "end": "2024-06-30"
+    },
+    "calibration": {
+      "start": "2024-07-01",
+      "end": "2025-12-31"
+    },
+    "test": {
+      "start": "2026-04-01",
+      "end": "2026-09-30"
+    }
+  },
+  "events": [
+    "CLOSE_BAND_5D_V1",
+    "CLOSE_BAND_20D_V1",
+    "CONFIRM_FIRST_20D_V1",
+    "TARGET_FIRST_20D_V1"
+  ],
+  "release": {
+    "reliability_bins": [
+      0.0,
+      0.2,
+      0.4,
+      0.6,
+      0.8,
+      1.0
+    ],
+    "min_bin_count": 50,
+    "min_bin_dates": 10,
+    "reliability_tolerance": 0.1,
+    "min_test_rows": 50,
+    "min_test_dates": 10,
+    "min_test_symbols": 5,
+    "min_supported_coverage": 0.5,
+    "bootstrap_repetitions": 2000,
+    "bootstrap_seed": 20261119
+  }
+}

@@ -1,10 +1,12 @@
 """Multiplicative basis-date coordinates; raw volume is never dividend-adjusted."""
 
+import math
 from bisect import bisect_right
 from collections.abc import Sequence
+from datetime import date
 
 from eliotbot.errors import DataError
-from eliotbot.schemas.market import Bar, FactorPoint
+from eliotbot.schemas.market import Bar, FactorPoint, MarketDataBundle
 
 
 def adjust_to_basis(
@@ -32,3 +34,41 @@ def adjust_to_basis(
         )
         adjusted.append(Bar(**values))
     return tuple(adjusted)
+
+
+def provider_price_scale(
+    issued: MarketDataBundle, current: MarketDataBundle, decision: date
+) -> float | None:
+    """Infer a uniform bridge only from unchanged raw sessions at issuance."""
+
+    def daily(bundle):
+        if bundle.timeframe == "1w":
+            return bundle.raw_daily_context, bundle.daily_context
+        return bundle.raw_bars, bundle.bars
+
+    old_raw, old_adjusted = daily(issued)
+    new_raw, new_adjusted = daily(current)
+    old = [
+        (raw, bar)
+        for raw, bar in zip(old_raw, old_adjusted, strict=True)
+        if bar.session_date <= decision
+    ][-2:]
+    new = {bar.start_at: (raw, bar) for raw, bar in zip(new_raw, new_adjusted, strict=True)}
+    if len(old) < 2 or old[-1][1].session_date != decision:
+        return None
+    ratios = []
+    for raw, bar in old:
+        other = new.get(bar.start_at)
+        if other is None:
+            return None
+        new_raw_bar, revised = other
+        if raw.end_at != new_raw_bar.end_at:
+            return None
+        for field in ("open", "high", "low", "close"):
+            if getattr(raw, field) != getattr(new_raw_bar, field):
+                return None
+            ratios.append(getattr(bar, field) / getattr(revised, field))
+    first = ratios[0]
+    if not math.isfinite(first) or first <= 0:
+        return None
+    return first if all(math.isclose(value, first, rel_tol=1e-8) for value in ratios) else None

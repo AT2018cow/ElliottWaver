@@ -151,8 +151,6 @@ def as_weekly(bundle: MarketDataBundle) -> MarketDataBundle:
     if not bars:
         raise DataError("No complete weeks are available")
     provenance = bundle.provenance.model_copy(update={"basis_date": bars[-1].session_date})
-    context = tuple(b for b in bundle.bars if b.end_at <= bars[-1].end_at)
-    raw_context = tuple(b for b in bundle.raw_bars if b.end_at <= bars[-1].end_at)
     groups = {}
     for day in bundle.sessions:
         groups.setdefault(day.isocalendar()[:2], []).append(day)
@@ -172,7 +170,8 @@ def as_weekly(bundle: MarketDataBundle) -> MarketDataBundle:
         provenance=provenance,
         sessions=bundle.sessions,
         factors=bundle.factors,
-        daily_context=context,
-        raw_daily_context=raw_context,
+        # Retain observed daily closes even when an incomplete week has no weekly OHLC.
+        daily_context=bundle.bars,
+        raw_daily_context=bundle.raw_bars,
         expected_bar_starts=expected,
     )

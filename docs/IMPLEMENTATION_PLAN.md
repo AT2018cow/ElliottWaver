@@ -2,7 +2,7 @@
 
 编制日期：2026-11-16。依据：[原始设计](../DESIGN.md)及两个参考项目当前检出的行情相关代码。
 
-**规格与进度：** 本文保留完整目标设计；当前已实现 CLI MVP 及七种主分析周期，逐项进度、真实行情验证与未验收范围见[实现及验收状态](IMPLEMENTATION_STATUS.md)。下面未完成的后续阶段仍属于目标规格，不能仅凭本文视为已交付；实际配置以仓库根目录 `config.example.yaml` 为准。原始设计继续保留。
+本文保留核心引擎与行情的目标设计。收盘摘要、历史和概率评估的接口见[收盘分析实施设计](WAVE_ANALYSIS_DESIGN.md)。当前命令见[中文使用手册](USER_GUIDE.md)，逐项交付与验收见[实现及验收状态](IMPLEMENTATION_STATUS.md)，实际配置见[配置样例](../config.example.yaml)。
 
 ## 目录
 
@@ -419,7 +419,7 @@ INIT 跟踪已见高低点，首次反转满足阈值时确立首个方向和起
 
 三角形的父级位置不能由三角形本身推断；没有父级证据只报告“收敛三角形形态候选 / parent_context=UNKNOWN”。扩散楔形、running flat、截短五浪及 W-X-Y 组合调整先返回未覆盖的复杂结构，随后单独版本化增加。
 
-实现补充（2026-11-18）。端点级 `TRIANGLE / FLAT / DIAGONAL / WXY` 模板已接入。三角形支持收敛和扩散两种轨道。楔形采用收敛、非截短的端点模板。父级上下文要求候选完整落在更高浪级父腿内，端点完全对齐时标记 `EXACT_LEG`。子浪认证用父腿端点和更细尺度拐点组成子候选，并复用 5 浪推动/楔形与 3 浪锯齿/平台硬规则；深度 2 再向下认证一层。复杂组合调整、无限递归和概率校准仍未实现。
+实现补充（2026-11-18）。端点级 `TRIANGLE / FLAT / DIAGONAL / WXY` 模板已接入。三角形支持收敛和扩散两种轨道。楔形采用收敛、非截短的端点模板。父级上下文要求候选完整落在更高浪级父腿内，端点完全对齐时标记 `EXACT_LEG`。子浪认证用父腿端点和更细尺度拐点组成子候选，并复用 5 浪推动/楔形与 3 浪锯齿/平台硬规则；深度 2 再向下认证一层。复杂组合调整和无限递归不在当前范围内。概率评估和校准的当前状态见[实现与验收状态](IMPLEMENTATION_STATUS.md)。
 
 ### 9.2 用一个方向公式覆盖涨跌
 
@@ -592,7 +592,7 @@ JSON / Markdown / 图表共享同一 `scenario_id`、点位和得分，图表 bu
 
 ### 13.2 建议命令
 
-下列均为待实现命令规格；JSON 为强制基础产物，`--format` 选择额外展示格式：
+以下为初版单周期命令示例。当前收盘摘要、自选和离线回放用法见[中文使用手册](USER_GUIDE.md)。
 
 ```bash
 # 将变量替换为下方离线示例对应的 AAPL 快照 ID
@@ -604,7 +604,7 @@ eliot analyze sz300750 --anchor 2025-04-09 --format html,png,md
 eliot analyze AAPL --offline --snapshot "$SNAPSHOT_ID"
 eliot data fetch 600519 --start 2021-01-01 --end 2026-11-13
 eliot data inspect "$SNAPSHOT_ID"
-eliot replay "$SNAPSHOT_ID" --start 2024-01-01 --end 2025-12-31
+eliot replay "$SNAPSHOT_ID" --start 2024-01-01 --end 2025-12-31 --output reports/replay.jsonl
 eliot doctor --market US
 ```
 
@@ -804,7 +804,9 @@ GET  /api/v1/watchlist       -> 自选列表及已完成分析摘要
 
 ## 18. 待验证事项与完成定义
 
-### 18.1 必须在实施中取得证据的事项
+### 18.1 初版设计时的待验证事项
+
+下表保留设计阶段的待验证清单，当前验证结果见[实现与验收状态](IMPLEMENTATION_STATUS.md)。
 
 | 待验证项 | 当前证据边界 | 解决阶段 |
 | --- | --- | --- |

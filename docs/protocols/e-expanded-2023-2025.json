@@ -1,0 +1,59 @@
+{
+  "protocol_version": "1",
+  "protocol_id": "e-expanded-2023-2025",
+  "cache_root": ".cache/eliotbot",
+  "samples": [
+    {"symbol": "600519.SH", "asset_type": "EQUITY", "source_timeframe": "1d", "snapshot_id": "8378a32d2ce12a8419cb853ad4c6558aa4644f11aae7302c3319d14530d87f8d"},
+    {"symbol": "000300.SH", "asset_type": "INDEX", "source_timeframe": "1d", "snapshot_id": "fef31b681cddad75bc541cf4edc03fcf3077273b95d5e886b7d69e5f577d542e"},
+    {"symbol": "399001.SZ", "asset_type": "INDEX", "source_timeframe": "1d", "snapshot_id": "22b98524009f903ce63c75675686bda77aca608f16923ccf5ab65aa6ac255bca"},
+    {"symbol": "000001.SH", "asset_type": "INDEX", "source_timeframe": "1d", "snapshot_id": "195886c5027cfd4642100df4f8e9c9e53103ff1ca657be5e2f70e7589f350331"},
+    {"symbol": "300750.SZ", "asset_type": "EQUITY", "source_timeframe": "1d", "snapshot_id": "3cbd49e6f18ee7be621f60fb506f8d869e4a5151c5f4f4d2d6ef407639be5f50"},
+    {"symbol": "000001.SZ", "asset_type": "EQUITY", "source_timeframe": "1d", "snapshot_id": "274c1b50afc753de8a11e564d21e0c96294f838306f8d721c3789413cec2516f"},
+    {"symbol": "300124.SZ", "asset_type": "EQUITY", "source_timeframe": "1d", "snapshot_id": "be2c9b070b2b0b622532bd0cdf2f0e4ab1cb552829765382071bfffa0800c3c3"},
+    {"symbol": "300059.SZ", "asset_type": "EQUITY", "source_timeframe": "1d", "snapshot_id": "1d06a261e97b281ce8cbe2665c32dfe99e7e660e256f0abb0eac1efaa7b4c090"},
+    {"symbol": "688111.SH", "asset_type": "EQUITY", "source_timeframe": "1d", "snapshot_id": "21aed03b58f9d2c4dcc4a47d4240dd01ec2401c52899c3024fc79cc8093c98c2"},
+    {"symbol": "688981.SH", "asset_type": "EQUITY", "source_timeframe": "1d", "snapshot_id": "3973fd867fdc454cb31a252688c75a7cb82d458be93894fb289d9db4b932125f"},
+    {"symbol": "000651.SZ", "asset_type": "EQUITY", "source_timeframe": "1d", "snapshot_id": "33e22a5ee42bb9be72ec90f0f10bb95f66fa859be2d65163af1c1a1a462cdae2"},
+    {"symbol": "000333.SZ", "asset_type": "EQUITY", "source_timeframe": "1d", "snapshot_id": "6ccdc7db0d370a6f00b4e830a6209554791f6d203f0108378e79bba9a298d813"},
+    {"symbol": "600036.SH", "asset_type": "EQUITY", "source_timeframe": "1d", "snapshot_id": "265be915fd0890c942cdcf3acf3574a6741948c7c2a06d83df5558e293ff4b5b"},
+    {"symbol": "601318.SH", "asset_type": "EQUITY", "source_timeframe": "1d", "snapshot_id": "09c185c1cfe2c1701042aa401b32a51687e70415df2e4cf460a416e2d736fee7"},
+    {"symbol": "399006.SZ", "asset_type": "INDEX", "source_timeframe": "1d", "snapshot_id": "80f5b4d5c5bd7614d7c8a4a0dab0d4303a23d54ab8a377728a3f22c81fa7f488"},
+    {"symbol": "000688.SH", "asset_type": "INDEX", "source_timeframe": "1d", "snapshot_id": "e36c70b2180c7b4ba3886d061c33a938e695ddf4e4aebc4cdfa2a4bee8f5dfa8"},
+    {"symbol": "600519.SH", "asset_type": "EQUITY", "source_timeframe": "1w", "snapshot_id": "62831f09054c73de7a68a1de4a4d7222b0387d1eb0151aaccc8ce2a478a9d6c2"},
+    {"symbol": "000001.SZ", "asset_type": "EQUITY", "source_timeframe": "1w", "snapshot_id": "27296573c2f6db3b4ac9ec43f8b8fa6f307c7e364e448de767077205d32c60ae"},
+    {"symbol": "000300.SH", "asset_type": "INDEX", "source_timeframe": "1w", "snapshot_id": "cc7f6550d1f1f51dfa8d8518a9298fd4ebd6572f09b2ae38c6c58672f0f7b684"},
+    {"symbol": "399001.SZ", "asset_type": "INDEX", "source_timeframe": "1w", "snapshot_id": "4a12a301decc2fabc96c90d499c698656dc53802ca9e53a8e6a895685f48ae75"},
+    {"symbol": "000001.SH", "asset_type": "INDEX", "source_timeframe": "1w", "snapshot_id": "6f21546d3f70ccc998a0c08eccec30b56b30a70df37c31237e6ad79f29e47ec6"},
+    {"symbol": "300750.SZ", "asset_type": "EQUITY", "source_timeframe": "1w", "snapshot_id": "3cbd49e6f18ee7be621f60fb506f8d869e4a5151c5f4f4d2d6ef407639be5f50"},
+    {"symbol": "000651.SZ", "asset_type": "EQUITY", "source_timeframe": "1w", "snapshot_id": "33e22a5ee42bb9be72ec90f0f10bb95f66fa859be2d65163af1c1a1a462cdae2"},
+    {"symbol": "600036.SH", "asset_type": "EQUITY", "source_timeframe": "1w", "snapshot_id": "265be915fd0890c942cdcf3acf3574a6741948c7c2a06d83df5558e293ff4b5b"}
+  ],
+  "grid": {"start": "2023-01-01", "end": "2025-12-31", "cadence": "LAST_SESSION_OF_WEEK"},
+  "splits": {
+    "train": {"start": "2023-01-01", "end": "2024-06-30"},
+    "calibration": {"start": "2024-07-01", "end": "2025-03-31"},
+    "test": {"start": "2025-04-01", "end": "2025-12-31"}
+  },
+  "events": [
+    "CLOSE_BAND_5D_V1",
+    "CLOSE_BAND_20D_V1",
+    "CONFIRM_FIRST_20D_V1",
+    "TARGET_FIRST_20D_V1",
+    "CLOSE_BAND_5W_V1",
+    "CLOSE_BAND_20W_V1",
+    "CONFIRM_FIRST_8W_V1",
+    "TARGET_FIRST_8W_V1"
+  ],
+  "release": {
+    "reliability_bins": [0.0, 0.2, 0.4, 0.6, 0.8, 1.0],
+    "min_bin_count": 50,
+    "min_bin_dates": 10,
+    "reliability_tolerance": 0.1,
+    "min_test_rows": 50,
+    "min_test_dates": 10,
+    "min_test_symbols": 5,
+    "min_supported_coverage": 0.5,
+    "bootstrap_repetitions": 2000,
+    "bootstrap_seed": 20261119
+  }
+}

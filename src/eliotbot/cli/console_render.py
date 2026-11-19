@@ -1,7 +1,9 @@
 from rich.console import Console
 from rich.table import Table
 
+from eliotbot.schemas.brief import Brief, forecast_message
 from eliotbot.schemas.wave import AnalysisResult
+from eliotbot.visualization.brief_formatter import omission_text
 
 
 def render_result(result: AnalysisResult) -> None:
@@ -39,3 +41,64 @@ def render_result(result: AnalysisResult) -> None:
         console.print(warning, style="yellow", markup=False)
     if not result.scenarios:
         console.print("当前没有达到质量与证据门槛的候选。")
+
+
+def render_brief(brief: Brief) -> None:
+    console = Console()
+    console.print(
+        f"[bold]EliotBot Brief · {brief.symbol}[/bold]  {brief.timeframe}  "
+        f"{brief.market_asof}  {brief.status}"
+    )
+    console.print(f"数据模式 {brief.mode} · 决策截止 {brief.as_of.isoformat()}", markup=False)
+    console.print(f"周期选择：{brief.timeframe_reason or '—'}")
+    console.print(
+        f"窗口：{brief.window.start} → {brief.window.end} · "
+        f"{brief.window.bar_count} 根 · 锚点 {len(brief.window.anchors)} 个"
+    )
+    for anchor in brief.window.anchor_details:
+        confirm = (
+            f" · {anchor.background_timeframe} 确认于 {anchor.confirmed_at}"
+            if anchor.confirmed_at
+            else ""
+        )
+        console.print(f"{anchor.date} · {anchor.origin}{confirm}", markup=False)
+    if brief.retrospective:
+        console.print("回顾性重算 · 使用显式指定的模型", style="yellow")
+    table = Table("角色", "候选", "浪级", "阶段", "父级", "子浪", "质量", "覆盖", "权重")
+    for card in brief.cards:
+        parent = (
+            "UNKNOWN"
+            if card.parent_context == "UNKNOWN"
+            else f"{card.parent_context}/{card.parent_degree}/{card.parent_wave_label}"
+        )
+        table.add_row(
+            card.role,
+            card.name,
+            card.degree,
+            card.stage,
+            parent,
+            card.subwave_status,
+            f"{card.quality_score:.1f}/100",
+            f"{card.coverage:.0%}",
+            f"{card.relative_weight:.1%}",
+        )
+    console.print(table)
+    if not brief.cards:
+        console.print("当前没有达到质量与证据门槛的候选。")
+    console.print(omission_text(brief), style="dim", markup=False)
+    for issue in brief.issues:
+        console.print(f"{issue.code}: {issue.message}", style="yellow", markup=False)
+    if brief.forecasts:
+        forecasts = Table("事件", "候选", "期限", "状态", "概率")
+        for item in brief.forecasts:
+            forecasts.add_row(
+                item.event_id,
+                item.scenario_id or "标的",
+                f"{item.horizon_sessions} {item.horizon_unit}",
+                item.status,
+                ", ".join(f"{key} {value:.1%}" for key, value in item.probabilities.items())
+                if item.probabilities
+                else item.reason or "—",
+            )
+        console.print(forecasts)
+    console.print(forecast_message(brief.forecast_status), style="dim", markup=False)

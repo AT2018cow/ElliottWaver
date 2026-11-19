@@ -1,6 +1,6 @@
 # EliotBot 0.1.0 实现与验收状态
 
-更新日期：2026-11-18。目标规格见[详细实现方案](IMPLEMENTATION_PLAN.md)，使用命令见[README](../README.md)。
+更新于 2026-11-19。安装、日常操作和研究流程见[中文使用手册](USER_GUIDE.md)。目标规格见[详细实现方案](IMPLEMENTATION_PLAN.md)和[收盘分析与概率评估实施设计](WAVE_ANALYSIS_DESIGN.md)。
 
 ## 已交付范围
 
@@ -18,13 +18,19 @@
 | 分析 | ATR/MACD、三尺度因果 ZigZag、背景锚点与回退、有限 CSP 搜索、端点与完整影线区间硬规则；`--long-term` 20 年窗口/首尾锚点/宽桥接搜索/子浪认证，`--allow-gaps` 显式跳过停牌缺口 |
 | 浪型 | 普通涨/跌推动、ABC 锯齿、三角形、平台、楔形和双锯齿 WXY。父级上下文用端点和浪段规则认证。子浪使用更细尺度拐点和同一套浪段规则。已完成收敛三角形使用经典整组门槛：至少四腿锯齿族、复杂腿最多一条；E 腿嵌套只标记 `PROVISIONAL`。 |
 | 评分与点位 | 分项证据、缺失状态、质量/覆盖/相对权重、Top-K 未展示权重、带方向条件、第五浪上限、合法目标带；完成态含 38.2%–100% 回撤目标，低分但硬规则通过的结构以 `EXCLUDED_STRUCTURE` 显式列出；第五浪同时比较浪 5/浪 1 与浪 5/浪 3，含 2.618/4.236 扩展位；按 K 线跨度标注浪级并提示 `MIXED_DEGREE_SCENARIOS` |
-| 产物 | Rich、JSON、Markdown、独立 Plotly HTML、SVG/PNG 备选渲染；报告文件完整后更新对应周期/feed 的 latest |
+| 产物 | 单周期分析支持 Rich、JSON、Markdown、Plotly HTML、SVG/PNG 备选渲染，完整写入后更新对应周期/feed 的 latest。收盘摘要支持终端、JSON、HTML 和 Markdown，显示数据模式与截止时刻，使用独立的摘要索引。 |
+| 收盘摘要 | `eliot brief` 单页摘要：自动选窗、主选/备选、条件/目标、父级/子浪证据、数据警告；默认日线，长跨度自动周线；默认周线背景、跨周期对齐和换窗复核；概率默认 `UNCALIBRATED`，加载批准模型后可输出概率 |
+| 历史与自选 | `eliot history` 查询已发布摘要，原摘要记录上次判断及变化，区分 `CONFIG_CHANGED`、`DATA_REVISED` 和 `NOT_COMPARABLE`。`eliot watchlist` 批量生成 JSON 摘要，支持有限重试、有界并发、模型注册表回退和单标的失败隔离。 |
+| 结算与支持矩阵 | `eliot settle` 使用本地快照，按 `(brief_digest,event_id,scope)` 去重并增量结算，行情修订追加版本，保留最初观察。`eliot support-matrix` 列出资产类型、周期和事件，传入训练汇总后显示该汇总中的支持状态和原因。 |
+| 离线评估 | `scripts/evaluate_briefs.py` 输出日线/周线 decisions/events/summary/manifest；支持收盘区间、确认先达、目标先达事件；summary 按标的、资产类型、周期、浪型和期限分解，并包含已确认拐点改写数、极值至确认 K 线数、相邻主选切换率、预测覆盖、确认延迟和搜索截断；`scripts/merge_evaluations.py` 可合并单样本分批结果 |
+| 概率研究 | 决策时选模、固定到期会话、清单校验及分市场和品种训练已实现。四标的留出复验的两类证券各四项事件均证据不足，默认注册表没有批准模型。详见 [EW-R01–R09 修复复验](reviews/2026-11-19-roadmap-repair.md)。 |
+| 标注研究 | `scripts/label_wave_cases.py export/import/score/direction/predict` 支持从已发布 brief/daily 自动生成分层盲标 case（含无候选、`EXCLUDED_STRUCTURE`/拒绝候选和歧义分层）、标的涨跌标签、标签导入、按 case 均权独立判读认可概率、双阳性/双阴性、原始一致率、Cohen κ、split 分组；`scripts/train_label_models.py` 训练每模板独立二项模型并接入 E 式留出校准和 50/10/10/κ≥0.60 门槛 |
 | 快照与回放 | SQLite 索引、Parquet 不可变块、SHA256、原子写入、源身份检查；逐前缀回放与回放 manifest |
 
 ## 验证结果
 
 ```text
-python -m pytest tests -q              180 passed
+python -m pytest tests -q              276 passed
 ruff check src tests scripts           PASS
 ruff format --check src tests scripts  PASS
 pip check                             No broken requirements found
@@ -99,10 +105,10 @@ pip check                             No broken requirements found
 | M1 | 沪深真实子集通过；US 仅契约测试；未完成原计划 8–12 只跨市场真实样本验收 |
 | M2–M5 | 核心 CLI 链路、规则、评分和报告已实现；次级分形认证按缺失证据处理 |
 | M6 | 平台、三角形、楔形、WXY 支持端点级硬规则。父级关联和子浪认证共用浪段规则，内部认证深度最多两层。收敛三角形使用经典整组门槛；E 腿嵌套为 `PROVISIONAL` 候选。 |
-| M7 | 冻结数据逐前缀回放工具与事件标签基础已实现；长期统计评估、留出比较与概率校准尚未完成 |
+| M7 | 已实现冻结数据逐前缀回放、日周线事件评估、基线对比、留出校准和模型注册机制。当前冻结样本的留出证据不足，尚未批准真实行情模型。 |
 | W1–W2 | 未开始 Web；公共结构化结果与服务入口已预留 |
 
-`max_subwave_depth` 默认 0，子浪证据显示 `UNAVAILABLE`。`--long-term` 默认设为 1，显式 `--subwave-depth 2` 再向下认证一层。全部父腿均已确认并通过位置规则和子模板硬规则时显示 `VERIFIED`。已完成收敛三角形还要求至少四腿为锯齿族、复杂腿最多一条；五平台或双复杂腿为 `UNVERIFIED` 且不获得满额子浪分。E 腿嵌套只标记 `PROVISIONAL`。证据不足或部分失败显示 `UNAVAILABLE` 或 `UNVERIFIED`。通用楔形的内部结构认证保留为 `UNAVAILABLE`。`calibrated_event_probability` 固定为 null。
+`max_subwave_depth` 默认 0，子浪证据显示 `UNAVAILABLE`。`--long-term` 默认设为 1，显式 `--subwave-depth 2` 再向下认证一层。全部父腿均已确认并通过位置规则和子模板硬规则时显示 `VERIFIED`。已完成收敛三角形还要求至少四腿为锯齿族、复杂腿最多一条；五平台或双复杂腿为 `UNVERIFIED` 且不获得满额子浪分。E 腿嵌套只标记 `PROVISIONAL`。证据不足或部分失败显示 `UNAVAILABLE` 或 `UNVERIFIED`。通用楔形的内部结构认证保留为 `UNAVAILABLE`。单周期候选的 `calibrated_event_probability` 保持 `null`，获批的短期事件概率通过 `brief.forecasts` 发布。
 
 其他边界：BJ 个股仅有代码路由，线上接入显式拒绝；BJ 指数（`899*`）已接通。Sina 无可信停牌证据时内部缺口保持未知；长历史个股需显式 `--allow-gaps`。父级上下文只在本次枚举到的候选之间建立，搜索未枚举到的更大结构仍为 `UNKNOWN`；子浪认证覆盖 5 浪推动/楔形和 3 浪锯齿/平台，复杂组合调整、running flat、扩散楔形和截短五浪仍未覆盖。尚未接入 BaoStock 备源；指数分钟线未启用；分钟历史取供应商实际返回范围；评分默认参数为工程初值，未根据收益寻优。
 

@@ -1,8 +1,8 @@
 # EliotBot 中文使用手册
 
-适用版本：0.1.0 CLI。更新日期：2026-11-17。
+适用版本为 0.1.0 CLI。更新于 2026-11-19。
 
-EliotBot 从股票与指数 K 线中寻找普通推动浪和 ABC 锯齿候选，输出规则检查、评分、关键价位及图表。当前入口是终端命令，图表通过浏览器查看。
+EliotBot 从股票和指数的 K 线中识别波浪候选，给出规则检查、确认价、失效价和目标区。日常用 `brief` 看收盘摘要，单周期深入分析用 `analyze`。命令在终端运行，HTML 报告可在浏览器中打开。
 
 目录：
 
@@ -10,6 +10,10 @@ EliotBot 从股票与指数 K 线中寻找普通推动浪和 ABC 锯齿候选，
 - [2. 安装与环境检查](#2-安装与环境检查)
 - [3. 股票代码与 K 线周期](#3-股票代码与-k-线周期)
 - [4. 分析 A 股与美股](#4-分析-a-股与美股)
+  - [收盘摘要与历史查询](#45-一页收盘摘要-brief)
+  - [自选批量、到期结算和支持矩阵](#47-自选批量)
+  - [离线评估与概率校准](#48-离线评估与概率研究)
+  - [盲标与一致性评分](#49-盲标导出与一致性评分)
 - [5. 找到并查看报告](#5-找到并查看报告)
 - [6. 怎么理解分析结果](#6-怎么理解分析结果)
 - [7. 日期、时间和锚点](#7-日期时间和锚点)
@@ -21,21 +25,24 @@ EliotBot 从股票与指数 K 线中寻找普通推动浪和 ABC 锯齿候选，
 
 ## 1. 先运行起来
 
-当前工作区已经安装依赖，可以直接执行下面的命令。以下示例均以项目根目录为工作目录：
+以下示例从项目根目录运行。首次使用先按[安装步骤](#2-安装与环境检查)建立虚拟环境。
 
 ```bash
-cd <REPO_ROOT>
-
-# 不联网、不需要密钥，先熟悉输出
-.venv/bin/eliot demo --symbol 600519 --timeframe 1d
-
-# 分析真实 A 股日线，完成后尝试打开浏览器
-.venv/bin/eliot analyze 600519 --timeframe 1d --open
+.venv/bin/eliot brief 600519 --open
+.venv/bin/eliot brief 000300.SH --timeframe 1w --open
 ```
 
-演示使用明确标记的合成行情；第二条命令使用新浪真实行情，需要联网。命令结束后，终端会打印报告目录与快照 ID。
+第一条命令查看贵州茅台的日线主分析和最近完整的周线背景。第二条命令用周线分析沪深 300。两条命令都从新浪取数，需要联网，无需密钥。终端打印摘要目录和快照 ID。打开目录中的 `index.html` 查看收盘摘要，点击「打开 K 线图」查看主周期的端点。可用的周线背景图在同目录下的 `weekly.html`。把报告目录一起下载，便可离线查看。
 
-如果运行环境没有桌面浏览器，进入报告目录，双击或下载其中的 `chart.html`，在自己的浏览器中打开。该 HTML 已包含所需脚本，不需要启动 Web 服务。
+没有网络时，先运行合成行情演示。将终端打印的完整「快照」ID 填入变量，再生成离线摘要。
+
+```bash
+.venv/bin/eliot demo --symbol 600519 --timeframe 1d
+DEMO_SNAPSHOT_ID='替换为演示命令打印的完整快照ID'
+.venv/bin/eliot brief 600519 --offline --snapshot "$DEMO_SNAPSHOT_ID"
+```
+
+演示使用合成行情，`brief` 会显示 `FROZEN_DATA_REPLAY` 及决策截止时刻。真实快照的离线用法见[保存快照与离线分析](#8-保存快照与离线分析)。
 
 ## 2. 安装与环境检查
 
@@ -149,6 +156,7 @@ live 端点为 `https://api.alpaca.markets`。配置文件从当前工作目录�
 
 ```bash
 .venv/bin/eliot doctor --market US
+.venv/bin/eliot brief AAPL --feed sip
 .venv/bin/eliot analyze AAPL --feed sip
 .venv/bin/eliot analyze MSFT --timeframe 1h --feed sip
 .venv/bin/eliot analyze AAPL --timeframe 15m --feed iex
@@ -200,9 +208,201 @@ A 股老指数/老股票原始数据可到 1990/1991 年；引擎日历从 **199
 
 30 年以上日线会超过 `max_analysis_bars` 上限 5000；请用周线，或接受 `ANALYSIS_WINDOW_TRUNCATED` 警告。个股长历史通常有停牌缺口；`--allow-gaps` 会继续分析并给出 `ALLOWED_GAPS` 警告，不补造价格。
 
+### 4.5 一页收盘摘要 `brief`
+
+`brief` 自动选择主周期和起点。下面展示如何调整主周期、日期和输出方式。
+
+```bash
+.venv/bin/eliot brief 600519 --timeframe 1d
+.venv/bin/eliot brief 600519 --start 2015-01-01
+.venv/bin/eliot brief 600519 --timeframe 1d --no-weekly --no-window-check --format json --json
+```
+
+默认 `--timeframe auto` 选择日线。输入原生周线快照，或 `--start` 到截止时刻超过 5 × 365 天时，自动选周线。显式指定 `--timeframe 1d` 或 `--timeframe 1w` 可锁定周期。`--start` 设置搜索下界，`--anchor YYYY-MM-DD` 指定起浪日。需要更细周期或 `--long-term` 等搜索预设时，使用前文的 `analyze` 示例。
+
+打开摘要后按下面的顺序阅读。
+
+1. **核对数据日期、状态和模式。** 终端、Markdown 与 HTML 都显示决策截止时刻。显式指定快照、`--as-of` 或 `--end` 的报告标记为 `FROZEN_DATA_REPLAY`。`UNCLEAR` 表示当前没有足够清晰的候选。
+2. **核对选窗和主备判断。** 报告列出实际使用的行情范围、锚点来源和确认时间，单独展示主选起浪日。查看每张卡片的确认价、失效价、目标区和父子浪证据。摘要最多展示三张卡片，另外列出引擎 Top-K 之外的权重，以及 Top-K 已返回但被摘要省略的候选数和权重。
+3. **看周线和换窗结论。** 以日线为主时，默认用同一份日线源数据派生最近完整周。只有日、周线均为 `OK` 且方向明确时才给出 `ALIGNED`（同向）或 `CONFLICT`（分歧）。缺周线或证据不足时显示 `NOT_AVAILABLE` 或 `UNDETERMINED`。换窗用另一个自动起点复算，`CHANGED_BIAS` 表示方向随窗口改变。只有一个自动起点或指定了 `--anchor` 时，换窗显示 `NOT_APPLICABLE`。
+4. **检查概率状态。** 权重来自当前候选评分。默认 `forecast_status` 为 `UNCALIBRATED`，获批且适用的模型有支持档时才显示事件概率。价格走势概率和候选确认概率使用不同的事件定义。[概率研究与结果解读](#48-离线评估与概率研究)
+
+`--no-weekly` 和 `--no-window-check` 分别关闭摘要的周线背景和换窗复核。导出文件和目录见[找到并查看报告](#5-找到并查看报告)。
+
+### 4.6 历史查询与上次判断
+
+每次发布完整的 `brief` 后，程序把摘要和路径登记到本地 SQLite 索引。`history` 读取已有报告，`--mode live` 筛选日常记录，`--mode frozen` 筛选回放记录。按日期筛选时，`--as-of` 表示行情日期上界。
+
+```bash
+.venv/bin/eliot history 600519
+.venv/bin/eliot history 600519 --mode frozen --json
+```
+
+查询返回最近 50 条匹配记录。JSON 数组中每条记录的 `path` 指向原报告目录。生成摘要时若用了自定义缓存，查询时也要传同一个 `--config`。报告移走或校验失败时，历史结果显示 `UNREADABLE`。
+
+`brief.json` 中的 `previous` 记录同模式的上一次较早判断。常见结果有 `FIRST_RECORD`（首次）、`SAME_COUNT`（维持）、`ALTERNATE_PROMOTED`（备选升为主选）、`STAGE_ADVANCED`（浪段推进）和 `COUNT_CHANGED`（结构改变）。配置或引擎版本变化显示 `CONFIG_CHANGED`。周期、feed、复权口径变化或没有可比较的行情时显示 `NOT_COMPARABLE`。`DATA_REVISED` 只计算截至上次决策的重叠 K 线和因子修订。JSON 另保留 `structure_change`、`revision_count` 和 `factor_revision_count`。
+
+### 4.7 自选批量
+
+```bash
+mkdir -p reports
+printf '600519.SH\n000300.SH\n' > reports/my-watchlist.txt
+.venv/bin/eliot watchlist reports/my-watchlist.txt --workers 2 --retries 1 --json
+```
+
+文件每行一个标的，空行和以 `#` 开头的注释会被忽略，合法代码按规范写法去重。`--workers` 可设为 1、2、4 或 8，`--retries` 可设为 0 至 5，`--retry-delay` 设置两次尝试之间的秒数。非法代码按原文记录，其他标的继续处理，命令最后返回首个失败标的的退出码。已生成但状态为 `INSUFFICIENT_DATA` 或 `STALE_DATA` 的摘要也计为失败，可用 JSON 条目的 `path` 和 `error` 排查。
+
+批量摘要只保存 JSON 产物，默认目录为 `reports/watchlist/`。要看某只标的的 HTML，单独运行 `brief SYMBOL`。如需给整批选用其他周期，传 `--timeframe 1w`。批量行情来源通过 `--config` 配置，美股仍需要对应 feed 的凭证。`--model-registry DIR` 可指定已有的模型注册表，默认使用缓存目录下的 `models/`。
+
+### 4.7.1 到期结算
+
+先生成 `brief` 并保留其报告目录。等要核对的交易日或交易周结束后下载新快照。以下示例假设贵州茅台原摘要的主周期是日线。
+
+```bash
+.venv/bin/eliot data fetch 600519 --timeframe 1d --refresh
+OUTCOME_SNAPSHOT_ID='替换为新下载行情的完整snapshot_id'
+.venv/bin/eliot settle reports/CN/600519.SH/brief \
+  --snapshot "$OUTCOME_SNAPSHOT_ID" --output reports/settlements-600519.json --json
+```
+
+目录参数会递归读取报告，也可以传一份报告的 `brief.json`。结算只读取缓存，省略 `--snapshot` 时使用每份报告自己的源快照。替代快照应与报告的标的、周期、feed 和复权口径相容，并覆盖所需到期日。周线报告也可使用由日线快照派生的周线行情。混合标的或口径先按报告分别结算。使用自定义缓存时，传同一份 `--config` 或传 `--cache-root` 指向存放快照的目录。
+
+- 查看 `records[].status` 和 `records[].latest.outcome`。进入 `SETTLED` 后可读实际标签。尚未覆盖必要行情时显示 `RIGHT_CENSORED`，应有交易会话缺数据时显示 `INCOMPLETE_DATA`。行情补齐后以新快照重跑。
+- 结算使用报告发行时的收盘价、ATR、候选边界和预定会话。周线收盘事件使用到期周最后一个预定交易会话的收盘价，触价事件要求完整周 OHLC。美股换用修订的复权快照时，无法确认价格换算比例会显示 `PRICE_BASIS_UNVERIFIED`。
+- 每个 `brief_digest + event_id + scope` 只算一次。同一判断导出为多个格式时会去重。行情修订后保留 `initial`，更新 `latest` 和 `latest_revision`。路径无效、没有报告或有报告/快照处理失败时，退出码为非零。
+
+### 4.7.2 支持矩阵
+
+```bash
+.venv/bin/eliot support-matrix
+# 完成 4.8 训练后，可读所产出的模型汇总
+.venv/bin/eliot support-matrix \
+  --model-summary reports/models/summary.json \
+  --output reports/support-matrix.json --json
+```
+
+输出各资产类型、周期、事件的 `model_status`、`applicable_model` 和未通过原因。直接运行时显示 `UNCALIBRATED`。传入训练的 `summary.json` 时读该文件中的结果。检查某次分析实际加载的模型和概率时，查看该分析的 `brief.json`。
+
+### 4.8 离线评估与概率研究
+
+评估、训练与支持矩阵是可独立运行的研究流程。先用 `data inspect` 确认协议中的每个快照在指定的 `cache_root` 中。仓库保存了[四标的冻结协议及取数说明](protocols/README.md)。新环境按该说明准备自己的协议副本。
+
+```bash
+PROTOCOL=docs/protocols/roadmap-repair-2026-heldout-smoke.json
+.venv/bin/python scripts/evaluate_briefs.py \
+  --protocol "$PROTOCOL" --output-dir reports/eval
+.venv/bin/python scripts/train_forecasts.py \
+  --protocol "$PROTOCOL" --decisions reports/eval --output-dir reports/models
+.venv/bin/eliot support-matrix --model-summary reports/models/summary.json
+```
+
+评估输出 `decisions.jsonl`、`events.parquet`、`summary.json` 和 `manifest.json`。周线样本可以从日线快照派生。先看 `summary.json` 的样本量、成熟比例和分组结果，需要核对单条判断时再看明细。三个主要事件的读法如下。
+
+| 事件 | 衡量什么 |
+| --- | --- |
+| `CLOSE_BAND_5D_V1`、`CLOSE_BAND_20D_V1`、`CLOSE_BAND_5W_V1`、`CLOSE_BAND_20W_V1` | 第 5 或第 20 个交易日或交易周的收盘价，相对判断时收盘价 ± 1 个 ATR，高于上界为 `UP`，低于下界为 `DOWN`，其余为 `RANGE` |
+| `CONFIRM_FIRST_20D_V1` / `CONFIRM_FIRST_8W_V1` | 候选在 20 个交易日或 8 个交易周内，是否在失效前先满足确认条件 |
+| `TARGET_FIRST_20D_V1` / `TARGET_FIRST_8W_V1` | 候选在同一期限内，是否在失效前先到达主目标区 |
+
+事件的期限、价格坐标和候选条件在决策时冻结。触价事件若在同一根 K 线上同时达到目标和失效边界，会标记 `AMBIGUOUS_SAME_BAR`。评估可以使用后来取得的冻结快照，`DECISION_TIME` 表示按模型批准时间选模，研究结果仍是冻结数据回放。
+
+样本较多时，可以把原协议分别复制到多个文件，每份只改 `samples`，从同一份源码分别跑评估，然后按完整协议合并。合并会检查样本覆盖、配置和生成各批结果的源码指纹。
+
+```bash
+.venv/bin/python scripts/merge_evaluations.py \
+  --protocol "$PROTOCOL" \
+  --input reports/eval-part1 --input reports/eval-part2 \
+  --output-dir reports/eval-merged
+```
+
+合并完成后，训练时使用 `--decisions reports/eval-merged`。
+
+训练校验评估清单和文件哈希，按市场、证券类别、周期、feed 与复权口径分别生成模型，并按事件预定到期日剔除跨分段样本。单组模型在输出目录保存 `model.json`、`summary.json` 和 `manifest.json`。多组运行时，用顶层 `summary.json` 中各组的 `model_path` 找到具体模型。仓库协议的 `release` 字段记录以下发布门槛。
+
+- 相对类别频率、20 根动量、完整价格组三项基线，Brier 和 log loss 改善的配对 95% 区间下界均大于 0；
+- 每个展示可靠性档至少 50 个成熟观测和 10 个不同决策日期，且来自至少两个有样本的时间块。预测均值减实际发生率的 95% 区间须在 ±0.10 内。
+- 测试样本至少 50 行、10 个日期、5 个标的；
+- 支持档覆盖率至少 0.5。
+
+训练结束后先看各事件的 `status` 和 `reasons`。仓库当前没有批准的真实行情模型，日常摘要保持未校准。合格的模型由维护者通过 `eliotbot.forecast.ModelRegistry.register` 登记到缓存的 `models/` 子目录，须包含至少一个 `APPROVED` 事件，批准日须晚于留出期最后一天。训练目录中的模型文件应保留原路径，供注册表读取。
+
+- `brief` 在默认缓存的 `models/` 中按决策时间查找兼容的已批准模型，可用 `--model-registry DIR` 指定其他注册表。显式 `brief --model /path/to/model.json` 会在加载成功后将摘要标记为回顾性重算。三分类事件中任一分量落入未获支持的档位，整个事件显示 `UNSUPPORTED_BIN`。
+- `evaluate_briefs.py --model-registry DIR` 使用决策时已批准且未撤回的模型。另可用 `--model /path/to/model.json` 重算兼容的历史决策，省略批准时间时全部标记为回顾性。如果确实有批准记录，可加带时区的 `--model-approved-at`，只把早于批准时间的决策标记为回顾性。批准日须晚于模型留出期末日。查看明细的 `model_id`、`model_approved_at`、`retrospective` 和汇总的 `model_usage`。
+
+四标的留出复验中，个股和指数各四项事件均为 `INSUFFICIENT_EVIDENCE`。[留出复验记录](reviews/2026-11-19-roadmap-repair.md)
+
+### 4.9 盲标导出与一致性评分
+
+先用 `brief` 生成要评审的报告。下面从默认目录中的贵州茅台摘要导出一个可直接打开的静态标注页面。
+
+```bash
+.venv/bin/python scripts/label_wave_cases.py export \
+  --briefs reports/CN/600519.SH/brief \
+  --cache-root .cache/eliotbot --bar-window 60 \
+  --output reports/blind-cases.json --html reports/blind-cases.html
+```
+
+导出时校验报告清单和文件，跳过不完整或校验失败的报告。端点按出现顺序编号。页面覆盖「候选」「被拒绝的结构」与「无候选」三类，`--max-per-stratum` 可限制每层数量。源快照无法读取时，仍可导出端点并标记 `BARS_UNAVAILABLE`。要从自备案例 JSON 导出 JSON，可用 `export --input cases.json --output reports/blind-cases.json`。
+
+1. 用浏览器打开 `reports/blind-cases.html`。每位标注者填写自己的 `annotator_id`，独立完成判断。
+2. 每个案例可多选浪型、单独选方向，也可选择弃权。确认没有适用浪型时，可留空浪型并勾选「已完成本案例判断」。只有已完成的案例会进入下载的 CSV。
+3. 各自下载 CSV。评分前合并 CSV 为 `reports/labels.csv`，只保留一行表头。同一个案例和标注者的组合仅允许一条记录。导入、评分与训练都会拒绝重复提交。
+
+```bash
+.venv/bin/python scripts/label_wave_cases.py import \
+  --input reports/labels.csv --output reports/labels.json
+.venv/bin/python scripts/label_wave_cases.py score \
+  --labels reports/labels.json --cases reports/blind-cases.json \
+  --output reports/labels-score.json
+```
+
+如需计算实际未来涨跌，可从案例引用的快照中取到期收盘价。完整结果单独存档。数据尚未覆盖到期时会标记 `RIGHT_CENSORED`。
+
+```bash
+.venv/bin/python scripts/label_wave_cases.py direction \
+  --cases reports/blind-cases.json --cache-root .cache/eliotbot \
+  --horizon 5 --output reports/direction-labels.json
+```
+
+需要训练识别模型时，先冻结按案例分配的训练、校准和留出集。在合并后的 CSV 中新增 `split` 列，填 `train`、`calibration` 或 `test`，同一案例的全部标注必须使用同一值。重新执行 `import`，再运行训练和预测。
+
+```bash
+.venv/bin/python scripts/train_label_models.py \
+  --cases reports/blind-cases.json --labels reports/labels.json \
+  --output-dir reports/label-models
+
+# 只对 APPROVED 模板预测
+.venv/bin/python scripts/label_wave_cases.py predict \
+  --cases reports/blind-cases.json --model reports/label-models/label-model.json \
+  --output reports/label-predictions.json
+```
+
+手工编辑 CSV 时，沿用页面下载的字段 `case_id, annotator_id, selected_patterns, direction, abstain, reason`。`selected_patterns` 可用 `|` 分隔，`direction` 可填 `UP`、`DOWN` 或 `ABSTAIN`。核对 `labels-score.json` 中各模板的以下指标。
+
+- `recognition_probability` 按案例均权汇总认可比例。
+- `double_valid_cases`、`double_positive`、`double_negative`、`discordant_count/cases`。
+- `positive_rate_left/right`、`annotation_positive_rate`、`case_positive_rate`。
+- `raw_agreement`、`cohen_kappa`。
+- `gate` 要求至少 50 个不同标注者双人有效案例、10 个双阳性、10 个双阴性，且 κ ≥ 0.60。未通过时 `eligible_for_calibration=false`。
+
+`--cases` 可提供 case 清单，用于按 case 的 `split` 分组和统计 `missing_cases`；`score` 顶层输出 `by_split`、`abstain`、`empty_selection`、`cases_without_valid` 和 `cases_with_extra_annotations`。`directions` 单独报告标注者涨跌方向的一致率和 Cohen κ。
+
+每个模板的识别模型估计独立标注者认可该浪型的概率。只有通过双人标注门槛和留出校准的 `APPROVED` 模板才会出现在 `predict` 输出中。当前真实标签模型尚未获批，收盘摘要中的价格事件概率另按 4.8 节评估。
+
 ## 5. 找到并查看报告
 
-终端最后会给出类似信息：
+收盘摘要默认写入 `reports/<市场>/<标的>/brief/<行情日期>/<产物摘要>/`。终端打印目录。使用 `--json` 时，输出摘要对象，可通过 `history SYMBOL --json` 查询保存路径。
+
+| 摘要文件 | 内容 |
+| --- | --- |
+| `index.html`、`report.md` | 默认生成的收盘摘要 |
+| `daily.json`、`daily.html` | 主周期的完整结果和图表。主周期为周线时沿用同样的文件名，可看 JSON 的 `timeframe` 确认 |
+| `weekly.json`、`weekly.html` | 周线背景结果和图表，仅在算出背景结果后生成 |
+| `brief.json`、`manifest.json` | 摘要数据和产物校验清单，始终保存 |
+
+`brief --format json` 只保存 JSON 产物。`--format html,md` 包含 HTML 和 Markdown，`--renderer svg` 可更换图表渲染器。同一个业务判断以 `brief_digest` 标识。导出格式或渲染器变化时，会使用不同产物目录。
+
+`analyze` 和 `demo` 输出单周期报告。终端最后会给出类似信息。
 
 ```text
 报告：reports/CN/600519.SH/1d/2026-11-16/<产物摘要>
@@ -308,7 +508,7 @@ HTML 包含 K 线、成交量、MACD 三个面板。可以通过图上方的下�
 
 目标带、条件价和图中分析价格属于同一复权坐标；原始收盘价另存为 JSON 的 `latest_raw_close`。比较不同历史截止日期的 A 股结果时，还应核对复权基准和 `price_coordinate_id`。
 
-父级上下文只使用本次枚举到的候选建立关系，搜索未枚举到的更大结构不会凭空补造，仍为 `UNKNOWN`。子浪认证覆盖当前实现的 5 浪推动/楔形和 3 浪锯齿/平台，复杂组合调整、running flat、扩散楔形和截短五浪仍未覆盖。`calibrated_event_probability` 保持 `null`；规则通过表示当前端点、影线和子模板约束通过，不等于所有外部父级位置和复杂内部结构都已被认证。
+父级上下文只使用本次枚举到的候选建立关系，搜索未枚举到的更大结构仍为 `UNKNOWN`。子浪认证覆盖当前实现的 5 浪推动/楔形和 3 浪锯齿/平台，复杂组合调整、running flat、扩散楔形和截短五浪仍未覆盖。单周期分析中的候选字段 `calibrated_event_probability` 保持 `null`。通过发布门槛的事件概率由 `brief.json` 的 `forecasts` 单独提供。
 
 ## 7. 日期、时间和锚点
 
@@ -347,6 +547,7 @@ HTML 包含 K 线、成交量、MACD 三个面板。可以通过图上方的下�
 SNAPSHOT_ID='替换为刚才返回的完整snapshot_id'
 
 .venv/bin/eliot data inspect "$SNAPSHOT_ID"
+.venv/bin/eliot brief 600519 --offline --snapshot "$SNAPSHOT_ID"
 .venv/bin/eliot analyze 600519 --offline --snapshot "$SNAPSHOT_ID"
 
 # 日线快照也可以生成完整周线分析
@@ -355,9 +556,9 @@ SNAPSHOT_ID='替换为刚才返回的完整snapshot_id'
 
 默认快照目录为 `.cache/eliotbot/`。快照文件及元数据会校验 SHA256，不要直接修改其中的文件。
 
-离线分析默认沿用快照周期和快照截止时间，不会因为今天的日期更晚就把快照当成新行情。股票、feed、周期必须与快照匹配；当前只额外支持日线 → 周线，不能拿日线快照分析小时线。
+`analyze --offline` 默认沿用快照周期和截止时间。`brief` 默认自动选择日线或周线，分钟快照请用 `analyze` 或显式传入匹配的周期。标的和 feed 必须匹配快照。日线快照可以派生周线，小时或分钟分析需要对应周期的快照。
 
-若通过配置修改了缓存目录，`fetch`、`inspect`、`analyze`、`replay` 都应传同一份 `--config`。验收时使用的 `.cache/live-smoke/` 与默认缓存是两个目录。
+若通过配置修改了缓存目录，取数、分析、历史查询和回放时都传同一份 `--config`。验收时使用的 `.cache/live-smoke/` 与默认缓存是两个目录。
 
 显式请求超过快照覆盖的时刻会报 `STALE_DATA`。确需查看旧数据时可添加 `--allow-stale`，结果仍会标记陈旧；该参数不会延长行情覆盖或消除缺口。
 
@@ -380,7 +581,7 @@ SNAPSHOT_ID='替换为刚才返回的完整snapshot_id'
 - `reports/replay-600519.jsonl`：每行一份完整分析结果。
 - `reports/replay-600519.jsonl.manifest.json` 记录源快照、引擎、配置、日期范围、步长、缺口策略与文件校验值。
 
-回放不会为每一行单独生成 HTML，也不计算交易收益。它用于观察计数随时间的变化和验证前缀计算，模式明确标记为 `FROZEN_DATA_REPLAY`；当前没有认证的 PIT 回放或胜率统计。
+`replay` 用于观察计数随时间变化和验证前缀计算，模式为 `FROZEN_DATA_REPLAY`。如需按固定交易会话核对收盘、确认和触价结果，使用[离线评估流程](#48-离线评估与概率研究)。
 
 ## 10. 配置与批量处理
 
@@ -409,7 +610,7 @@ cp -n config.example.yaml config.yaml
 | `search.max_subwave_depth` | `0` | `0/1/2`；1 认证一层子浪，2 再向下认证一层 |
 | `data.us_feed` | `sip` | 默认美股 feed |
 | `data.delayed_access_buffer_minutes` | `20` | K 线结束后的可用时间缓冲 |
-| `cache.directory` | `.cache/eliotbot` | 本地快照与缓存位置 |
+| `cache.directory` | `.cache/eliotbot` | 快照、摘要历史、结算记录和默认模型注册表的根目录 |
 | `output.directory` | `reports` | 真实分析默认报告根目录 |
 | `output.formats` | `[html, md]` | 默认报告格式；JSON 始终保存 |
 
@@ -428,7 +629,7 @@ mkdir -p reports
 .venv/bin/eliot analyze 600519 --format json --json > reports/600519-result.json
 ```
 
-批量分析目前通过逐只调用实现，没有独立的股票池命令。例如依次分析 3 只股票，失败时输出股票代码后继续：
+批量收盘摘要使用 [`watchlist`](#47-自选批量)。如果需要为每只标的生成单周期图表，可逐只调用 `analyze`。例如依次分析 3 只股票，失败时输出股票代码并继续：
 
 ```bash
 for symbol in 600519 000001 300750; do
@@ -462,11 +663,16 @@ done
 | `--renderer plotly` | `plotly` 为默认交互图；`svg` 为另一渲染器，可直接导出 PNG |
 | `--json` | 将完整结果输出至 stdout |
 | `--config PATH` | 读取 YAML 配置 |
-| `--open` | 导出 HTML 后尝试打开浏览器，仅 `analyze` 支持 |
+| `--open` | `analyze` 尝试打开 `chart.html`，`brief` 尝试打开 `index.html` |
 
 ```bash
 .venv/bin/eliot --help
 .venv/bin/eliot analyze --help
+.venv/bin/eliot brief --help
+.venv/bin/eliot history --help
+.venv/bin/eliot watchlist --help
+.venv/bin/eliot settle --help
+.venv/bin/eliot support-matrix --help
 .venv/bin/eliot demo --help
 .venv/bin/eliot data fetch --help
 .venv/bin/eliot data inspect --help
@@ -499,7 +705,10 @@ done
 | 输入 `000688` 被当成深市个股或身份失败 | 上证指数要写 `000688.SH` 或 `sh000688`；`000001` / `000001.SZ` 默认是平安银行 |
 | `SH880xxx sector indices are not supported` | 同花顺行业指数当前未接入；请使用 `SH000*`、`SZ399*`、`BJ899*` 官方指数代码 |
 | 快照不存在 | 检查完整 ID、当前工作目录，以及是否使用相同 `cache.directory` |
-| 快照周期不匹配 | 使用快照原周期，或日线 → 周线；小时线需单独获取 |
+| 快照周期不匹配 | 使用快照原周期，或从日线派生周线。小时线需单独获取，`brief` 读取分钟快照时须显式指定对应周期 |
+| 批量报告没有 HTML | `watchlist` 保存 JSON 产物。单独运行 `brief SYMBOL` 生成可读摘要和图表 |
+| 概率显示 `UNCALIBRATED` | 当前分析未使用适用的已批准模型，可以继续看浪型、权重和确认/失效条件 |
+| 结算显示 `RIGHT_CENSORED` | 事件所需的后续交易会话尚未被快照覆盖。到期后用对应标的的新快照重新结算 |
 | 1 分钟线每天少两个时隙 | 新浪现代沪深股票 profile 对 14:57、14:58 起始的无成交集合竞价时隙有明确处理；其余未知缺口仍会阻断分析 |
 | PNG 导出失败 | 使用 `--renderer svg --format html,png,md`，或安装并配置 Plotly/Kaleido 的完整运行条件 |
 | HTML 没有自动打开 | `demo` 不支持 `--open`；无桌面环境时手动下载并打开 HTML |

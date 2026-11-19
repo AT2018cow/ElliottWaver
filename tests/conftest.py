@@ -45,3 +45,85 @@ def make_pivots(prices, *, developing=False):
         for i, bar in enumerate(bars)
     )
     return bars, points
+
+
+@pytest.fixture
+def approved_model():
+    """Return a synthetic model with complete release metadata for registry tests."""
+    from eliotbot import ENGINE_VERSION
+    from eliotbot.config import Settings
+    from eliotbot.evaluation.features import FEATURE_VERSION, event_feature_order
+    from eliotbot.util import digest
+
+    def build(*, name="fixture", engine=ENGINE_VERSION):
+        order = event_feature_order("CLOSE_BAND_5D_V1")
+        classes = ["UP", "RANGE", "DOWN"]
+        model = {
+            "name": name,
+            "schema_version": "1.2",
+            "feature_version": FEATURE_VERSION,
+            "engine_version": engine,
+            "config_hash": Settings().computation_hash,
+            "scope": {
+                "markets": ["US"],
+                "timeframes": ["1d"],
+                "asset_types": ["EQUITY"],
+                "feed": ["synthetic"],
+                "adjustment": ["synthetic_no_actions"],
+            },
+            "splits": {
+                "train": {"start": "2023-01-01", "end": "2023-06-30"},
+                "calibration": {"start": "2023-07-01", "end": "2023-12-31"},
+                "test": {"start": "2024-01-01", "end": "2024-03-01"},
+            },
+            "protocol_sha256": "1" * 64,
+            "decisions_sha256": "2" * 64,
+            "events_sha256": "3" * 64,
+            "release": {
+                "min_test_rows": 50,
+                "min_test_dates": 10,
+                "min_test_symbols": 5,
+                "min_bin_count": 50,
+                "min_bin_dates": 10,
+                "min_supported_coverage": 0.5,
+                "reliability_tolerance": 0.10,
+            },
+            "models": {
+                "CLOSE_BAND_5D_V1": {
+                    "status": "APPROVED",
+                    "feature_order": order,
+                    "classes": classes,
+                    "mean": [0.0] * len(order),
+                    "scale": [1.0] * len(order),
+                    "weights": [[0.0] * 3 for _ in order],
+                    "intercept": [0.0] * 3,
+                    "temperature": 1.0,
+                    "reasons": [],
+                    "test_rows": 50,
+                    "test_dates": 10,
+                    "test_symbols": 5,
+                    "supported_coverage": 1.0,
+                    "support_bins": {
+                        cls: [
+                            {
+                                "low": 0,
+                                "high": 1,
+                                "count": 50,
+                                "dates": 10,
+                                "occupied_blocks": 2,
+                                "calibration_gap_ci": [-0.02, 0.02],
+                            }
+                        ]
+                        for cls in classes
+                    },
+                    "improvement": {
+                        key: {"brier_ci": [0.01, 0.03], "log_loss_ci": [0.01, 0.03]}
+                        for key in ("frequency", "momentum", "price")
+                    },
+                }
+            },
+        }
+        model["model_id"] = digest(model)
+        return model
+
+    return build

@@ -20,7 +20,12 @@ from eliotbot.data.snapshots import SnapshotStore
 from eliotbot.engine.indicators import calculate
 from eliotbot.engine.zigzag import extract
 from eliotbot.errors import DataError, InputError
-from eliotbot.evaluation.features import FEATURE_VERSION, candidate_features, decision_features
+from eliotbot.evaluation.features import (
+    FEATURE_VERSION,
+    SUPPORTED_FEATURE_VERSIONS,
+    candidate_features,
+    decision_features,
+)
 from eliotbot.evaluation.outcomes import close_band, first_touch, outcome_window, period_dates
 from eliotbot.forecast import (
     ModelRegistry,
@@ -78,6 +83,9 @@ def _load_protocol(path: Path) -> dict:
         not isinstance(protocol["protocol_id"], str) or not protocol["protocol_id"].strip()
     ):
         raise InputError("protocol_id must be a non-empty string")
+    feature_version = str(protocol.get("feature_version", FEATURE_VERSION))
+    if feature_version not in SUPPORTED_FEATURE_VERSIONS:
+        raise InputError("Unsupported feature_version")
     if not protocol["samples"]:
         raise InputError("Protocol has no samples")
     for sample in protocol["samples"]:
@@ -304,6 +312,13 @@ def _event_rows(protocol, decision, source, prepared, qualified, atr):
         current = prepared.bars[-1].close
         is_close = event_id.startswith("CLOSE_BAND_")
         targets = [(0, None)] if is_close else enumerate(qualified, 1)
+        due_date = window.dates[-1] if len(window.dates) == horizon else None
+        due_bar = (
+            next((bar for bar in source.bars if bar.session_date == due_date), None)
+            if due_date is not None
+            else None
+        )
+        label_available_at = due_bar.usable_at.isoformat() if due_bar is not None else None
         for rank, scenario in targets:
             outcome = (
                 close_band(window, current, atr, horizon)
@@ -319,7 +334,8 @@ def _event_rows(protocol, decision, source, prepared, qualified, atr):
                     "as_of": decision["as_of"],
                     "event_id": event_id,
                     "horizon": horizon,
-                    "due_date": str(window.dates[-1]) if len(window.dates) == horizon else None,
+                    "due_date": str(due_date) if due_date is not None else None,
+                    "label_available_at": label_available_at,
                     "candidate_key": scenario.scenario_id if scenario else None,
                     "status": outcome.status,
                     "session": str(outcome.session) if outcome.session else None,
@@ -576,6 +592,7 @@ def evaluate_protocol(
                     feed=bundle.provenance.feed,
                     adjustment=bundle.provenance.adjustment,
                     market=bundle.instrument.market,
+                    symbol=bundle.instrument.canonical_symbol,
                 )
                 if forced_model is not None and ModelRegistry._compatible(forced_model, **filters):
                     active_model = forced_model
@@ -720,7 +737,7 @@ def _write_artifacts(
     files = ["decisions.jsonl", "events.parquet", "summary.json"]
     manifest = {
         "schema_version": "1.1",
-        "feature_version": FEATURE_VERSION,
+        "feature_version": str(protocol.get("feature_version", FEATURE_VERSION)),
         "protocol": protocol,
         "protocol_sha256": protocol_hash,
         "source_sha256": source_sha256,
@@ -740,9 +757,12 @@ def _write_artifacts(
 
 def read_evaluation_manifest(directory: Path) -> dict:
     manifest = json.loads((directory / "manifest.json").read_text())
+    protocol = manifest.get("protocol")
     if (
         manifest.get("schema_version") != "1.1"
-        or manifest.get("feature_version") != FEATURE_VERSION
+        or not isinstance(protocol, dict)
+        or manifest.get("feature_version") not in SUPPORTED_FEATURE_VERSIONS
+        or manifest["feature_version"] != str(protocol.get("feature_version", FEATURE_VERSION))
         or set(manifest.get("files", {})) != {"decisions.jsonl", "events.parquet", "summary.json"}
     ):
         raise InputError(f"Unsupported evaluation manifest: {directory}")

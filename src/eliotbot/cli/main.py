@@ -261,6 +261,7 @@ def _run_brief_core(
         feed=source.provenance.feed,
         adjustment=source.provenance.adjustment,
         market=source.instrument.market,
+        symbol=source.instrument.canonical_symbol,
     )
     try:
         if model:
@@ -400,7 +401,7 @@ def run_brief(
     if json_output:
         print(canonical_json(run.brief))
     else:
-        render_brief(run.brief)
+        render_brief(run.brief, run.result)
         Console().print(f"摘要：{output}", markup=False)
         Console().print(f"源快照：{run.brief.source_snapshot_id}")
         Console().print(f"分析输入：{run.brief.input_snapshot_id}")

@@ -65,6 +65,35 @@ def temperature_scale(
     return best[2]
 
 
+def binary_logit_affine(
+    logits: np.ndarray,
+    labels: np.ndarray,
+    temperatures=(0.5, 0.75, 1.0, 1.5, 2.0, 3.0),
+) -> tuple[float, float]:
+    """Fit an intercept for each positive slope, then choose by calibration loss."""
+    if set(labels) != {0, 1} or not np.isfinite(logits).all():
+        raise ValueError("Binary calibration requires finite logits and both outcomes")
+    rate = float(labels.mean())
+    log_odds = math.log(rate / (1.0 - rate))
+    best = (math.inf, math.inf, 1.0, 0.0)
+    for temperature in temperatures:
+        scaled = logits / temperature
+        # At these bounds every calibrated logit is on the same side of log_odds.
+        low, high = log_odds - float(scaled.max()), log_odds - float(scaled.min())
+        for _ in range(60):
+            intercept = (low + high) / 2
+            probability = np.exp(-np.logaddexp(0, -(scaled + intercept)))
+            if float(probability.mean()) < rate:
+                low = intercept
+            else:
+                high = intercept
+        offset = (low + high) / 2
+        shifted = scaled + offset
+        loss = float(np.mean(np.logaddexp(0, np.where(labels == 1, -shifted, shifted))))
+        best = min(best, (loss, abs(temperature - 1.0), temperature, offset))
+    return best[2], best[3]
+
+
 def log_loss(probabilities: np.ndarray, y: np.ndarray) -> float:
     selected = probabilities[np.arange(len(y)), y]
     return float(-np.mean(np.log(np.clip(selected, 1e-12, 1))))
@@ -262,3 +291,120 @@ def reliability(
             }
         )
     return rows
+
+
+def rolling_logit_offset(
+    logits,
+    labels,
+    decision_dates,
+    label_available_at,
+    as_of,
+    *,
+    window_dates: int = 12,
+    min_dates: int = 8,
+    min_rows: int = 100,
+    min_positive: int = 10,
+    min_negative: int = 10,
+    l2: float = 0.1,
+    bounds: tuple[float, float] = (-2.0, 2.0),
+) -> dict:
+    """Estimate one intercept from labels available before ``as_of``.
+
+    Only decision dates with at least one available label are eligible. The
+    most recent ``window_dates`` such dates are retained, and every available
+    row on those dates participates. The objective is mean binary cross-entropy
+    plus ``l2 * delta**2 / 2``; the optimum is found by bisection and is
+    deterministic for a fixed input order.
+    """
+    from datetime import UTC, datetime
+
+    def _time(value):
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            parsed = value
+        else:
+            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=UTC)
+        return parsed.astimezone(UTC)
+
+    cutoff = _time(as_of)
+    if cutoff is None:
+        raise ValueError("as_of is required")
+    z_values = [float(value) for value in logits]
+    y_values = [int(value) for value in labels]
+    if len(z_values) != len(y_values) or len(z_values) != len(decision_dates):
+        raise ValueError("rolling calibration inputs must align")
+    if len(label_available_at) != len(z_values):
+        raise ValueError("label availability must align")
+    available = []
+    for z, y, day, available_at in zip(
+        z_values, y_values, decision_dates, label_available_at, strict=True
+    ):
+        when = _time(available_at)
+        if when is None or when > cutoff:
+            continue
+        available.append((str(day), z, y, when))
+    dates = sorted({item[0] for item in available})
+    selected_dates = dates[-window_dates:] if window_dates > 0 else dates
+    selected = [item for item in available if item[0] in set(selected_dates)]
+    positives = sum(item[2] for item in selected)
+    negatives = len(selected) - positives
+    last_available = max((item[3] for item in selected), default=None)
+    reasons = []
+    if len(selected_dates) < min_dates:
+        reasons.append(f"dates {len(selected_dates)} < {min_dates}")
+    if len(selected) < min_rows:
+        reasons.append(f"rows {len(selected)} < {min_rows}")
+    if positives < min_positive:
+        reasons.append(f"positive {positives} < {min_positive}")
+    if negatives < min_negative:
+        reasons.append(f"negative {negatives} < {min_negative}")
+    if reasons:
+        return {
+            "delta": 0.0,
+            "rows": len(selected),
+            "dates": len(selected_dates),
+            "positive": positives,
+            "negative": negatives,
+            "last_label_available_at": (
+                last_available.isoformat() if last_available is not None else None
+            ),
+            "window_start": selected_dates[0] if selected_dates else None,
+            "window_end": selected_dates[-1] if selected_dates else None,
+            "reason": "; ".join(reasons),
+        }
+    z = np.asarray([item[1] for item in selected], dtype=float)
+    y = np.asarray([item[2] for item in selected], dtype=float)
+
+    def derivative(delta: float) -> float:
+        probability = 1.0 / (1.0 + np.exp(-np.clip(z + delta, -50, 50)))
+        return float(np.mean(probability - y) + l2 * delta)
+
+    low, high = bounds
+    low_value = derivative(low)
+    high_value = derivative(high)
+    if low_value >= 0:
+        delta = low
+    elif high_value <= 0:
+        delta = high
+    else:
+        for _ in range(80):
+            middle = (low + high) / 2
+            if derivative(middle) < 0:
+                low = middle
+            else:
+                high = middle
+        delta = (low + high) / 2
+    return {
+        "delta": float(delta),
+        "rows": len(selected),
+        "dates": len(selected_dates),
+        "positive": positives,
+        "negative": negatives,
+        "last_label_available_at": last_available.isoformat(),
+        "window_start": selected_dates[0],
+        "window_end": selected_dates[-1],
+        "reason": None,
+    }

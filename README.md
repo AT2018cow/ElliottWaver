@@ -2,7 +2,7 @@
 
 面向 A 股、沪深京指数与美股的艾略特波浪分析程序，按“数据获取 → 多尺度拐点 → 候选数浪 → 规则校验 → 评分与点位 → 图表报告”组织能力。
 
-当前版本为 **0.1.0 CLI**。日常查看个股或指数的主备浪型、判断条件和周线背景，用 `eliot brief`。需要分钟线、候选细节或长历史搜索时，用 `eliot analyze`。CLI 也支持历史查询、自选批量和到期结算。
+当前版本为 **0.1.0 CLI**。日常查看个股或指数的主备浪型、规则依据、判断条件和周线背景，用 `eliot brief`。需要分钟线、候选细节或长历史搜索时，用 `eliot analyze`。CLI 也支持历史查询、自选批量和到期结算。[版本说明](CHANGELOG.md)
 
 沪深和美股个股支持 `1m / 5m / 15m / 30m / 60m / 1d / 1w`，`1h` 是 `60m` 的别名。沪深京指数支持 `1d / 1w`，例如 `000688.SH`、`399001.SZ`、`899050.BJ`。指数使用 `sina-index` 无复权行情。候选权重表示相对评分，短期价格和候选确认事件的概率默认显示为未校准。完整范围见[实现及验收状态](docs/IMPLEMENTATION_STATUS.md)。
 
@@ -14,15 +14,15 @@
 
 ## 安装
 
-Python 3.11+；本次验证环境为 Linux / Python 3.12。
+在源码目录使用 Python 3.11 或更高版本安装 A 股日用版。发布验证使用 Linux / Python 3.12。
 
 ```bash
 python3 -m venv .venv
-.venv/bin/python -m pip install -e '.[dev,cn,us]'
-.venv/bin/eliot doctor
+.venv/bin/python -m pip install '.[cn]'
+.venv/bin/eliot doctor --market CN
 ```
 
-`requirements.lock` 保存本次通过验证的完整依赖版本，可先安装该文件，再使用 `pip install --no-deps -e .` 安装项目。锁定文件包含 A 股、美股 SDK 和开发依赖。
+开发和全量测试可用 `.venv/bin/python -m pip install -e '.[dev,cn,us]'`。`requirements.lock` 保存验证过的 Python 3.12 / Linux 依赖版本。[Wheel 安装](docs/USER_GUIDE.md#2-安装与环境检查)
 
 ## 先看离线演示
 
@@ -47,6 +47,8 @@ python3 -m venv .venv
 ```
 
 从终端打印的目录打开 `index.html`，先看数据日期和状态，再读主备浪型以及确认、失效条件。默认以日线为主，附最近完整的周线背景。指定周线、使用周线快照，或在自动模式下请求超过五年的跨度时，以周线作为主分析周期。`--json` 输出结构化摘要，`--format json` 只保存结构化产物。
+
+展开候选卡片的「规则复核」可查看硬规则的状态、实测值和判定边界。
 
 需要查看单周期完整诊断、小时或分钟线时，使用 `analyze`。
 
@@ -109,7 +111,7 @@ SNAPSHOT_ID='替换为完整snapshot_id'
 .venv/bin/ruff format --check src tests scripts
 ```
 
-本次 276 项测试通过。引擎修复使用 21 组冻结真实快照复验，覆盖个股多周期、沪深京指数和长历史周线。美股适配器的现有证据为冻结 HTTP 契约测试。详见 [验收记录索引](docs/reviews/README.md)。
+验收覆盖波浪硬规则、个股与指数、多周期、冻结行情回放和报告完整性。各次实测的输入范围和结果见[验收记录索引](docs/reviews/README.md)。
 
 当前枚举普通推动浪、ABC 锯齿，以及端点级的三角形、平台、楔形和双锯齿 WXY。父级认证要求端点吻合且子模板符合浪段规则，只有时间包含时标记 `PROVISIONAL`。子浪认证使用相同的浪段规则，逐腿报告 `VERIFIED / UNVERIFIED / UNAVAILABLE`；已完成收敛三角形还要求至少四腿为锯齿族、复杂腿最多一条，E 腿嵌套只标记 `PROVISIONAL`。
 

@@ -14,6 +14,7 @@ import numpy as np
 from eliotbot.evaluation.calibration import predict
 from eliotbot.evaluation.features import (
     FEATURE_VERSION,
+    SUPPORTED_FEATURE_VERSIONS,
     candidate_features,
     decision_features,
     event_feature_order,
@@ -56,13 +57,21 @@ def validate_model(model: dict, *, operational: bool = False) -> dict:
     models = model.get("models")
     if not isinstance(models, dict) or not models:
         raise ValueError("MODEL_INVALID: models must be a non-empty mapping")
+    symbols = (model.get("scope") or {}).get("symbols")
+    if symbols is not None and (
+        not isinstance(symbols, list)
+        or not symbols
+        or not all(isinstance(symbol, str) and symbol for symbol in symbols)
+        or len(set(symbols)) != len(symbols)
+    ):
+        raise ValueError("MODEL_INVALID: invalid scoped symbols")
     release = model.get("release")
     if operational and any(
         entry.get("status") == "APPROVED" for entry in models.values() if isinstance(entry, dict)
     ):
         scope = model.get("scope") or {}
         if (
-            model.get("feature_version") != FEATURE_VERSION
+            model.get("feature_version") not in SUPPORTED_FEATURE_VERSIONS
             or model.get("schema_version") != "1.2"
             or not release
             or not all(
@@ -107,7 +116,9 @@ def validate_model(model: dict, *, operational: bool = False) -> dict:
             raise ValueError(f"MODEL_INVALID: missing feature_order/classes for {event_id}")
         if event_id not in CLOSE_EVENTS | CANDIDATE_EVENTS:
             raise ValueError(f"MODEL_INVALID: unknown event {event_id}")
-        if operational and feature_order != event_feature_order(event_id):
+        if operational and feature_order != event_feature_order(
+            event_id, str(model.get("feature_version", FEATURE_VERSION))
+        ):
             raise ValueError(f"MODEL_INVALID: feature order mismatch for {event_id}")
         if len(classes) not in {2, 3}:
             raise ValueError(f"MODEL_INVALID: unsupported class count for {event_id}")
@@ -389,6 +400,7 @@ class ModelRegistry:
         feed: str | None = None,
         adjustment: str | None = None,
         market: str | None = None,
+        symbol: str | None = None,
     ) -> bool:
         if (
             engine_version
@@ -399,6 +411,8 @@ class ModelRegistry:
         if config_hash and model.get("config_hash") and model["config_hash"] != config_hash:
             return False
         scope_info = model.get("scope") or {}
+        if scope_info.get("symbols") and symbol not in scope_info["symbols"]:
+            return False
         if market and scope_info.get("markets") and market not in scope_info["markets"]:
             return False
         if timeframe and scope_info.get("timeframes") and timeframe not in scope_info["timeframes"]:
@@ -483,7 +497,9 @@ def forecasts_for_brief(
     weekly=None,
     candidate_ids: set[str] | None = None,
 ) -> tuple[BriefForecast, ...]:
-    if model is None:
+    if model is None or not ModelRegistry._compatible(
+        model, symbol=result.instrument.canonical_symbol
+    ):
         return ()
     scenarios = result.scenarios if qualified is None else qualified
     decision = decision_features(result, prepared, indicators, qualified=scenarios, weekly=weekly)

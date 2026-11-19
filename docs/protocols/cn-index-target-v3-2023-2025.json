@@ -1,0 +1,92 @@
+{
+  "protocol_version": "1",
+  "protocol_id": "cn-index-target-v3-2023-2025",
+  "feature_version": "3",
+  "cache_root": ".cache/eliotbot",
+  "samples": [
+    {
+      "asset_type": "INDEX",
+      "snapshot_id": "abfd7531e5f8e49a3cec1f27100d21cccc67c2d53c07c68e684fd0ac39c16a4f",
+      "source_timeframe": "1d",
+      "symbol": "000016.SH"
+    },
+    {
+      "asset_type": "INDEX",
+      "snapshot_id": "e36c70b2180c7b4ba3886d061c33a938e695ddf4e4aebc4cdfa2a4bee8f5dfa8",
+      "source_timeframe": "1d",
+      "symbol": "000688.SH"
+    },
+    {
+      "asset_type": "INDEX",
+      "snapshot_id": "247556205d2e0e2a77ce4c5d73b4994a368c88411e41049f4b256d5a2258f684",
+      "source_timeframe": "1d",
+      "symbol": "000852.SH"
+    },
+    {
+      "asset_type": "INDEX",
+      "snapshot_id": "137839f3c357900bd66c18250c98385878825ad0df28900fd46754d3870fd11c",
+      "source_timeframe": "1d",
+      "symbol": "000905.SH"
+    },
+    {
+      "asset_type": "INDEX",
+      "snapshot_id": "13b1fcba2dcaed829ea8afd0760d3d918d956018409abbe5a2eca62ed296febf",
+      "source_timeframe": "1d",
+      "symbol": "399001.SZ"
+    },
+    {
+      "asset_type": "INDEX",
+      "snapshot_id": "c4f08c1272b6a297f70f3e717a4702c3383266ac1c415041ac3a069639521928",
+      "source_timeframe": "1d",
+      "symbol": "399006.SZ"
+    },
+    {
+      "asset_type": "INDEX",
+      "snapshot_id": "13fae49950965fcdbedd8102423e20eb9897d5eab3fc9d1b593c15da4e5cca19",
+      "source_timeframe": "1d",
+      "symbol": "899050.BJ"
+    }
+  ],
+  "grid": {
+    "start": "2023-01-01",
+    "end": "2025-12-31",
+    "cadence": "LAST_SESSION_OF_WEEK",
+    "outcome_as_of": "2026-11-16"
+  },
+  "splits": {
+    "train": {
+      "start": "2023-01-01",
+      "end": "2024-12-31"
+    },
+    "calibration": {
+      "start": "2025-01-01",
+      "end": "2025-06-30"
+    },
+    "test": {
+      "start": "2025-07-01",
+      "end": "2025-12-31"
+    }
+  },
+  "events": [
+    "TARGET_FIRST_20D_V1"
+  ],
+  "release": {
+    "bootstrap_repetitions": 2000,
+    "bootstrap_seed": 20261119,
+    "min_bin_count": 50,
+    "min_bin_dates": 10,
+    "min_supported_coverage": 0.5,
+    "min_test_dates": 10,
+    "min_test_rows": 50,
+    "min_test_symbols": 5,
+    "reliability_bins": [
+      0.0,
+      0.2,
+      0.4,
+      0.6,
+      0.8,
+      1.0
+    ],
+    "reliability_tolerance": 0.1
+  }
+}

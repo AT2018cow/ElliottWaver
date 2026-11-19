@@ -7,6 +7,7 @@ import math
 from eliotbot.schemas.wave import WaveScenario
 
 FEATURE_VERSION = "2"
+SUPPORTED_FEATURE_VERSIONS = {"2", "3"}
 
 DECISION_FEATURES = [
     "log_return_20",
@@ -23,6 +24,11 @@ DECISION_FEATURES = [
     "weekly_bias",
     "missing_weekly",
     "missing_second",
+]
+TARGET_FEATURES = [
+    "target_distance_atr",
+    "inside_target_zone",
+    "missing_target_geometry",
 ]
 CANDIDATE_FEATURES = [
     "quality",
@@ -94,11 +100,26 @@ def decision_features(
     }
 
 
+def target_geometry(
+    scenario: WaveScenario, current: float, atr: float
+) -> tuple[float, float, float]:
+    """Decision-time distance to the first target zone in ATR units."""
+    if not scenario.target_zones or not math.isfinite(atr) or atr <= 0 or current <= 0:
+        return 0.0, 0.0, 1.0
+    target = scenario.target_zones[0]
+    if target.low <= 0 or target.high <= 0 or target.low > target.high:
+        return 0.0, 0.0, 1.0
+    distance = max(target.low - current, current - target.high, 0.0) / atr
+    inside = 1.0 if target.low <= current <= target.high else 0.0
+    return distance, inside, 0.0
+
+
 def candidate_features(
     scenario: WaveScenario, current: float, atr: float, *, rank: int = 1
 ) -> dict:
     confirmations = [c.price for c in scenario.conditions if c.kind == "CONFIRMATION"]
     invalidations = [c.price for c in scenario.conditions if c.kind == "INVALIDATION"]
+    target = target_geometry(scenario, current, atr)
     return {
         "quality": scenario.score.quality_score / 100,
         "coverage": scenario.score.coverage,
@@ -118,6 +139,9 @@ def candidate_features(
             if invalidations and atr > 0
             else 0.0
         ),
+        "target_distance_atr": target[0],
+        "inside_target_zone": target[1],
+        "missing_target_geometry": target[2],
     }
 
 
@@ -130,6 +154,10 @@ def feature_vector(
     for name in feature_order:
         if name in decision:
             values.append(float(decision[name]))
+        elif name in TARGET_FEATURES:
+            if candidate is None or name not in candidate:
+                raise ValueError(f"Missing target geometry feature: {name}")
+            values.append(float(candidate[name]))
         elif candidate is not None and name in CANDIDATE_FEATURES:
             values.append(float(candidate.get(name, 0.0)))
         elif candidate is not None and name in PATTERNS:
@@ -141,8 +169,12 @@ def feature_vector(
     return values
 
 
-def event_feature_order(event_id: str) -> list[str]:
+def event_feature_order(event_id: str, feature_version: str = FEATURE_VERSION) -> list[str]:
+    if feature_version not in SUPPORTED_FEATURE_VERSIONS:
+        raise ValueError(f"Unsupported feature_version: {feature_version}")
     order = list(DECISION_FEATURES)
     if event_id.startswith(("CONFIRM_FIRST_", "TARGET_FIRST_")):
         order += CANDIDATE_FEATURES + PATTERNS + STAGES
+        if feature_version == "3" and event_id.startswith("TARGET_FIRST_"):
+            order += TARGET_FEATURES
     return order

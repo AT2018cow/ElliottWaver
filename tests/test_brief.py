@@ -50,6 +50,10 @@ def test_publish_brief_writes_manifest_and_hashes(bundle, tmp_path):
     assert (path / "report.md").exists()
     assert (path / "index.html").exists()
     assert (path / "daily.html").exists()
+    markdown = (path / "report.md").read_text()
+    html = (path / "index.html").read_text()
+    assert "规则复核" in markdown and "<summary>规则复核</summary>" in html
+    assert "端点时间递增且高低交替" in markdown and "端点时间递增且高低交替" in html
     manifest = json.loads((path / "manifest.json").read_text())
     assert manifest["brief_digest"] == run.brief.brief_digest
     assert manifest["source_snapshot_id"] == run.brief.source_snapshot_id

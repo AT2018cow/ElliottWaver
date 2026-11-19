@@ -1,0 +1,1028 @@
+{
+  "alignment": {
+    "all_events": 11239,
+    "candidates": 5615,
+    "decision_id_mismatches": 5615,
+    "decision_id_note": "decision_id is version-local because the protocol identity is part of its digest; the stable key omits it while checking candidate, label, due date and status",
+    "key": "(symbol, decision_date, candidate_key)",
+    "labels": {
+      "negative": 4643,
+      "positive": 972
+    },
+    "mismatches": 0,
+    "v2_events": 11239,
+    "v3_events": 11239
+  },
+  "artifacts": {
+    "audit_files": {
+      "audit.json": "7d80cd83bd0d9579237c0f404320d00ba2f4ac11c76ea7ef60261fc346c7a671",
+      "audit.md": "7195d46bdf542438fdc856a5f1d86083c33a0b5a5232aeef98b92d1ebbaddc11",
+      "charts/0d31610ec3139f782223856e.svg": "83ce1473ab1c0dccfd9da91837cf98a2afa7e35f6796e1a923753d582849cba5",
+      "charts/39d124d494e95757f86a9339.svg": "6f555aebe083780d5a794be7092831b656fc0192e653004c0ff318341d53e0a5",
+      "charts/4a942d61a7372681face6726.svg": "8dbae373a668ebab92e2001b3e1afcc2f23d92d42af0a8eea22fc66f89ab25cf",
+      "charts/566863526935dab2185b7b8c.svg": "9cbb5e224f683d3b81cf39903d725c26a47ed7fb22e4b527fbb83002bb3cd33f",
+      "charts/6c0b11222906fef56a1d7c36.svg": "4266519cb39b03bae2ca0cdf7df9764d24a2d3651c9d227ed5ab920bbdafb515",
+      "charts/dec36883591c603ff2436aab.svg": "5eff47614b7b30d163de7c528c306d49bf9c61c2503e7f3411c912c8d44540e9"
+    },
+    "comparison_files": {
+      "drill-protocol.json": "659cc6ddcdc4da0bb61190e5a40afb00d47b943c401f94776365b4bdc0b4fae8",
+      "frozen-candidate.json": "0955587df095812f3b5cc361ac0408acc98077cb637f259168920ee64bb55b63",
+      "groups/A/fold-1-calibration.json": "d62c641d290be517063d0bb9126278acda039d1ae2e65aef6be2b6c94a1d9e2f",
+      "groups/A/fold-1-predictions.jsonl": "730e47003f6ffd5b8ff887ddeca546d9a616b7139585d4ca5de493cd76612ac7",
+      "groups/A/fold-2-calibration.json": "30010d705d083d21facb2636eb726c7c961ebee39b0404463251f3944be45d6e",
+      "groups/A/fold-2-predictions.jsonl": "250c126dc9c3ce5dfdf48861e1bf695af4f970110ffa5ff814d20372bafc83ea",
+      "groups/A/fold-3-calibration.json": "54a1c80e435b075e2ed89c2fff287acc34446206456629e01e949d1ec9018b75",
+      "groups/A/fold-3-predictions.jsonl": "af8d652413552b47461a8ecdbc72acb7bcd2d3424604ad6ed027a6edcba00dd2",
+      "groups/B/fold-1-calibration.json": "cb577360cf7f48d4758c2264d64c17aaa402f5bcdb9095c0df6d6d95726199ee",
+      "groups/B/fold-1-predictions.jsonl": "efd0306185c4d210c01490694f725209f0ef0b245ed1d3eecb386f800484a219",
+      "groups/B/fold-2-calibration.json": "6758c75ecf9f4fd1002cd82caa25447c961b08e79eb083e5101ab3a370a2f7b8",
+      "groups/B/fold-2-predictions.jsonl": "fbdb6ce00309492e447d4780eecde1f746c1bb6d981f212b1ccaadd6e73303f7",
+      "groups/B/fold-3-calibration.json": "d7006e7a67d4ea5de4216760b15026d3617b179ea4eea1dae5b0ee058741c970",
+      "groups/B/fold-3-predictions.jsonl": "90a3a0ef1f1813d3dede50350660500b98c85f31feecd5c335a87587bda53f33",
+      "groups/C/fold-1-calibration.json": "90b04c037dcd82fd5b902cdf72cbaaa72f6ee60bec3c0d0188b6d1e68b18406b",
+      "groups/C/fold-1-predictions.jsonl": "d98ff152a1abccd2be3fea774117d9571f44dafddb6f834e8e68f0384488f79f",
+      "groups/C/fold-2-calibration.json": "3db2d9e24f5d64013368cc7828a7eb7c4d2e91afd9ec99eff8afbcdab0bbb10d",
+      "groups/C/fold-2-predictions.jsonl": "e48b067830200dbaed5d177d2209a630d99d949a46eea2901359f8dfa74fddfb",
+      "groups/C/fold-3-calibration.json": "b9a405bb1cda673e9c6f6035440e9b61a80324c3807ecb50aa32cdf97e5ff69f",
+      "groups/C/fold-3-predictions.jsonl": "073f16cd61e75dd1a29de5cef7546cad3af93b43d9667da789baeeff10b9a8dc",
+      "groups/D/fold-1-calibration.json": "5b1729750be6537e6efeaa910ad7e48f0edc36555747a5f1d5a79e8844ec2425",
+      "groups/D/fold-1-predictions.jsonl": "97f6fad9c75f5aa349d55fcb143224a5b6752780a30677026e6f523cbf8a143e",
+      "groups/D/fold-2-calibration.json": "35f3f92a32d5fef32018b179820d8f07afb88930c3d4f7c67252eaca004709e5",
+      "groups/D/fold-2-predictions.jsonl": "20bef568e712d004e6324dde73837cff26845094a0ff8b45a307c5018f45a973",
+      "groups/D/fold-3-calibration.json": "35d687b4d0f442d81ae43d7b96e7a3618d0767d695bad30499fa99ac930b765a",
+      "groups/D/fold-3-predictions.jsonl": "8eb4d65fd15d0763fc2724d869995bb753d567cb0a54ea1601d60ac0c24a4d9a",
+      "metadata.json": "254f3aa161cb0766c2b713b589a04dc03582bb50ca68a65e88c726e3c4da3820",
+      "metrics.json": "02323687c5918e0b1da398c648008f56436ac6451c2ed4451367ed61a5467c4b",
+      "report.md": "9d7e9012ec68fb1d90d1b79a7c4fffa9066394542b8491b1745a4462966b3775",
+      "selection.json": "1931f4a9b200b2b164e494bce078d2ec9e63fb5632e6e82b7069c53019377507"
+    },
+    "comparison_manifest_sha256": "c74d5d2d0c549110fd7e92eb622d6cb9eb5f5570a1427c134d783bf84d2971d2"
+  },
+  "audit": {
+    "both_conditions": 1590,
+    "both_conditions_rate": 0.5066921606118547,
+    "conditional_checks_count": 154,
+    "manifest_sha256": "2c1b95b5d4c238d7ffbfd0dd43599b19523e15cf0448c4e9472f80a9e30529dd",
+    "missing_invalidation": 1534,
+    "reasons": {
+      "Verified IMPULSE/W5: wave 3 is at least as long as wave 1": 154,
+      "projector COMPLETE branch emits STAGE_EXIT only": 716,
+      "projector FLAT/B branch emits STAGE_EXIT and confirmation only": 178,
+      "projector TRIANGLE branch emits STAGE_EXIT (and confirmation) only": 486
+    },
+    "reconciliation": {
+      "missing_invalidation_equals_stage_pattern_sum": true,
+      "target_events_equals_undefined_plus_settled_plus_unresolved": true,
+      "undefined_equals_missing_invalidation_plus_with_invalidation": true
+    },
+    "representatives": [
+      {
+        "candidate_key": "0d31610ec3139f782223856e",
+        "chart": "charts/0d31610ec3139f782223856e.svg",
+        "condition_kinds": {
+          "STAGE_EXIT": 1
+        },
+        "decision_date": "2026-01-16",
+        "rule_branch": "COMPLETE",
+        "rule_category": "STAGE_EXIT_ONLY",
+        "scenario_pattern": "IMPULSE",
+        "scenario_source": "qualified",
+        "scenario_stage": "COMPLETE",
+        "source_snapshot_id": "abfd7531e5f8e49a3cec1f27100d21cccc67c2d53c07c68e684fd0ac39c16a4f",
+        "status": "UNDEFINED_EVENT",
+        "symbol": "000016.SH"
+      },
+      {
+        "candidate_key": "6c0b11222906fef56a1d7c36",
+        "chart": "charts/6c0b11222906fef56a1d7c36.svg",
+        "condition_kinds": {
+          "STAGE_EXIT": 1
+        },
+        "decision_date": "2026-03-27",
+        "rule_branch": "COMPLETE",
+        "rule_category": "STAGE_EXIT_ONLY",
+        "scenario_pattern": "TRIANGLE",
+        "scenario_source": "qualified",
+        "scenario_stage": "COMPLETE",
+        "source_snapshot_id": "e36c70b2180c7b4ba3886d061c33a938e695ddf4e4aebc4cdfa2a4bee8f5dfa8",
+        "status": "UNDEFINED_EVENT",
+        "symbol": "000688.SH"
+      },
+      {
+        "candidate_key": "39d124d494e95757f86a9339",
+        "chart": "charts/39d124d494e95757f86a9339.svg",
+        "condition_kinds": {
+          "CONFIRMATION": 1,
+          "STAGE_EXIT": 1
+        },
+        "decision_date": "2026-01-09",
+        "rule_branch": "FLAT/B",
+        "rule_category": "STAGE_EXIT_ONLY",
+        "scenario_pattern": "FLAT",
+        "scenario_source": "qualified",
+        "scenario_stage": "B_DEVELOPING",
+        "source_snapshot_id": "e36c70b2180c7b4ba3886d061c33a938e695ddf4e4aebc4cdfa2a4bee8f5dfa8",
+        "status": "UNDEFINED_EVENT",
+        "symbol": "000688.SH"
+      },
+      {
+        "candidate_key": "dec36883591c603ff2436aab",
+        "chart": "charts/dec36883591c603ff2436aab.svg",
+        "condition_kinds": {
+          "STAGE_EXIT": 1
+        },
+        "decision_date": "2026-01-09",
+        "rule_branch": "TRIANGLE",
+        "rule_category": "STAGE_EXIT_ONLY",
+        "scenario_pattern": "TRIANGLE",
+        "scenario_source": "qualified",
+        "scenario_stage": "C_DEVELOPING",
+        "source_snapshot_id": "e36c70b2180c7b4ba3886d061c33a938e695ddf4e4aebc4cdfa2a4bee8f5dfa8",
+        "status": "UNDEFINED_EVENT",
+        "symbol": "000688.SH"
+      },
+      {
+        "candidate_key": "566863526935dab2185b7b8c",
+        "chart": "charts/566863526935dab2185b7b8c.svg",
+        "condition_kinds": {
+          "STAGE_EXIT": 1
+        },
+        "decision_date": "2026-01-09",
+        "rule_branch": "IMPULSE/W5",
+        "rule_category": "CONDITIONAL_INVALIDATION_NOT_TRIGGERED",
+        "scenario_pattern": "IMPULSE",
+        "scenario_source": "qualified",
+        "scenario_stage": "W5_DEVELOPING",
+        "source_snapshot_id": "abfd7531e5f8e49a3cec1f27100d21cccc67c2d53c07c68e684fd0ac39c16a4f",
+        "status": "UNDEFINED_EVENT",
+        "symbol": "000016.SH"
+      },
+      {
+        "candidate_key": "4a942d61a7372681face6726",
+        "chart": "charts/4a942d61a7372681face6726.svg",
+        "condition_kinds": {
+          "INVALIDATION": 1
+        },
+        "decision_date": "2026-01-09",
+        "rule_branch": "INVALIDATION_PRESENT",
+        "rule_category": "INVALIDATION_PRESENT_NO_TARGET",
+        "scenario_pattern": "DIAGONAL",
+        "scenario_source": "qualified",
+        "scenario_stage": "W3_DEVELOPING",
+        "source_snapshot_id": "137839f3c357900bd66c18250c98385878825ad0df28900fd46754d3870fd11c",
+        "status": "UNDEFINED_EVENT",
+        "symbol": "000905.SH"
+      }
+    ],
+    "rule_categories": [
+      {
+        "category": "STAGE_EXIT_ONLY",
+        "count": 1380,
+        "label": "只可给出阶段退出线的结构",
+        "share": 0.8996088657105606
+      },
+      {
+        "category": "CONDITIONAL_INVALIDATION_NOT_TRIGGERED",
+        "count": 154,
+        "label": "有硬规则但本轮样本未触发",
+        "share": 0.10039113428943937
+      },
+      {
+        "category": "SUSPECTED_MISSING_INVALIDATION",
+        "count": 0,
+        "label": "规则应给失效但实现可能漏发",
+        "share": 0.0
+      },
+      {
+        "category": "INSUFFICIENT_EVIDENCE",
+        "count": 0,
+        "label": "特征缺失或数据证据不足",
+        "share": 0.0
+      }
+    ],
+    "settled": 1590,
+    "target_events": 3138,
+    "undefined": 1548,
+    "unresolved": {},
+    "with_invalidation_missing_target": 14
+  },
+  "cadence": "LAST_SESSION_OF_WEEK",
+  "candidate": {
+    "baseline_orders": {
+      "frequency": [
+        "frequency"
+      ],
+      "momentum": [
+        "log_return_20"
+      ],
+      "price": [
+        "log_return_20",
+        "missing_return",
+        "atr_ratio",
+        "confirm_distance",
+        "invalidation_distance",
+        "target_distance_atr",
+        "inside_target_zone",
+        "missing_target_geometry"
+      ]
+    },
+    "candidate_id": "047b092ed7f260a7533dc0d7d04b242d9f84b7494b364f8ed332069d0a2e3267",
+    "feature_order": [
+      "log_return_20",
+      "missing_return",
+      "atr_ratio",
+      "candidate_count",
+      "up_weight",
+      "down_weight",
+      "unknown_weight",
+      "top_quality",
+      "top_coverage",
+      "top2_quality_gap",
+      "top_bias",
+      "weekly_bias",
+      "missing_weekly",
+      "missing_second",
+      "quality",
+      "coverage",
+      "bias",
+      "confirm_distance",
+      "invalidation_distance",
+      "missing_confirm",
+      "missing_invalidation",
+      "candidate_rank",
+      "IMPULSE",
+      "ZIGZAG_ABC",
+      "TRIANGLE",
+      "FLAT",
+      "DIAGONAL",
+      "WXY",
+      "COMPLETE",
+      "W2_DEVELOPING",
+      "W3_DEVELOPING",
+      "W4_DEVELOPING",
+      "W5_DEVELOPING",
+      "B_DEVELOPING",
+      "C_DEVELOPING",
+      "D_DEVELOPING",
+      "E_DEVELOPING",
+      "X_DEVELOPING",
+      "Y_DEVELOPING",
+      "target_distance_atr",
+      "inside_target_zone",
+      "missing_target_geometry"
+    ],
+    "feature_version": "3",
+    "freeze_status": "NOT_FROZEN_UNTIL_INDEPENDENT_HOLDOUT_START",
+    "holdout_requirements": {
+      "min_bin_count": 50,
+      "min_bin_dates": 10,
+      "min_dates": 10,
+      "min_rows": 50,
+      "min_supported_coverage": 0.5,
+      "min_symbols": 5,
+      "reliability_tolerance": 0.1
+    },
+    "holdout_status": "AWAITING_NEW_INDEPENDENT_HOLDOUT",
+    "rolling": false,
+    "stage": "RESEARCH_COMPLETE_AWAITING_HOLDOUT"
+  },
+  "date": "2026-11-19",
+  "event_id": "TARGET_FIRST_20D_V1",
+  "folds": [
+    [
+      "2023-12-31",
+      "2024-06-30",
+      "2024-12-31"
+    ],
+    [
+      "2024-06-30",
+      "2024-12-31",
+      "2025-06-30"
+    ],
+    [
+      "2024-12-31",
+      "2025-06-30",
+      "2025-12-31"
+    ]
+  ],
+  "groups": {
+    "A": {
+      "definition": {
+        "calibration": "fixed",
+        "feature_version": "2",
+        "features": "V2",
+        "rolling": false
+      },
+      "pooled": {
+        "brier": 0.10571996034984442,
+        "dates": 66,
+        "folds": [
+          {
+            "brier": 0.09004353255235535,
+            "fallback_dates": 0,
+            "fallback_rate": 0.0,
+            "fold": 1,
+            "log_loss": 0.33107279144727414,
+            "rows": 867,
+            "settleable_coverage": 0.543233082706767,
+            "supported_coverage": 0.0
+          },
+          {
+            "brier": 0.06564765958461671,
+            "fallback_dates": 0,
+            "fallback_rate": 0.0,
+            "fold": 2,
+            "log_loss": 0.21697258373591408,
+            "rows": 997,
+            "settleable_coverage": 0.5255666842382709,
+            "supported_coverage": 0.8665997993981945
+          },
+          {
+            "brier": 0.1837717777891375,
+            "fallback_dates": 0,
+            "fallback_rate": 0.0,
+            "fold": 3,
+            "log_loss": 0.5625995816639481,
+            "rows": 686,
+            "settleable_coverage": 0.45220830586684246,
+            "supported_coverage": 0.0
+          }
+        ],
+        "improvement": {
+          "frequency": {
+            "brier": 0.03250486817701091,
+            "brier_ci": [
+              0.02259751189910235,
+              0.044188968991215855
+            ],
+            "log_loss": 0.10478471853105564,
+            "log_loss_ci": [
+              0.06385747966071674,
+              0.14583291298996362
+            ]
+          },
+          "momentum": {
+            "brier": 0.03486798778357035,
+            "brier_ci": [
+              0.016166122155265288,
+              0.06250431875400907
+            ],
+            "log_loss": 0.12742919216746157,
+            "log_loss_ci": [
+              0.07077846622249219,
+              0.20467009319203167
+            ]
+          },
+          "price": {
+            "brier": 0.01019608351850139,
+            "brier_ci": [
+              0.0021680491097200998,
+              0.018584587250337452
+            ],
+            "log_loss": 0.031482422713990876,
+            "log_loss_ci": [
+              0.014305358650977283,
+              0.0463456137546915
+            ]
+          }
+        },
+        "log_loss": 0.348747093800377,
+        "reasons": [],
+        "reliability": [
+          {
+            "accuracy": 0.49162011173184356,
+            "count": 179,
+            "high": 0.6,
+            "low": 0.4,
+            "mean_confidence": 0.5508333442709085
+          },
+          {
+            "accuracy": 0.7016460905349794,
+            "count": 486,
+            "high": 0.8,
+            "low": 0.6,
+            "mean_confidence": 0.7065567432204496
+          },
+          {
+            "accuracy": 0.9257294429708223,
+            "count": 1885,
+            "high": 1.0,
+            "low": 0.8,
+            "mean_confidence": 0.9325681430899402
+          }
+        ],
+        "rows": 2550,
+        "status": "APPROVED",
+        "supported_coverage": 0.7388235294117647,
+        "symbols": 7
+      }
+    },
+    "B": {
+      "definition": {
+        "calibration": "rolling",
+        "feature_version": "2",
+        "features": "V2",
+        "rolling": true
+      },
+      "pooled": {
+        "brier": 0.10759411142570689,
+        "dates": 66,
+        "folds": [
+          {
+            "brier": 0.08411790810254252,
+            "fallback_dates": 0,
+            "fallback_rate": 0.0,
+            "fold": 1,
+            "log_loss": 0.3114653711549116,
+            "rows": 867,
+            "settleable_coverage": 0.543233082706767,
+            "supported_coverage": 0.7739331026528259
+          },
+          {
+            "brier": 0.06807091495699685,
+            "fallback_dates": 0,
+            "fallback_rate": 0.0,
+            "fold": 2,
+            "log_loss": 0.22608546013235256,
+            "rows": 997,
+            "settleable_coverage": 0.5255666842382709,
+            "supported_coverage": 0.8485456369107321
+          },
+          {
+            "brier": 0.19470562040600922,
+            "fallback_dates": 0,
+            "fallback_rate": 0.0,
+            "fold": 3,
+            "log_loss": 0.5967849989228251,
+            "rows": 686,
+            "settleable_coverage": 0.45220830586684246,
+            "supported_coverage": 0.0
+          }
+        ],
+        "improvement": {
+          "frequency": {
+            "brier": 0.03063071710114844,
+            "brier_ci": [
+              0.018469891566425863,
+              0.04299878026575891
+            ],
+            "log_loss": 0.09869173789836516,
+            "log_loss_ci": [
+              0.05786769604785188,
+              0.13873465417459316
+            ]
+          },
+          "frequency_rolling": {
+            "brier": 0.03327600663400092,
+            "brier_ci": [
+              0.018840465988400976,
+              0.05371458235881825
+            ],
+            "log_loss": 0.1105915200942601,
+            "log_loss_ci": [
+              0.0741822084093655,
+              0.154311719304005
+            ]
+          },
+          "momentum": {
+            "brier": 0.03299383670770788,
+            "brier_ci": [
+              0.013645028368483232,
+              0.06185434610398289
+            ],
+            "log_loss": 0.12133621153477109,
+            "log_loss_ci": [
+              0.06535943878178122,
+              0.19684644972137355
+            ]
+          },
+          "momentum_rolling": {
+            "brier": 0.03625347696508173,
+            "brier_ci": [
+              0.016649007847736343,
+              0.06556701178410547
+            ],
+            "log_loss": 0.13496744103973451,
+            "log_loss_ci": [
+              0.07425214264282641,
+              0.21814330226412487
+            ]
+          },
+          "price": {
+            "brier": 0.008321932442638916,
+            "brier_ci": [
+              -0.003426242146282667,
+              0.020161353398978392
+            ],
+            "log_loss": 0.025389442081300395,
+            "log_loss_ci": [
+              -0.0020307489202393897,
+              0.050590816782931244
+            ]
+          },
+          "price_rolling": {
+            "brier": 0.010305503170929972,
+            "brier_ci": [
+              0.002028488657390195,
+              0.01908609769303216
+            ],
+            "log_loss": 0.0295939647229444,
+            "log_loss_ci": [
+              0.011744017870560812,
+              0.04681693747296224
+            ]
+          }
+        },
+        "log_loss": 0.3548400744330675,
+        "reasons": [
+          "price: Brier improvement 95% CI lower bound <= 0",
+          "price: log-loss improvement 95% CI lower bound <= 0"
+        ],
+        "reliability": [
+          {
+            "accuracy": 0.5654761904761905,
+            "count": 168,
+            "high": 0.6,
+            "low": 0.4,
+            "mean_confidence": 0.557789668194351
+          },
+          {
+            "accuracy": 0.6402569593147751,
+            "count": 467,
+            "high": 0.8,
+            "low": 0.6,
+            "mean_confidence": 0.7105887377992698
+          },
+          {
+            "accuracy": 0.9284595300261097,
+            "count": 1915,
+            "high": 1.0,
+            "low": 0.8,
+            "mean_confidence": 0.9313695535141504
+          }
+        ],
+        "rows": 2550,
+        "status": "INSUFFICIENT_EVIDENCE",
+        "supported_coverage": 0.7462745098039215,
+        "symbols": 7
+      }
+    },
+    "C": {
+      "definition": {
+        "calibration": "fixed",
+        "feature_version": "3",
+        "features": "V3",
+        "rolling": false
+      },
+      "pooled": {
+        "brier": 0.09174883456558396,
+        "dates": 66,
+        "folds": [
+          {
+            "brier": 0.08222913981312073,
+            "fallback_dates": 0,
+            "fallback_rate": 0.0,
+            "fold": 1,
+            "log_loss": 0.30165469947714135,
+            "rows": 867,
+            "settleable_coverage": 0.543233082706767,
+            "supported_coverage": 0.6585928489042676
+          },
+          {
+            "brier": 0.05926890707189179,
+            "fallback_dates": 0,
+            "fallback_rate": 0.0,
+            "fold": 2,
+            "log_loss": 0.1874471937613175,
+            "rows": 997,
+            "settleable_coverage": 0.5255666842382709,
+            "supported_coverage": 0.8545636910732196
+          },
+          {
+            "brier": 0.15098507809560835,
+            "fallback_dates": 0,
+            "fallback_rate": 0.0,
+            "fold": 3,
+            "log_loss": 0.5385493473044087,
+            "rows": 686,
+            "settleable_coverage": 0.45220830586684246,
+            "supported_coverage": 0.0
+          }
+        ],
+        "improvement": {
+          "frequency": {
+            "brier": 0.046475993961271375,
+            "brier_ci": [
+              0.033143537293626964,
+              0.06539613072819482
+            ],
+            "log_loss": 0.13280070296769164,
+            "log_loss_ci": [
+              0.0835662478945441,
+              0.17930154144836646
+            ]
+          },
+          "momentum": {
+            "brier": 0.04883911356783084,
+            "brier_ci": [
+              0.02507546756361379,
+              0.08528148339708595
+            ],
+            "log_loss": 0.15544517660409757,
+            "log_loss_ci": [
+              0.10319922115781438,
+              0.21801451291064905
+            ]
+          },
+          "price": {
+            "brier": -0.005564488240898474,
+            "brier_ci": [
+              -0.008630618001815922,
+              -0.002552112104855661
+            ],
+            "log_loss": -0.01889269848473768,
+            "log_loss_ci": [
+              -0.03237237677355468,
+              -0.005678689881498856
+            ]
+          }
+        },
+        "log_loss": 0.320731109363741,
+        "reasons": [
+          "price: Brier improvement <= 0",
+          "price: Brier improvement 95% CI lower bound <= 0",
+          "price: log-loss improvement <= 0",
+          "price: log-loss improvement 95% CI lower bound <= 0"
+        ],
+        "reliability": [
+          {
+            "accuracy": 0.5773809523809523,
+            "count": 168,
+            "high": 0.6,
+            "low": 0.4,
+            "mean_confidence": 0.5524211147480899
+          },
+          {
+            "accuracy": 0.7425149700598802,
+            "count": 501,
+            "high": 0.8,
+            "low": 0.6,
+            "mean_confidence": 0.7055434657285125
+          },
+          {
+            "accuracy": 0.94896331738437,
+            "count": 1881,
+            "high": 1.0,
+            "low": 0.8,
+            "mean_confidence": 0.9453370369740342
+          }
+        ],
+        "rows": 2550,
+        "status": "INSUFFICIENT_EVIDENCE",
+        "supported_coverage": 0.7254901960784313,
+        "symbols": 7
+      }
+    },
+    "D": {
+      "definition": {
+        "calibration": "rolling",
+        "feature_version": "3",
+        "features": "V3",
+        "rolling": true
+      },
+      "pooled": {
+        "brier": 0.09499056528291616,
+        "dates": 66,
+        "folds": [
+          {
+            "brier": 0.07724109954199665,
+            "fallback_dates": 0,
+            "fallback_rate": 0.0,
+            "fold": 1,
+            "log_loss": 0.2836172095012336,
+            "rows": 867,
+            "settleable_coverage": 0.543233082706767,
+            "supported_coverage": 0.734717416378316
+          },
+          {
+            "brier": 0.06157142747751905,
+            "fallback_dates": 0,
+            "fallback_rate": 0.0,
+            "fold": 2,
+            "log_loss": 0.19566611606447668,
+            "rows": 997,
+            "settleable_coverage": 0.5255666842382709,
+            "supported_coverage": 0.835506519558676
+          },
+          {
+            "brier": 0.16599299558810293,
+            "fallback_dates": 0,
+            "fallback_rate": 0.0,
+            "fold": 3,
+            "log_loss": 0.5758342863561556,
+            "rows": 686,
+            "settleable_coverage": 0.45220830586684246,
+            "supported_coverage": 0.0
+          }
+        ],
+        "improvement": {
+          "frequency": {
+            "brier": 0.04323426324393917,
+            "brier_ci": [
+              0.029206407535599402,
+              0.06192000752294624
+            ],
+            "log_loss": 0.1256896324121481,
+            "log_loss_ci": [
+              0.07795130886827885,
+              0.1711838776202491
+            ]
+          },
+          "frequency_rolling": {
+            "brier": 0.04587955277679168,
+            "brier_ci": [
+              0.027222113597669583,
+              0.073800858967119
+            ],
+            "log_loss": 0.13758941460804303,
+            "log_loss_ci": [
+              0.10247762409055186,
+              0.17860686888812213
+            ]
+          },
+          "momentum": {
+            "brier": 0.045597382850498636,
+            "brier_ci": [
+              0.021925835893718642,
+              0.08185062687395948
+            ],
+            "log_loss": 0.14833410604855402,
+            "log_loss_ci": [
+              0.09700699414924104,
+              0.21038911307107097
+            ]
+          },
+          "momentum_rolling": {
+            "brier": 0.04885702310787249,
+            "brier_ci": [
+              0.024844355584034847,
+              0.08586826768096135
+            ],
+            "log_loss": 0.16196533555351744,
+            "log_loss_ci": [
+              0.10623554722522238,
+              0.23064946161206829
+            ]
+          },
+          "price": {
+            "brier": -0.00880621895823068,
+            "brier_ci": [
+              -0.013641717163429355,
+              -0.004214543892311823
+            ],
+            "log_loss": -0.026003769040281233,
+            "log_loss_ci": [
+              -0.041670694852487054,
+              -0.009889827488516741
+            ]
+          },
+          "price_rolling": {
+            "brier": -0.004609988270843593,
+            "brier_ci": [
+              -0.007663249893619201,
+              -0.0011110451368802829
+            ],
+            "log_loss": -0.016195552248660594,
+            "log_loss_ci": [
+              -0.03270118155872691,
+              -0.00010192264988653236
+            ]
+          }
+        },
+        "log_loss": 0.32784217991928455,
+        "reasons": [
+          "price: Brier improvement <= 0",
+          "price: Brier improvement 95% CI lower bound <= 0",
+          "price: log-loss improvement <= 0",
+          "price: log-loss improvement 95% CI lower bound <= 0"
+        ],
+        "reliability": [
+          {
+            "accuracy": 0.5928571428571429,
+            "count": 140,
+            "high": 0.6,
+            "low": 0.4,
+            "mean_confidence": 0.5514975831496989
+          },
+          {
+            "accuracy": 0.6707317073170732,
+            "count": 492,
+            "high": 0.8,
+            "low": 0.6,
+            "mean_confidence": 0.7151475371951561
+          },
+          {
+            "accuracy": 0.9436913451511991,
+            "count": 1918,
+            "high": 1.0,
+            "low": 0.8,
+            "mean_confidence": 0.9462798601677109
+          }
+        ],
+        "rows": 2550,
+        "status": "INSUFFICIENT_EVIDENCE",
+        "supported_coverage": 0.7294117647058823,
+        "symbols": 7
+      }
+    }
+  },
+  "protocols": {
+    "v2": {
+      "manifest_sha256": "91c4068e8eeacdda7c2dae51ac93f8412b9c155d987928e1155fd874527bbcdd",
+      "sha256": "89381795c908e7e599450aac8356486332efbc658e75ec4d20e67f5dbd785cf0",
+      "source_sha256": "bad7d42c4617ba4673aaa00a3ee6c205fd99e923d00412de8d38701da6cf5cc8"
+    },
+    "v3": {
+      "manifest_sha256": "3af40fd21e5bb54388e466511ebb3c26621ee00ff63ecf5d7a5e320debb8ce6b",
+      "sha256": "2ebf57cb7bb29858fe5d0fd1f121933cce6a3b3ffacbfe1381ac7199406ddeaf",
+      "source_sha256": "801e804c0a5e4e497d47b6d7510e2c9ef650675d5351b32c601d5ecbe2d0ee80"
+    },
+    "v3_evaluation": {
+      "analyzable": 1078,
+      "decisions": 1078,
+      "event_rows": 11653
+    }
+  },
+  "release": {
+    "bootstrap_repetitions": 2000,
+    "bootstrap_seed": 20261119,
+    "min_bin_count": 50,
+    "min_bin_dates": 10,
+    "min_supported_coverage": 0.5,
+    "min_test_dates": 10,
+    "min_test_rows": 50,
+    "min_test_symbols": 5,
+    "reliability_bins": [
+      0.0,
+      0.2,
+      0.4,
+      0.6,
+      0.8,
+      1.0
+    ],
+    "reliability_tolerance": 0.1,
+    "rolling_l2": 0.1,
+    "rolling_min_dates": 8,
+    "rolling_min_negative": 10,
+    "rolling_min_positive": 10,
+    "rolling_min_rows": 100,
+    "rolling_window_dates": 12
+  },
+  "rolling_parameters": {
+    "rolling_l2": 0.1,
+    "rolling_min_dates": 8,
+    "rolling_min_negative": 10,
+    "rolling_min_positive": 10,
+    "rolling_min_rows": 100,
+    "rolling_window_dates": 12
+  },
+  "schema_version": "1.0",
+  "scope": {
+    "adjustment": [
+      "none"
+    ],
+    "asset_types": [
+      "INDEX"
+    ],
+    "feed": [
+      "sina-index"
+    ],
+    "markets": [
+      "CN"
+    ],
+    "timeframes": [
+      "1d"
+    ]
+  },
+  "selection": {
+    "diagnostics": {
+      "A": {
+        "beats_price_baseline_gate": true,
+        "beats_price_baseline_point": true,
+        "price_baseline_brier_ci": [
+          0.0021680491097200998,
+          0.018584587250337452
+        ],
+        "price_baseline_brier_improvement": 0.01019608351850139,
+        "price_baseline_log_loss_ci": [
+          0.014305358650977283,
+          0.0463456137546915
+        ],
+        "price_baseline_log_loss_improvement": 0.031482422713990876
+      },
+      "B": {
+        "beats_price_baseline_gate": false,
+        "beats_price_baseline_point": true,
+        "price_baseline_brier_ci": [
+          -0.003426242146282667,
+          0.020161353398978392
+        ],
+        "price_baseline_brier_improvement": 0.008321932442638916,
+        "price_baseline_log_loss_ci": [
+          -0.0020307489202393897,
+          0.050590816782931244
+        ],
+        "price_baseline_log_loss_improvement": 0.025389442081300395
+      },
+      "C": {
+        "beats_price_baseline_gate": false,
+        "beats_price_baseline_point": false,
+        "price_baseline_brier_ci": [
+          -0.008630618001815922,
+          -0.002552112104855661
+        ],
+        "price_baseline_brier_improvement": -0.005564488240898474,
+        "price_baseline_log_loss_ci": [
+          -0.03237237677355468,
+          -0.005678689881498856
+        ],
+        "price_baseline_log_loss_improvement": -0.01889269848473768
+      },
+      "D": {
+        "beats_price_baseline_gate": false,
+        "beats_price_baseline_point": false,
+        "price_baseline_brier_ci": [
+          -0.013641717163429355,
+          -0.004214543892311823
+        ],
+        "price_baseline_brier_improvement": -0.00880621895823068,
+        "price_baseline_log_loss_ci": [
+          -0.041670694852487054,
+          -0.009889827488516741
+        ],
+        "price_baseline_log_loss_improvement": -0.026003769040281233
+      }
+    },
+    "eligible": [
+      "C",
+      "D"
+    ],
+    "pooled": {
+      "A": {
+        "brier": 0.10571996034984442,
+        "log_loss": 0.348747093800377
+      },
+      "B": {
+        "brier": 0.10759411142570689,
+        "log_loss": 0.3548400744330675
+      },
+      "C": {
+        "brier": 0.09174883456558396,
+        "log_loss": 0.320731109363741
+      },
+      "D": {
+        "brier": 0.09499056528291616,
+        "log_loss": 0.32784217991928455
+      }
+    },
+    "reason": "eligible; lowest pooled log loss; ties prefer fewer changes",
+    "recommendation": "C 相对 A 有改善，但未能在两项合并损失上以正的 95% 下界超过含目标几何的价格基线；波浪结构的增量未建立。保持研究状态，注册前必须等待新的独立留出。",
+    "reference": "A",
+    "selected": "C",
+    "status_note": "development-fold status is not a release approval; the 2026 holdout remains the external calibration check"
+  },
+  "symbols": [
+    "000016.SH",
+    "000688.SH",
+    "000852.SH",
+    "000905.SH",
+    "399001.SZ",
+    "399006.SZ",
+    "899050.BJ"
+  ],
+  "validation": {
+    "offline_smoke": {
+      "equity": {
+        "exit": 0,
+        "snapshot_id": "37bd26910fe295a0eff21916809a809360e13f110ab4f66f489c620068bc81f9",
+        "status": "OK",
+        "symbol": "000333.SZ"
+      },
+      "index": {
+        "exit": 0,
+        "snapshot_id": "abfd7531e5f8e49a3cec1f27100d21cccc67c2d53c07c68e684fd0ac39c16a4f",
+        "status": "OK",
+        "symbol": "000016.SH"
+      }
+    },
+    "pip_check": "No broken requirements found",
+    "pytest": "298 passed",
+    "reproducibility": {
+      "candidate_id": "047b092ed7f260a7533dc0d7d04b242d9f84b7494b364f8ed332069d0a2e3267",
+      "comparison_rerun": "identical metrics.json, selection.json and frozen-candidate.json",
+      "metrics_sha256": "02323687c5918e0b1da398c648008f56436ac6451c2ed4451367ed61a5467c4b",
+      "prediction_candidate_keys_verified": 10200
+    },
+    "ruff": "All checks passed; 97 files formatted"
+  }
+}

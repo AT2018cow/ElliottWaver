@@ -16,6 +16,7 @@ import pyarrow.parquet as pq
 from eliotbot import ENGINE_VERSION
 from eliotbot.config import Settings
 from eliotbot.evaluation.calibration import (
+    binary_logit_affine,
     block_bootstrap_paired_improvement,
     bootstrap_reliability,
     brier,
@@ -31,6 +32,7 @@ from eliotbot.evaluation.features import (
     FEATURE_VERSION,
     PATTERNS,
     STAGES,
+    TARGET_FEATURES,
     event_feature_order,
     feature_vector,
 )
@@ -77,10 +79,12 @@ def _load_rows(directory: Path) -> tuple[dict[str, dict], list[dict]]:
     return decisions, events
 
 
-def _price_order(event_id: str) -> list[str]:
+def _price_order(event_id: str, feature_version: str = FEATURE_VERSION) -> list[str]:
     order = list(PRICE_FEATURES)
     if event_id in CANDIDATE_EVENTS:
         order += ["confirm_distance", "invalidation_distance"]
+    if feature_version == "3" and event_id.startswith("TARGET_FIRST_"):
+        order += TARGET_FEATURES
     return order
 
 
@@ -133,12 +137,26 @@ def _fit_model(
     y_cal: np.ndarray,
     x_test: np.ndarray,
     n_classes: int,
+    *,
+    calibration_method: str = "temperature",
 ) -> tuple[np.ndarray, dict]:
     x_train_s, x_cal_s, stats = standardize(x_train, x_cal)
     x_test_s = (x_test - stats[0]) / stats[1]
     weights, intercept = fit_softmax(x_train_s, y_train, n_classes)
-    cal_prob = predict(x_cal_s, weights, intercept)
-    temperature = temperature_scale(cal_prob, y_cal)
+    if calibration_method == "binary_logit_affine":
+        if n_classes != 2:
+            raise ValueError("Affine logit calibration is only supported for binary events")
+        logits = x_cal_s @ (weights[:, 1] - weights[:, 0]) + intercept[1] - intercept[0]
+        slope_temperature, offset = binary_logit_affine(logits, y_cal)
+        weights = weights / slope_temperature
+        intercept = intercept / slope_temperature
+        intercept[1] += offset
+        temperature = 1.0
+    elif calibration_method == "temperature":
+        cal_prob = predict(x_cal_s, weights, intercept)
+        temperature = temperature_scale(cal_prob, y_cal)
+    else:
+        raise ValueError(f"Unknown calibration method: {calibration_method}")
     test_prob = predict(x_test_s, weights, intercept, temperature)
     return test_prob, {
         "mean": stats[0],
@@ -280,6 +298,88 @@ def _serialize_parameters(parameters: dict) -> dict:
     }
 
 
+def forecast_evidence(
+    event_id: str,
+    test_rows: list[dict],
+    classes: list[str],
+    probabilities: np.ndarray,
+    baselines: dict[str, np.ndarray],
+    release: dict,
+    cadence: str,
+) -> dict:
+    y = np.asarray([row["y"] for row in test_rows], dtype=int)
+    test_dates = [row["decision_date"].isoformat() for row in test_rows]
+    dates = sorted({row["decision_date"] for row in test_rows})
+    overlap = max(
+        bisect_left(dates, row["due_date"]) - bisect_left(dates, row["decision_date"])
+        for row in test_rows
+    )
+    block_size = max(_block_size(event_id, cadence), overlap)
+    metrics = _metrics(probabilities, y)
+    baseline_metrics = {name: _metrics(values, y) for name, values in baselines.items()}
+    improvements = {}
+    bootstrap_options = {
+        "block_size": block_size,
+        "repetitions": release["bootstrap_repetitions"],
+        "seed": release["bootstrap_seed"],
+    }
+    for name, values in baselines.items():
+        bootstrap = block_bootstrap_paired_improvement(
+            y, probabilities, values, test_dates, **bootstrap_options
+        )
+        improvements[name] = {
+            "brier": baseline_metrics[name]["brier"] - metrics["brier"],
+            "log_loss": baseline_metrics[name]["log_loss"] - metrics["log_loss"],
+            **(
+                bootstrap
+                or {
+                    "brier_ci": None,
+                    "log_loss_ci": None,
+                    "repetitions": 0,
+                    "block_size": block_size,
+                    "blocks": 0,
+                }
+            ),
+        }
+    class_reliability = bootstrap_reliability(
+        probabilities, y, test_dates, bins=tuple(release["reliability_bins"]), **bootstrap_options
+    )
+    support = _annotate_reliability(class_reliability, classes, release)
+    coverage = _supported_coverage(probabilities, support, classes)
+    reasons = _approval_reasons(
+        event_id=event_id,
+        test_rows=test_rows,
+        classes=classes,
+        support=support,
+        coverage=coverage,
+        improvements=improvements,
+        release=release,
+    )
+    return {
+        "status": "APPROVED" if not reasons else "INSUFFICIENT_EVIDENCE",
+        "reasons": reasons,
+        "support_bins": support,
+        "reliability": class_reliability,
+        "test_rows": len(test_rows),
+        "test_dates": len(dates),
+        "test_symbols": len({row["symbol"] for row in test_rows}),
+        "metrics": metrics,
+        "baseline_metrics": baseline_metrics,
+        "improvement": improvements,
+        "brier_improvement_ci": improvements["frequency"]["brier_ci"],
+        "reliability_gap": max(
+            (
+                abs(row["mean_confidence"] - row["accuracy"])
+                for row in metrics["reliability"]
+                if row["count"] >= 5
+            ),
+            default=0.0,
+        ),
+        "supported_coverage": coverage,
+        "block_size": block_size,
+    }
+
+
 def train(protocol_path: Path, decisions_dir: Path, output_dir: Path) -> dict:
     protocol = _load_protocol(protocol_path)
     windows = split_windows(protocol)
@@ -330,7 +430,7 @@ def train(protocol_path: Path, decisions_dir: Path, output_dir: Path) -> dict:
                 "due_date": date.fromisoformat(event["due_date"]),
                 "symbol": decision["symbol"],
                 "decision": decision,
-                "candidate": event.get("features"),
+                "features": event.get("features"),
                 "y": label,
             }
         )
@@ -352,9 +452,9 @@ def train(protocol_path: Path, decisions_dir: Path, output_dir: Path) -> dict:
 
 def _train_cohort(protocol, windows, manifest, cohort, rows, output_dir):
     release = _release(protocol)
-    bins = tuple(release["reliability_bins"])
     cadence = protocol["grid"]["cadence"]
     output_dir.mkdir(parents=True, exist_ok=True)
+    feature_version = str(protocol.get("feature_version", FEATURE_VERSION))
     models = {}
     timeframe = cohort[2]
     for event_id in sorted(
@@ -382,7 +482,7 @@ def _train_cohort(protocol, windows, manifest, cohort, rows, output_dir):
                 "sample_counts": counts,
             }
             continue
-        feature_order = event_feature_order(event_id)
+        feature_order = event_feature_order(event_id, feature_version)
         x_train = np.asarray(
             [_features(row, row["decision"], feature_order) for row in train_rows],
             dtype=float,
@@ -397,18 +497,9 @@ def _train_cohort(protocol, windows, manifest, cohort, rows, output_dir):
         )
         y_train = np.asarray([row["y"] for row in train_rows], dtype=int)
         y_cal = np.asarray([row["y"] for row in cal_rows], dtype=int)
-        y_test = np.asarray([row["y"] for row in test_rows], dtype=int)
-        test_dates = [row["decision_date"].isoformat() for row in test_rows]
-        dates = sorted({row["decision_date"] for row in test_rows})
-        overlap = max(
-            bisect_left(dates, row["due_date"]) - bisect_left(dates, row["decision_date"])
-            for row in test_rows
-        )
-        block_size = max(_block_size(event_id, cadence), overlap)
-
         test_prob, parameters = _fit_model(x_train, y_train, x_cal, y_cal, x_test, n_classes)
         frequency = _frequency_baseline(y_train, n_classes)
-        frequency_prob = np.tile(frequency, (len(y_test), 1))
+        frequency_prob = np.tile(frequency, (len(test_rows), 1))
         momentum_prob, momentum_parameters = _fit_model(
             np.asarray(
                 [_features(row, row["decision"], MOMENTUM_FEATURES) for row in train_rows],
@@ -426,7 +517,7 @@ def _train_cohort(protocol, windows, manifest, cohort, rows, output_dir):
             ),
             n_classes,
         )
-        price_order = _price_order(event_id)
+        price_order = _price_order(event_id, feature_version)
         price_prob, price_parameters = _fit_model(
             np.asarray(
                 [_features(row, row["decision"], price_order) for row in train_rows],
@@ -444,68 +535,20 @@ def _train_cohort(protocol, windows, manifest, cohort, rows, output_dir):
             ),
             n_classes,
         )
-        metrics = _metrics(test_prob, y_test)
-        baseline_metrics = {
-            "frequency": _metrics(frequency_prob, y_test),
-            "momentum": _metrics(momentum_prob, y_test),
-            "price": _metrics(price_prob, y_test),
-        }
-        improvements = {}
-        for name, baseline_prob in (
-            ("frequency", frequency_prob),
-            ("momentum", momentum_prob),
-            ("price", price_prob),
-        ):
-            improvement = {
-                "brier": baseline_metrics[name]["brier"] - metrics["brier"],
-                "log_loss": baseline_metrics[name]["log_loss"] - metrics["log_loss"],
-            }
-            bootstrap = block_bootstrap_paired_improvement(
-                y_test,
-                test_prob,
-                baseline_prob,
-                test_dates,
-                block_size=block_size,
-                repetitions=release["bootstrap_repetitions"],
-                seed=release["bootstrap_seed"],
-            )
-            improvement.update(
-                bootstrap
-                or {
-                    "brier_ci": None,
-                    "log_loss_ci": None,
-                    "repetitions": 0,
-                    "block_size": block_size,
-                    "blocks": 0,
-                }
-            )
-            improvements[name] = improvement
-        class_reliability = bootstrap_reliability(
+        evidence = forecast_evidence(
+            event_id,
+            test_rows,
+            classes,
             test_prob,
-            y_test,
-            test_dates,
-            bins=bins,
-            block_size=block_size,
-            repetitions=release["bootstrap_repetitions"],
-            seed=release["bootstrap_seed"],
+            {"frequency": frequency_prob, "momentum": momentum_prob, "price": price_prob},
+            release,
+            cadence,
         )
-        support = _annotate_reliability(class_reliability, classes, release)
-        coverage = _supported_coverage(test_prob, support, classes)
-        reasons = _approval_reasons(
-            event_id=event_id,
-            test_rows=test_rows,
-            classes=classes,
-            support=support,
-            coverage=coverage,
-            improvements=improvements,
-            release=release,
-        )
-        status = "APPROVED" if not reasons else "INSUFFICIENT_EVIDENCE"
+        baseline_metrics = evidence.pop("baseline_metrics")
         models[event_id] = {
-            "status": status,
+            **evidence,
             "event_id": event_id,
             "event_version": "V1",
-            "reasons": reasons,
             "feature_order": feature_order,
             "encoding": {
                 "patterns": PATTERNS if event_id in CANDIDATE_EVENTS else [],
@@ -513,14 +556,8 @@ def _train_cohort(protocol, windows, manifest, cohort, rows, output_dir):
             },
             "classes": classes,
             **_serialize_parameters(parameters),
-            "support_bins": support,
-            "reliability": class_reliability,
             "sample_counts": counts,
-            "test_rows": len(test_rows),
-            "test_dates": len(set(test_dates)),
-            "test_symbols": len({row["symbol"] for row in test_rows}),
             "class_counts": dict(Counter(int(value) for value in y_train)),
-            "metrics": metrics,
             "baseline": baseline_metrics["frequency"],
             "baselines": {
                 "frequency": {
@@ -539,22 +576,10 @@ def _train_cohort(protocol, windows, manifest, cohort, rows, output_dir):
                     **_serialize_parameters(price_parameters),
                 },
             },
-            "improvement": improvements,
-            "brier_improvement_ci": improvements["frequency"]["brier_ci"],
-            "reliability_gap": max(
-                (
-                    abs(row["mean_confidence"] - row["accuracy"])
-                    for row in metrics["reliability"]
-                    if row["count"] >= 5
-                ),
-                default=0.0,
-            ),
-            "supported_coverage": coverage,
-            "block_size": block_size,
         }
     model = {
         "schema_version": "1.2",
-        "feature_version": FEATURE_VERSION,
+        "feature_version": feature_version,
         "event_versions": {event_id: "V1" for event_id in models},
         "scope": {key: [value] for key, value in zip(SCOPE_KEYS, cohort, strict=True)},
         "splits": protocol.get("splits"),

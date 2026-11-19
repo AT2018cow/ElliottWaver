@@ -43,7 +43,7 @@ def render_result(result: AnalysisResult) -> None:
         console.print("当前没有达到质量与证据门槛的候选。")
 
 
-def render_brief(brief: Brief) -> None:
+def render_brief(brief: Brief, result: AnalysisResult | None = None) -> None:
     console = Console()
     console.print(
         f"[bold]EliotBot Brief · {brief.symbol}[/bold]  {brief.timeframe}  "
@@ -83,6 +83,20 @@ def render_brief(brief: Brief) -> None:
             f"{card.relative_weight:.1%}",
         )
     console.print(table)
+    scenarios = {item.scenario_id: item for item in result.scenarios} if result else {}
+    for card in brief.cards:
+        scenario = scenarios.get(card.scenario_id)
+        if scenario is None:
+            continue
+        counts = {
+            status: sum(rule.status == status for rule in scenario.rules)
+            for status in ("PASS", "FAIL", "PENDING")
+        }
+        console.print(
+            f"规则复核 · {card.name} · 通过 {counts['PASS']} · "
+            f"违反 {counts['FAIL']} · 证据不足 {counts['PENDING']}",
+            markup=False,
+        )
     if not brief.cards:
         console.print("当前没有达到质量与证据门槛的候选。")
     console.print(omission_text(brief), style="dim", markup=False)

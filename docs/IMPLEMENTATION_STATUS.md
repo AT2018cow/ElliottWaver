@@ -18,19 +18,20 @@
 | 分析 | ATR/MACD、三尺度因果 ZigZag、背景锚点与回退、有限 CSP 搜索、端点与完整影线区间硬规则；`--long-term` 20 年窗口/首尾锚点/宽桥接搜索/子浪认证，`--allow-gaps` 显式跳过停牌缺口 |
 | 浪型 | 普通涨/跌推动、ABC 锯齿、三角形、平台、楔形和双锯齿 WXY。父级上下文用端点和浪段规则认证。子浪使用更细尺度拐点和同一套浪段规则。已完成收敛三角形使用经典整组门槛：至少四腿锯齿族、复杂腿最多一条；E 腿嵌套只标记 `PROVISIONAL`。 |
 | 评分与点位 | 分项证据、缺失状态、质量/覆盖/相对权重、Top-K 未展示权重、带方向条件、第五浪上限、合法目标带；完成态含 38.2%–100% 回撤目标，低分但硬规则通过的结构以 `EXCLUDED_STRUCTURE` 显式列出；第五浪同时比较浪 5/浪 1 与浪 5/浪 3，含 2.618/4.236 扩展位；按 K 线跨度标注浪级并提示 `MIXED_DEGREE_SCENARIOS` |
-| 产物 | 单周期分析支持 Rich、JSON、Markdown、Plotly HTML、SVG/PNG 备选渲染，完整写入后更新对应周期/feed 的 latest。收盘摘要支持终端、JSON、HTML 和 Markdown，显示数据模式与截止时刻，使用独立的摘要索引。 |
+| 产物 | 单周期分析支持 Rich、JSON、Markdown、Plotly HTML、SVG/PNG 备选渲染，完整写入后更新对应周期/feed 的 latest。收盘摘要支持终端、JSON、HTML 和 Markdown，显示数据模式、截止时刻及候选规则证据，使用独立的摘要索引。 |
 | 收盘摘要 | `eliot brief` 单页摘要：自动选窗、主选/备选、条件/目标、父级/子浪证据、数据警告；默认日线，长跨度自动周线；默认周线背景、跨周期对齐和换窗复核；概率默认 `UNCALIBRATED`，加载批准模型后可输出概率 |
 | 历史与自选 | `eliot history` 查询已发布摘要，原摘要记录上次判断及变化，区分 `CONFIG_CHANGED`、`DATA_REVISED` 和 `NOT_COMPARABLE`。`eliot watchlist` 批量生成 JSON 摘要，支持有限重试、有界并发、模型注册表回退和单标的失败隔离。 |
 | 结算与支持矩阵 | `eliot settle` 使用本地快照，按 `(brief_digest,event_id,scope)` 去重并增量结算，行情修订追加版本，保留最初观察。`eliot support-matrix` 列出资产类型、周期和事件，传入训练汇总后显示该汇总中的支持状态和原因。 |
 | 离线评估 | `scripts/evaluate_briefs.py` 输出日线/周线 decisions/events/summary/manifest；支持收盘区间、确认先达、目标先达事件；summary 按标的、资产类型、周期、浪型和期限分解，并包含已确认拐点改写数、极值至确认 K 线数、相邻主选切换率、预测覆盖、确认延迟和搜索截断；`scripts/merge_evaluations.py` 可合并单样本分批结果 |
-| 概率研究 | 决策时选模、固定到期会话、清单校验及分市场和品种训练已实现。四标的留出复验的两类证券各四项事件均证据不足，默认注册表没有批准模型。详见 [EW-R01–R09 修复复验](reviews/2026-11-19-roadmap-repair.md)。 |
+| 概率研究 | 30 只沪深个股和 7 个指数的 2026 留出检验中，8 项日线事件均未获批。修正训练入口后，指数 20 日目标先达的价格基线对照与校准均未过。2023–2025 开发期已完成滚动校准、目标几何和失效审计；C 按 A 参照入选，但相对含目标几何的价格基线无增量，波浪结构增益未建立。没有新增独立前向留出，状态为研究完成、待新留出，未注册模型。[留出重算](reviews/2026-11-20-cn-index-probability-recheck.md) · [开发期验收](reviews/2026-11-19-cn-index-target-accuracy.md) · [前向验收](protocols/cn-index-target-forward.md) |
+| 端点复核 | `scripts/review_wave_cases.py` 用校验后的日线逐段复核盲标端点，输出规则证据。56 个案例中 18 个至少通过一个端点模板，38 个保留待定。[日用版验收](reviews/2026-11-19-release-preparation.md) |
 | 标注研究 | `scripts/label_wave_cases.py export/import/score/direction/predict` 支持从已发布 brief/daily 自动生成分层盲标 case（含无候选、`EXCLUDED_STRUCTURE`/拒绝候选和歧义分层）、标的涨跌标签、标签导入、按 case 均权独立判读认可概率、双阳性/双阴性、原始一致率、Cohen κ、split 分组；`scripts/train_label_models.py` 训练每模板独立二项模型并接入 E 式留出校准和 50/10/10/κ≥0.60 门槛 |
 | 快照与回放 | SQLite 索引、Parquet 不可变块、SHA256、原子写入、源身份检查；逐前缀回放与回放 manifest |
 
 ## 验证结果
 
 ```text
-python -m pytest tests -q              276 passed
+python -m pytest tests -q              298 passed
 ruff check src tests scripts           PASS
 ruff format --check src tests scripts  PASS
 pip check                             No broken requirements found

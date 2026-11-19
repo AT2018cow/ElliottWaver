@@ -1,6 +1,6 @@
 # EliotBot 中文使用手册
 
-适用版本为 0.1.0 CLI。更新于 2026-11-19。
+适用版本为 0.1.0 CLI。更新于 2026-11-20。
 
 EliotBot 从股票和指数的 K 线中识别波浪候选，给出规则检查、确认价、失效价和目标区。日常用 `brief` 看收盘摘要，单周期深入分析用 `analyze`。命令在终端运行，HTML 报告可在浏览器中打开。
 
@@ -25,14 +25,16 @@ EliotBot 从股票和指数的 K 线中识别波浪候选，给出规则检查�
 
 ## 1. 先运行起来
 
-以下示例从项目根目录运行。首次使用先按[安装步骤](#2-安装与环境检查)建立虚拟环境。
+以下示例从源码目录运行。先安装 A 股依赖，再在收盘后运行 `brief`。[安装步骤](#2-安装与环境检查)
 
 ```bash
-.venv/bin/eliot brief 600519 --open
+.venv/bin/eliot brief 600519.SH --open
 .venv/bin/eliot brief 000300.SH --timeframe 1w --open
 ```
 
 第一条命令查看贵州茅台的日线主分析和最近完整的周线背景。第二条命令用周线分析沪深 300。两条命令都从新浪取数，需要联网，无需密钥。终端打印摘要目录和快照 ID。打开目录中的 `index.html` 查看收盘摘要，点击「打开 K 线图」查看主周期的端点。可用的周线背景图在同目录下的 `weekly.html`。把报告目录一起下载，便可离线查看。
+
+每天先核对报告的行情日期和数据状态，再看主备浪型、规则依据及确认和失效条件。遇到 `UNCLEAR` 时保留待定。若终端环境无法打开浏览器，省去 `--open`，在浏览器手动打开报告路径。来源不可用时可指定已有快照复查原行情。[报告阅读顺序](#45-一页收盘摘要-brief) · [快照复查](#8-保存快照与离线分析)
 
 没有网络时，先运行合成行情演示。将终端打印的完整「快照」ID 填入变量，再生成离线摘要。
 
@@ -46,13 +48,29 @@ DEMO_SNAPSHOT_ID='替换为演示命令打印的完整快照ID'
 
 ## 2. 安装与环境检查
 
-新机器需要 Python 3.11 或更高版本。验证环境为 Linux / Python 3.12。
+新机器需要 Python 3.11 或更高版本。发布验证使用 Linux / Python 3.12。
+
+### 从源码安装 A 股日用版
 
 ```bash
 python3 -m venv .venv
-.venv/bin/python -m pip install -e '.[dev,cn,us]'
+.venv/bin/python -m pip install '.[cn]'
 .venv/bin/eliot doctor --market CN
 ```
+
+### 从发布 Wheel 安装
+
+将发布文件 `eliotbot-0.1.0-py3-none-any.whl` 放到当前目录。安装依赖需能访问所用 Python 包源。首次运行请在有写权限的工作目录执行。
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install './eliotbot-0.1.0-py3-none-any.whl[cn]'
+.venv/bin/eliot doctor --market CN
+```
+
+用源码包可运行 `scripts/` 中的研究、回放和验收脚本。需要美股行情时从源码安装 `'.[cn,us]'`，开发和测试用 `-e '.[dev,cn,us]'`。
+
+### 环境检查与锁定依赖
 
 如需使用本项目记录的依赖版本：
 
@@ -227,7 +245,7 @@ A 股老指数/老股票原始数据可到 1990/1991 年；引擎日历从 **199
 3. **看周线和换窗结论。** 以日线为主时，默认用同一份日线源数据派生最近完整周。只有日、周线均为 `OK` 且方向明确时才给出 `ALIGNED`（同向）或 `CONFLICT`（分歧）。缺周线或证据不足时显示 `NOT_AVAILABLE` 或 `UNDETERMINED`。换窗用另一个自动起点复算，`CHANGED_BIAS` 表示方向随窗口改变。只有一个自动起点或指定了 `--anchor` 时，换窗显示 `NOT_APPLICABLE`。
 4. **检查概率状态。** 权重来自当前候选评分。默认 `forecast_status` 为 `UNCALIBRATED`，获批且适用的模型有支持档时才显示事件概率。价格走势概率和候选确认概率使用不同的事件定义。[概率研究与结果解读](#48-离线评估与概率研究)
 
-`--no-weekly` 和 `--no-window-check` 分别关闭摘要的周线背景和换窗复核。导出文件和目录见[找到并查看报告](#5-找到并查看报告)。
+`--no-weekly` 和 `--no-window-check` 分别关闭摘要的周线背景和换窗复核。主周期候选的终端摘要有规则状态计数，网页可展开「规则复核」，Markdown 列出各规则和实测值。规则状态沿用当次分析的 `PASS / FAIL / PENDING`，分别表示通过、违反和证据不足。结构化规则字段位于同目录的 `daily.json`。导出文件和目录见[找到并查看报告](#5-找到并查看报告)。
 
 ### 4.6 历史查询与上次判断
 
@@ -329,9 +347,21 @@ PROTOCOL=docs/protocols/roadmap-repair-2026-heldout-smoke.json
 - `brief` 在默认缓存的 `models/` 中按决策时间查找兼容的已批准模型，可用 `--model-registry DIR` 指定其他注册表。显式 `brief --model /path/to/model.json` 会在加载成功后将摘要标记为回顾性重算。三分类事件中任一分量落入未获支持的档位，整个事件显示 `UNSUPPORTED_BIN`。
 - `evaluate_briefs.py --model-registry DIR` 使用决策时已批准且未撤回的模型。另可用 `--model /path/to/model.json` 重算兼容的历史决策，省略批准时间时全部标记为回顾性。如果确实有批准记录，可加带时区的 `--model-approved-at`，只把早于批准时间的决策标记为回顾性。批准日须晚于模型留出期末日。查看明细的 `model_id`、`model_approved_at`、`retrospective` 和汇总的 `model_usage`。
 
-四标的留出复验中，个股和指数各四项事件均为 `INSUFFICIENT_EVIDENCE`。[留出复验记录](reviews/2026-11-19-roadmap-repair.md)
+用 30 只沪深个股和 7 个指数重算 2026 年留出后，个股和指数各四项日线事件仍为 `INSUFFICIENT_EVIDENCE`。指数 20 日目标先达的价格基线对照与概率校准均未过。[留出重算与历史压力测试](reviews/2026-11-20-cn-index-probability-recheck.md)
+
+指数目标先达的新校准候选已冻结。可用独立评分命令复用候选及对照参数，检查未来留出的发布门槛。[前向验证流程](protocols/cn-index-target-forward.md)
 
 ### 4.9 盲标导出与一致性评分
+
+首版可直接用 AI 编写的独立端点规则复核。输入盲标 JSON 和同一缓存中的快照，输出每例的证据和通过状态。输入完整的日线可逐段核对影线，缺端点或缺证据保留待定。输出范围限于端点形态，子浪证据单列。
+
+```bash
+.venv/bin/python scripts/review_wave_cases.py \
+  --cases reports/blind-cases.json --cache-root .cache/eliotbot \
+  --output reports/rule-review.json
+```
+
+下方人工标注流程可用于研究独立判读认可概率。
 
 先用 `brief` 生成要评审的报告。下面从默认目录中的贵州茅台摘要导出一个可直接打开的静态标注页面。
 

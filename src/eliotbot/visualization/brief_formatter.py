@@ -14,7 +14,7 @@ from pathlib import Path
 from eliotbot.brief import BriefRun
 from eliotbot.errors import DataError, ExportError
 from eliotbot.schemas.brief import Brief, BriefPeriod, forecast_message
-from eliotbot.schemas.wave import AnalysisResult
+from eliotbot.schemas.wave import AnalysisResult, WaveScenario
 from eliotbot.util import atomic_write, canonical_json, digest
 from eliotbot.visualization.chart_builder import render_html
 
@@ -67,7 +67,36 @@ def omission_text(period: Brief | BriefPeriod) -> str:
     )
 
 
-def brief_markdown(brief: Brief) -> str:
+def rule_evidence(scenario: WaveScenario) -> tuple[str, ...]:
+    """Render the hard-rule evidence already recorded for a candidate."""
+    labels = {"PASS": "通过", "FAIL": "违反", "PENDING": "证据不足"}
+    price_rules = {
+        "C_NEAR_A",
+        "C_PROGRESS",
+        "W2_OR_B_ORIGIN",
+        "W3_PROGRESS",
+        "W4_NO_FULL_RETRACE",
+        "W4_NO_OVERLAP",
+        "W4_OVERLAP",
+        "W5_LENGTH_CAP",
+        "W5_PROGRESS",
+        "X_ORIGIN",
+        "Y_BEYOND_W",
+    }
+    lines = []
+    for rule in scenario.rules:
+        text = f"{labels[rule.status]} · {rule.reason}"
+        sign = -1 if scenario.pattern_direction == "DOWN" and rule.rule_id in price_rules else 1
+        if rule.observed is not None:
+            text += f" · 实测 {sign * rule.observed:.4f}"
+        if rule.boundary is not None:
+            text += f" · 判定边界 {sign * rule.boundary:.4f}"
+        lines.append(text)
+    return tuple(lines)
+
+
+def brief_markdown(brief: Brief, result: AnalysisResult | None = None) -> str:
+    scenarios = {item.scenario_id: item for item in result.scenarios} if result else {}
     lines = [
         f"# {brief.symbol} · 收盘摘要",
         "",
@@ -176,6 +205,9 @@ def brief_markdown(brief: Brief) -> str:
             lines.append("- 当前没有可用的确认、失效或目标条件。")
         for warning in card.warnings:
             lines.append(f"- {warning}")
+        if card.scenario_id in scenarios:
+            lines.extend(("", "### 规则复核", ""))
+            lines.extend(f"- {line}" for line in rule_evidence(scenarios[card.scenario_id]))
     if brief.weekly is not None:
         weekly = brief.weekly
         lines += [
@@ -217,7 +249,8 @@ def brief_markdown(brief: Brief) -> str:
     return "\n".join(lines)
 
 
-def brief_html(brief: Brief) -> str:
+def brief_html(brief: Brief, result: AnalysisResult | None = None) -> str:
+    scenarios = {item.scenario_id: item for item in result.scenarios} if result else {}
     cards = []
     for card in brief.cards:
         conditions = (
@@ -237,6 +270,13 @@ def brief_html(brief: Brief) -> str:
             )
             or "<li>当前没有可用目标区。</li>"
         )
+        review = ""
+        if card.scenario_id in scenarios:
+            entries = "".join(
+                f"<li>{html.escape(line)}</li>"
+                for line in rule_evidence(scenarios[card.scenario_id])
+            )
+            review = f"<details><summary>规则复核</summary><ul>{entries}</ul></details>"
         cards.append(
             f"<section class='card'><h2>{html.escape(card.role)} · "
             f"{html.escape(card.name)}</h2>"
@@ -244,7 +284,7 @@ def brief_html(brief: Brief) -> str:
             f"父级 {html.escape(_parent(card))} · 子浪 {html.escape(card.subwave_status)}</p>"
             f"<p>质量 {card.quality_score:.1f}/100 · 覆盖 {card.coverage:.1%} · "
             f"权重 {card.relative_weight:.1%} · 差异 {html.escape(card.difference)}</p>"
-            f"<h3>条件</h3><ul>{conditions}</ul><h3>目标区</h3><ul>{zones}</ul></section>"
+            f"<h3>条件</h3><ul>{conditions}</ul><h3>目标区</h3><ul>{zones}</ul>{review}</section>"
         )
     if not cards:
         cards.append("<p>当前没有达到质量与证据门槛的候选。</p>")
@@ -448,7 +488,14 @@ def publish_brief(
         / run.brief.symbol
         / "brief"
         / str(run.brief.market_asof)
-        / digest([run.brief.brief_digest, formats, renderer, "brief-render-v2"])
+        / digest(
+            [
+                run.brief.brief_digest,
+                formats,
+                renderer,
+                "brief-render-v3" if formats else "brief-render-v2",
+            ]
+        )
     )
     destination.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=".brief-", dir=destination.parent))
@@ -460,9 +507,9 @@ def publish_brief(
                 raise ExportError("Weekly result does not match the prepared input snapshot")
             atomic_write(staging / "weekly.json", canonical_json(run.weekly_result))
         if "md" in formats:
-            atomic_write(staging / "report.md", brief_markdown(run.brief))
+            atomic_write(staging / "report.md", brief_markdown(run.brief, run.result))
         if "html" in formats:
-            atomic_write(staging / "index.html", brief_html(run.brief))
+            atomic_write(staging / "index.html", brief_html(run.brief, run.result))
             atomic_write(
                 staging / "daily.html",
                 render_html(run.result, run.prepared, renderer),

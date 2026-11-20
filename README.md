@@ -1,10 +1,10 @@
 # EliotBot
 
-面向 A 股、沪深京指数与美股的艾略特波浪分析程序，按“数据获取 → 多尺度拐点 → 候选数浪 → 规则校验 → 评分与点位 → 图表报告”组织能力。
+面向沪深个股、沪深指数以及美股个股和 ETF 的艾略特波浪分析程序，按“数据获取 → 多尺度拐点 → 候选数浪 → 规则校验 → 评分与点位 → 图表报告”组织能力。
 
-当前版本为 **0.1.0 CLI**。日常查看个股或指数的主备浪型、规则依据、判断条件和周线背景，用 `eliot brief`。需要分钟线、候选细节或长历史搜索时，用 `eliot analyze`。CLI 也支持历史查询、自选批量和到期结算。[版本说明](CHANGELOG.md)
+**0.2.0 是首个中美日用 MVP。** 日常查看个股或指数的主备浪型、规则依据、判断条件和周线背景，用 `eliot brief`。需要候选细节、更多周期或长历史搜索时，用 `eliot analyze`。CLI 也支持历史查询、自选批量和到期结算。[版本说明](CHANGELOG.md)
 
-沪深和美股个股支持 `1m / 5m / 15m / 30m / 60m / 1d / 1w`，`1h` 是 `60m` 的别名。沪深京指数支持 `1d / 1w`，例如 `000688.SH`、`399001.SZ`、`899050.BJ`。指数使用 `sina-index` 无复权行情。候选权重表示相对评分，短期价格和候选确认事件的概率默认显示为未校准。完整范围见[实现及验收状态](docs/IMPLEMENTATION_STATUS.md)。
+发布验收以日线和完整周线为主。沪深指数使用 `sina-index` 无复权行情，例如 `000688.SH`、`399001.SZ`。美股样本覆盖上市个股和 ETF。两边的个股也有小时线和分钟线入口，美股盘中目前有离线回归。候选权重表示相对评分，事件概率显示为未校准。完整范围见[实现及验收状态](docs/IMPLEMENTATION_STATUS.md)。
 
 评分默认使用 `ew_score_v2`；配置 `scoring.profile: ew_score_v1` 可以保留原第五浪评分公式。评分版本参与配置摘要，结果中的 `engine_version` 末尾追加当前 profile，完整结果身份参与摘要。
 
@@ -16,12 +16,13 @@
 
 ## 安装
 
-在源码目录使用 Python 3.11 或更高版本安装 A 股日用版。发布验证使用 Linux / Python 3.12。
+在源码目录使用 Python 3.11 或更高版本安装中美日用版。发布验证使用 Linux / Python 3.12。
 
 ```bash
 python3 -m venv .venv
-.venv/bin/python -m pip install '.[cn]'
+.venv/bin/python -m pip install '.[cn,us]'
 .venv/bin/eliot doctor --market CN
+.venv/bin/eliot doctor --market US
 ```
 
 开发和全量测试可用 `.venv/bin/python -m pip install -e '.[dev,cn,us]'`。`requirements.lock` 保存验证过的 Python 3.12 / Linux 依赖版本。[Wheel 安装](docs/USER_GUIDE.md#2-安装与环境检查)
@@ -41,7 +42,7 @@ python3 -m venv .venv
 
 ## 分析个股和指数
 
-沪深 A 股和沪深京指数需要联网，使用公开行情，无需 API key。先从收盘摘要开始。
+沪深 A 股和指数使用公开的新浪行情，无需 API key。先从收盘摘要开始。
 
 ```bash
 .venv/bin/eliot brief 600519 --open

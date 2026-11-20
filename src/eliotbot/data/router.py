@@ -59,3 +59,13 @@ def route_symbol(symbol: str) -> Instrument:
         currency="USD",
         timezone="America/New_York",
     )
+
+
+def canonical_us_symbol(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        instrument = route_symbol(value)
+    except InputError:
+        return None
+    return instrument.provider_symbol if instrument.market == "US" else None

@@ -5,12 +5,12 @@ from importlib.metadata import PackageNotFoundError, version
 
 from eliotbot.config import Settings
 from eliotbot.data.alpaca_provider import AlpacaProvider
-from eliotbot.data.calendar import load_calendar
+from eliotbot.data.calendar import latest_analyzable, load_calendar
 from eliotbot.data.periods import as_weekly, expected_starts, target_session
 from eliotbot.data.router import route_symbol
 from eliotbot.data.sina_provider import SinaProvider
-from eliotbot.data.snapshots import SnapshotStore
-from eliotbot.errors import InputError
+from eliotbot.data.snapshots import SERIES_FIELDS, SnapshotStore
+from eliotbot.errors import DataError, InputError
 from eliotbot.schemas.market import AnalysisRequest, MarketDataBundle
 from eliotbot.util import digest
 
@@ -59,44 +59,64 @@ def fetch_bundle(
         adjustment_key = "none"
     else:
         adjustment_key = "basis_date_qfq"
-    key = digest(
-        [
-            instrument.canonical_symbol,
-            feed,
-            start,
-            target,
-            calendar.version,
-            parser,
-            adjustment_key,
-            settings.data.delayed_access_buffer_minutes,
+    intraday = request.timeframe.endswith("m")
+    cache_identity = [
+        instrument.canonical_symbol,
+        feed,
+        start,
+        target,
+        calendar.version,
+        parser,
+        adjustment_key,
+        settings.data.delayed_access_buffer_minutes,
+        request.timeframe,
+        expected_starts(
+            calendar,
+            instrument,
+            request.as_of,
             request.timeframe,
-            expected_starts(
-                calendar,
-                instrument,
-                request.as_of,
-                request.timeframe,
-                buffer_minutes=settings.data.delayed_access_buffer_minutes,
-                through=end,
-                since=target,
-                auction_sparse=instrument.market == "CN",
-            )[-1:]
-            if request.timeframe.endswith("m")
-            else (),
-            "snapshot-v1.1",
-        ]
-    )
+            buffer_minutes=settings.data.delayed_access_buffer_minutes,
+            through=end,
+            since=target,
+            auction_sparse=instrument.market == "CN",
+        )[-1:]
+        if intraday
+        else (),
+        "snapshot-v1.1",
+    ]
+    if intraday and instrument.market == "US":
+        # Native daily bars can become available while the final RTH bar stays the same.
+        daily_context_end = latest_analyzable(
+            calendar,
+            instrument,
+            request.as_of,
+            settings.data.delayed_access_buffer_minutes,
+            through=target,
+        )
+        cache_identity.append(daily_context_end)
+    key = digest(cache_identity)
     store = SnapshotStore(settings.cache.directory)
     with store.lock(key):
         if not refresh:
-            cached = store.lookup(key, datetime.now(UTC), settings.data.cache_ttl_seconds)
-            if cached is not None and cached.bars[-1].session_date == target:
-                # Calendar validation above proves the completed target is unchanged.
-                # A later analysis cutoff changes bundle identity, so persist it instead
-                # of returning an id that has no snapshot directory.
-                if request.as_of > cached.as_of:
-                    cached = cached.model_copy(update={"as_of": request.as_of})
-                    store.remember(key, cached)
-                return cached
+            cached = store.lookup(
+                key, datetime.now(UTC), settings.data.cache_ttl_seconds, as_of=request.as_of
+            )
+            if (
+                cached is not None
+                and cached.bars[-1].session_date == target
+                and cached.instrument.canonical_symbol == instrument.canonical_symbol
+                and cached.instrument.market == instrument.market
+                and cached.provenance.feed == feed
+                and cached.timeframe == request.timeframe
+            ):
+                if request.as_of == cached.as_of:
+                    return cached
+                if request.as_of > cached.as_of or all(
+                    bar.usable_at <= request.as_of
+                    for field in SERIES_FIELDS
+                    for bar in getattr(cached, field)
+                ):
+                    return store.save_at_cutoff(cached, request.as_of)
         source = provider or (
             AlpacaProvider(settings.data, feed=feed)
             if instrument.market == "US"
@@ -108,9 +128,15 @@ def fetch_bundle(
         )
         if request.timeframe == "1w":
             bundle = as_weekly(bundle)
-        if bundle.provenance.feed != feed or bundle.bars[-1].session_date != target:
-            from eliotbot.errors import DataError
-
-            raise DataError("Provider returned a different feed or incomplete target session")
+        if (
+            bundle.instrument.canonical_symbol != instrument.canonical_symbol
+            or bundle.instrument.market != instrument.market
+            or bundle.provenance.feed != feed
+            or bundle.timeframe != request.timeframe
+            or bundle.bars[-1].session_date != target
+        ):
+            raise DataError(
+                "Provider returned a different symbol, feed, timeframe or target session"
+            )
         store.remember(key, bundle)
         return bundle

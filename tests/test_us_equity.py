@@ -1,4 +1,4 @@
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 
@@ -300,6 +300,7 @@ def _sip_bundle():
 def test_brief_surfaces_feed_adjustment_mode_and_cutoff():
     from eliotbot.brief import build_brief
     from eliotbot.visualization.brief_formatter import brief_html, brief_markdown
+    from eliotbot.visualization.chart_builder import render_html
 
     source = _sip_bundle()
     decision = source.bars[-30]
@@ -310,7 +311,11 @@ def test_brief_surfaces_feed_adjustment_mode_and_cutoff():
         mode="FROZEN_DATA_REPLAY",
     )
     run = build_brief(request, source, Settings(), include_weekly=False, check_windows=False)
-    for text in (brief_markdown(run.brief, run.result), brief_html(run.brief, run.result)):
+    for text in (
+        brief_markdown(run.brief, run.result),
+        brief_html(run.brief, run.result),
+        render_html(run.result, run.prepared),
+    ):
         assert "sip" in text
         assert "provider_all" in text
         assert "FROZEN_DATA_REPLAY" in text
@@ -433,7 +438,10 @@ def test_watchlist_reports_feed_and_keeps_item_failures(tmp_path, monkeypatch):
         if request.symbol == "AAPL":
             return source
         if request.symbol in {"BRK-B", "BRK.B"}:
-            return source.model_copy(update={"instrument": route_symbol("BRK.B")})
+            instrument = route_symbol("BRK.B").model_copy(
+                update={"instrument_id": "alpaca:fixture-brk-b", "identity_verified": True}
+            )
+            return source.model_copy(update={"instrument": instrument})
         return cn_source
 
     monkeypatch.setattr(cli_main, "fetch_bundle", fake_fetch)
@@ -664,6 +672,8 @@ def test_offline_analyze_matches_direct_analysis_and_inspect_metadata(tmp_path):
 
 
 def test_us_sip_and_iex_caches_are_separate(tmp_path, monkeypatch):
+    import sqlite3
+
     from eliotbot.data import workflow
     from eliotbot.data.workflow import fetch_bundle
     from eliotbot.schemas.market import MarketDataBundle, Provenance
@@ -733,10 +743,10 @@ def test_us_sip_and_iex_caches_are_separate(tmp_path, monkeypatch):
     sip = fetch_bundle(request, settings)
     sip_again = fetch_bundle(request, settings)
     iex = fetch_bundle(request.model_copy(update={"feed": "iex"}), settings)
-    from datetime import timedelta
-
     later_request = request.model_copy(update={"as_of": as_of + timedelta(seconds=1)})
     later = fetch_bundle(later_request, settings)
+    earlier_request = request.model_copy(update={"as_of": as_of - timedelta(seconds=1)})
+    earlier = fetch_bundle(earlier_request, settings)
     assert calls == ["sip", "iex"]
     assert sip.snapshot_id == sip_again.snapshot_id
     assert sip.snapshot_id != iex.snapshot_id
@@ -744,7 +754,138 @@ def test_us_sip_and_iex_caches_are_separate(tmp_path, monkeypatch):
     assert sip.bars[0].close != iex.bars[0].close
     assert later.snapshot_id != sip.snapshot_id
     assert later.as_of == later_request.as_of
-    assert SnapshotStore(tmp_path / "cache").load(later.snapshot_id).as_of == later.as_of
+    assert earlier.snapshot_id != sip.snapshot_id
+    assert earlier.as_of == earlier_request.as_of
+    store = SnapshotStore(settings.cache.directory)
+    assert store.load(later.snapshot_id) == later
+    assert store.load(earlier.snapshot_id) == earlier
+    assert earlier.provenance.fetched_at == later.provenance.fetched_at == fetched_at
+    with sqlite3.connect(settings.cache.directory / "index.sqlite3") as db:
+        cached_ids = {row[0] for row in db.execute("SELECT snapshot FROM cache")}
+    assert cached_ids == {sip.snapshot_id, iex.snapshot_id}
+
+    loaded = []
+    load_snapshot = SnapshotStore.load
+
+    def record_load(self, snapshot_id):
+        loaded.append(snapshot_id)
+        return load_snapshot(self, snapshot_id)
+
+    monkeypatch.setattr(SnapshotStore, "load", record_load)
+    assert fetch_bundle(later_request, settings) == later
+    assert loaded == [later.snapshot_id]
+    assert calls == ["sip", "iex"]
+
+
+@pytest.mark.parametrize("cutoffs", [(5, 1, 5), (1, 5, 1)])
+def test_us_intraday_cache_separates_newly_available_daily_context(tmp_path, cutoffs):
+    from eliotbot.data.workflow import fetch_bundle
+
+    july_2 = _bar("2024-07-02")
+    july_3 = _bar("2024-07-03")
+    opened = datetime(2024, 7, 3, 13, 30, tzinfo=UTC)
+    minutes = [_bar(stamp=(opened + timedelta(minutes=5 * i)).isoformat()) for i in range(42)]
+    settings = Settings(cache={"directory": tmp_path / "cache"})
+    results = []
+    request_counts = []
+    for hour in cutoffs:
+        daily_rows = [july_2] if hour == 1 else [july_2, july_3]
+        daily_page = {"bars": {"AAPL": daily_rows}, "next_page_token": None}
+        minute_page = {"bars": {"AAPL": minutes}, "next_page_token": None}
+        provider, fake = _provider([_asset(), daily_page, daily_page, minute_page, minute_page])
+        request = AnalysisRequest(
+            symbol="AAPL",
+            as_of=datetime(2024, 7, 4, hour, tzinfo=UTC),
+            feed="sip",
+            timeframe="1h",
+        )
+        result = fetch_bundle(request, settings, provider=provider)
+        results.append(result)
+        request_counts.append(len(fake.requests))
+        assert result.bars[-1].start_at == datetime(2024, 7, 3, 16, 30, tzinfo=UTC)
+        expected = date(2024, 7, 2 if hour == 1 else 3)
+        assert result.daily_context[-1].session_date == expected
+        assert result.raw_daily_context[-1].session_date == expected
+    assert results[0].snapshot_id == results[2].snapshot_id != results[1].snapshot_id
+    assert request_counts == [5, 5, 0]
+
+
+def test_legacy_alpaca_snapshot_is_rejected_and_cache_is_refetched(tmp_path, monkeypatch):
+    from typer.testing import CliRunner
+
+    from eliotbot.cli.main import app
+    from eliotbot.data import snapshots, workflow
+
+    source = _long_daily_bundle()
+    settings = Settings(cache={"directory": tmp_path / "cache"})
+    request = AnalysisRequest(
+        symbol="AAPL", as_of=source.as_of, end=source.bars[-1].session_date, feed="sip"
+    )
+    wrong_symbol = source.instrument.model_copy(
+        update={"provider_symbol": "MSFT", "instrument_id": "alpaca:msft"}
+    )
+    legacy = source.model_copy(update={"instrument": wrong_symbol})
+    calls = []
+
+    class FixtureProvider:
+        def __init__(self, bundle):
+            self.bundle = bundle
+
+        def fetch(self, instrument, start, end, as_of, timeframe):
+            calls.append(instrument.canonical_symbol)
+            return self.bundle
+
+    with monkeypatch.context() as old_version:
+        old_version.setattr(snapshots, "_validate_alpaca_snapshot", lambda _: None)
+        workflow.fetch_bundle(request, settings, provider=FixtureProvider(legacy))
+
+    config = tmp_path / "config.yaml"
+    config.write_text(f"cache:\n  directory: {settings.cache.directory}\n")
+    result = CliRunner().invoke(
+        app,
+        [
+            "brief",
+            "AAPL",
+            "--offline",
+            "--snapshot",
+            legacy.snapshot_id,
+            "--config",
+            str(config),
+            "--output-dir",
+            str(tmp_path / "reports"),
+        ],
+    )
+    assert result.exit_code == 3
+    assert "ASSET_IDENTITY_MISMATCH" in result.output
+    assert not (tmp_path / "reports").exists()
+
+    assert workflow.fetch_bundle(request, settings, provider=FixtureProvider(source)) == source
+    assert workflow.fetch_bundle(request, settings, provider=FixtureProvider(legacy)) == source
+    assert calls == ["AAPL", "AAPL"]
+
+
+def test_earlier_cache_cutoff_does_not_reuse_unavailable_context(tmp_path):
+    from eliotbot.data.workflow import fetch_bundle
+
+    source = _long_daily_bundle()
+    pending_at = source.as_of + timedelta(minutes=30)
+    context = source.bars[-1].model_copy(update={"available_at": pending_at})
+    later_source = source.model_copy(
+        update={"as_of": pending_at, "daily_context": (context,), "raw_daily_context": (context,)}
+    )
+
+    class FixtureProvider:
+        def fetch(self, instrument, start, end, as_of, timeframe):
+            return later_source if as_of == pending_at else source
+
+    settings = Settings(cache={"directory": tmp_path / "cache"})
+    earlier = AnalysisRequest(symbol="AAPL", as_of=source.as_of, end=source.bars[-1].session_date)
+    later = earlier.model_copy(update={"as_of": pending_at})
+    provider = FixtureProvider()
+    assert fetch_bundle(later, settings, provider=provider) == later_source
+    actual = fetch_bundle(earlier, settings, provider=provider)
+    assert actual == source
+    assert SnapshotStore(settings.cache.directory).load(actual.snapshot_id) == source
 
 
 def test_us_week_with_an_internal_missing_session_is_not_complete():

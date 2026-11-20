@@ -1,5 +1,6 @@
 import hashlib
 import json
+import re
 from datetime import timedelta
 
 import pytest
@@ -193,6 +194,36 @@ def test_export_failure_does_not_publish_or_update_latest(tmp_path, bundle, monk
         publish_report(result, bundle, tmp_path)
     assert not list(tmp_path.rglob("latest*.json"))
     assert not list(tmp_path.rglob("analysis.json"))
+
+
+def test_plotly_report_separates_version_and_mode_from_result_identity(
+    bundle, tmp_path, monkeypatch
+):
+    from eliotbot.visualization import report_formatter
+
+    request = AnalysisRequest(symbol="AAPL", as_of=bundle.as_of)
+    prepared = prepare_bundle(request, bundle)
+    live = AnalysisService().analyze_prepared(request, prepared)
+    replay = live.model_copy(update={"mode": "FROZEN_DATA_REPLAY"})
+    with monkeypatch.context() as old_version:
+        old_version.setattr(report_formatter, "PLOTLY_RENDER_VERSION", "plotly-v1")
+        old_version.setattr(report_formatter, "render_html", lambda *_: "<html>old chart</html>")
+        old = publish_report(replay, prepared, tmp_path, formats=("html",))
+    live_path = publish_report(live, prepared, tmp_path, formats=("html",))
+    replay_path = publish_report(replay, prepared, tmp_path, formats=("html",))
+    assert len({old, live_path, replay_path}) == 3
+    assert (old / "chart.html").read_text() == "<html>old chart</html>"
+    for path, result in [(live_path, live), (replay_path, replay)]:
+        metadata = json.loads((path / "analysis.json").read_text())
+        assert metadata["result_digest"] == live.result_digest
+        assert metadata["mode"] == result.mode
+        chart = (path / "chart.html").read_text()
+        subtitle = re.search(r'"subtitle"\s*:\s*\{\s*"text"\s*:\s*("(?:[^"\\]|\\.)*")', chart)
+        assert subtitle is not None
+        assert (
+            json.loads(subtitle[1])
+            == f"数据模式 {result.mode} · 决策截止 {result.as_of.isoformat()}"
+        )
 
 
 def test_event_same_bar_collision_and_right_censoring(bundle):

@@ -62,6 +62,23 @@ def test_publish_brief_writes_manifest_and_hashes(bundle, tmp_path):
         assert hashlib.sha256((path / name).read_bytes()).hexdigest() == checksum
 
 
+def test_plotly_brief_regenerates_after_render_version_changes(bundle, tmp_path, monkeypatch):
+    from eliotbot.visualization import brief_formatter
+
+    request = AnalysisRequest(symbol="AAPL", as_of=bundle.as_of, mode="FROZEN_DATA_REPLAY")
+    run = build_brief(request, bundle, Settings(), include_weekly=False)
+    with monkeypatch.context() as old_version:
+        old_version.setattr(brief_formatter, "PLOTLY_RENDER_VERSION", "plotly-v1")
+        old_version.setattr(brief_formatter, "render_html", lambda *_: "<html>old chart</html>")
+        old = publish_brief(run, tmp_path, formats=("html",))
+    current = publish_brief(run, tmp_path, formats=("html",))
+    assert old != current
+    assert (old / "daily.html").read_text() == "<html>old chart</html>"
+    assert request.as_of.isoformat() in (current / "daily.html").read_text()
+    assert "FROZEN_DATA_REPLAY" in (current / "daily.html").read_text()
+    assert (old / "brief.json").read_bytes() == (current / "brief.json").read_bytes()
+
+
 def test_brief_no_candidates_is_an_explicit_issue(bundle):
     request = AnalysisRequest(symbol="AAPL", as_of=bundle.as_of)
     run = build_brief(

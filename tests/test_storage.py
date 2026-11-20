@@ -40,6 +40,27 @@ def test_cache_age_is_not_refreshed_on_read(tmp_path, bundle):
     assert store.lookup("fixture", fetched - timedelta(seconds=1), 60) is None
 
 
+def test_indexed_cutoff_inherits_acquisition_expiry_and_refresh(tmp_path, bundle):
+    store = SnapshotStore(tmp_path)
+    store.remember("fixture", bundle)
+    fetched = bundle.provenance.fetched_at
+    cutoff = bundle.as_of + timedelta(seconds=1)
+    derived = store.save_at_cutoff(bundle, cutoff)
+    assert store.lookup("fixture", fetched + timedelta(seconds=20), 60, as_of=cutoff) == derived
+    assert store.lookup("fixture", fetched + timedelta(seconds=61), 60, as_of=cutoff) is None
+    assert store.lookup("fixture", fetched + timedelta(seconds=20), 60) == bundle
+
+    refreshed = bundle.model_copy(
+        update={
+            "provenance": bundle.provenance.model_copy(
+                update={"fetched_at": fetched + timedelta(seconds=30)}
+            ),
+        }
+    )
+    store.remember("fixture", refreshed)
+    assert store.lookup("fixture", fetched + timedelta(seconds=31), 60, as_of=cutoff) == refreshed
+
+
 def test_offline_identity_and_feed_cannot_be_substituted(bundle):
     service = AnalysisService()
     with pytest.raises(InputError, match="identity"):

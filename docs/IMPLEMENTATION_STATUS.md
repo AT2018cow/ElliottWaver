@@ -1,4 +1,4 @@
-# EliotBot 0.1.0 实现与验收状态
+# EliotBot 0.2.0 实现与验收状态
 
 更新于 2026-11-19。安装、日常操作和研究流程见[中文使用手册](USER_GUIDE.md)。目标规格见[详细实现方案](IMPLEMENTATION_PLAN.md)和[收盘分析与概率评估实施设计](WAVE_ANALYSIS_DESIGN.md)。
 
@@ -31,13 +31,15 @@
 ## 验证结果
 
 ```text
-python -m pytest tests -q              341 passed
+python -m pytest tests -q              348 passed
 ruff check src tests scripts           PASS
 ruff format --check src tests scripts  PASS
 pip check                             No broken requirements found
 ```
 
-测试在 Python 3.12 / Linux 环境执行。完整运行的 92 条告警来自 `exchange_calendars` 调用 NumPy 的 timedelta 弃用接口。实际安装版本记录在 [requirements.lock](../requirements.lock)。
+测试在 Python 3.12 / Linux 环境执行。告警来自 `exchange_calendars` 调用 NumPy 的 timedelta 弃用接口。实际安装版本记录在 [requirements.lock](../requirements.lock)。
+
+0.2.0 发布复验使用新浪的 `600519.SH` 和 Alpaca SIP 的 `AAPL` 生成实时摘要。冻结回归覆盖沪深个股及指数、美股个股及 ETF、SIP 和 IEX，核对 `brief` 与 `analyze` 的业务结果和报告校验值。[美股验收记录](reviews/2026-11-20-us-equity-acceptance.md)
 
 测试包含手算 ATR/EMA、拆股因子方向、非交易日因子、同价不同日期保留、拐点确认前不可用、逐前缀不变性、镜像规则、第五浪 155/156 边界、影线合并违规、缺特征不增权、父级包含/精确腿/进行中父腿、5-3-5 子浪认证、区间外拐点不影响深度 2、分页与权限错误、快照篡改、导出中断、CLI 离线一致、事件同根歧义、时区等价、集合竞价、指数路由/无复权 provider/日线→周线/快照往返/分钟线拒绝及各主周期。美股另覆盖资产代码错配、分页尾页、raw/all 对齐、DST、假期、提前收盘、完整周、内部缺日、SIP/IEX 分缓存、离线入口和回放。
 

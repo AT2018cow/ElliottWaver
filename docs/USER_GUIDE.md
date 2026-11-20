@@ -1,6 +1,6 @@
 # EliotBot 中文使用手册
 
-适用版本为 0.1.0 CLI。更新于 2026-11-20。
+适用版本为 0.2.0 CLI。此版本的日用验收覆盖沪深个股与指数、美股个股与 ETF 的日线和周线。
 
 EliotBot 从股票和指数的 K 线中识别波浪候选，给出规则检查、确认价、失效价和目标区。日常用 `brief` 看收盘摘要，单周期深入分析用 `analyze`。命令在终端运行，HTML 报告可在浏览器中打开。
 
@@ -25,7 +25,7 @@ EliotBot 从股票和指数的 K 线中识别波浪候选，给出规则检查�
 
 ## 1. 先运行起来
 
-以下示例从源码目录运行。先安装 A 股依赖，再在收盘后运行 `brief`。[安装步骤](#2-安装与环境检查)
+以下示例从源码目录运行。先安装对应市场的依赖，再运行 `brief` 读取可用的收盘数据。[安装步骤](#2-安装与环境检查)
 
 ```bash
 .venv/bin/eliot brief 600519.SH --open
@@ -33,6 +33,8 @@ EliotBot 从股票和指数的 K 线中识别波浪候选，给出规则检查�
 ```
 
 第一条命令查看贵州茅台的日线主分析和最近完整的周线背景。第二条命令用周线分析沪深 300。两条命令都从新浪取数，需要联网，无需密钥。终端打印摘要目录和快照 ID。打开目录中的 `index.html` 查看收盘摘要，点击「打开 K 线图」查看主周期的端点。可用的周线背景图在同目录下的 `weekly.html`。把报告目录一起下载，便可离线查看。
+
+配置 Alpaca 后，可用 `.venv/bin/eliot brief AAPL --feed sip --open` 查看美股日线摘要。[美股配置与示例](#42-美股)
 
 每天先核对报告的行情日期和数据状态，再看主备浪型、规则依据及确认和失效条件。遇到 `UNCLEAR` 时保留待定。若终端环境无法打开浏览器，省去 `--open`，在浏览器手动打开报告路径。来源不可用时可指定已有快照复查原行情。[报告阅读顺序](#45-一页收盘摘要-brief) · [快照复查](#8-保存快照与离线分析)
 
@@ -50,25 +52,26 @@ DEMO_SNAPSHOT_ID='替换为演示命令打印的完整快照ID'
 
 新机器需要 Python 3.11 或更高版本。发布验证使用 Linux / Python 3.12。
 
-### 从源码安装 A 股日用版
+### 从源码安装日用版
 
 ```bash
 python3 -m venv .venv
-.venv/bin/python -m pip install '.[cn]'
+.venv/bin/python -m pip install '.[cn,us]'
 .venv/bin/eliot doctor --market CN
+.venv/bin/eliot doctor --market US
 ```
 
 ### 从发布 Wheel 安装
 
-将发布文件 `eliotbot-0.1.0-py3-none-any.whl` 放到当前目录。安装依赖需能访问所用 Python 包源。首次运行请在有写权限的工作目录执行。
+将发布文件 `eliotbot-0.2.0-py3-none-any.whl` 放到当前目录。安装依赖需能访问所用 Python 包源。首次运行请在有写权限的工作目录执行。
 
 ```bash
 python3 -m venv .venv
-.venv/bin/python -m pip install './eliotbot-0.1.0-py3-none-any.whl[cn]'
-.venv/bin/eliot doctor --market CN
+.venv/bin/python -m pip install './eliotbot-0.2.0-py3-none-any.whl[cn,us]'
+.venv/bin/eliot demo --symbol 600519.SH
 ```
 
-用源码包可运行 `scripts/` 中的研究、回放和验收脚本。需要美股行情时从源码安装 `'.[cn,us]'`，开发和测试用 `-e '.[dev,cn,us]'`。
+单市场安装可选择 `[cn]` 或 `[us]`。用源码包可运行 `scripts/` 中的研究、回放和验收脚本。开发和测试用 `-e '.[dev,cn,us]'`。
 
 ### 环境检查与锁定依赖
 

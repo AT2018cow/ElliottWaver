@@ -11,7 +11,12 @@ from eliotbot.errors import ExportError
 from eliotbot.schemas.market import MarketDataBundle
 from eliotbot.schemas.wave import AnalysisResult
 from eliotbot.util import atomic_write, canonical_json, digest
-from eliotbot.visualization.chart_builder import build_plotly, render_html, svg_chart
+from eliotbot.visualization.chart_builder import (
+    PLOTLY_RENDER_VERSION,
+    build_plotly,
+    render_html,
+    svg_chart,
+)
 
 
 def _parent_summary(scenario) -> str:
@@ -141,9 +146,10 @@ def publish_report(
     parent = root / result.instrument.market / result.instrument.canonical_symbol / result.timeframe
     if renderer not in {"plotly", "svg"}:
         raise ExportError("Unsupported renderer; choose plotly or svg")
-    destination = (
-        parent / str(result.market_asof) / digest([result.result_digest, formats, renderer])
-    )
+    render_identity = [result.result_digest, formats, renderer, result.mode]
+    if renderer == "plotly" and ("html" in formats or "png" in formats):
+        render_identity.append(PLOTLY_RENDER_VERSION)
+    destination = parent / str(result.market_asof) / digest(render_identity)
     destination.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=".report-", dir=destination.parent))
     try:
@@ -176,6 +182,7 @@ def publish_report(
                 manifest.get("schema_version") != "1.0"
                 or manifest.get("result_digest") != result.result_digest
                 or manifest.get("input_snapshot_id") != bundle.snapshot_id
+                or manifest.get("renderer") != renderer
                 or set(manifest.get("files", {})) != set(files)
             ):
                 raise ExportError("Existing report has a mismatched business identity")
@@ -193,7 +200,7 @@ def publish_report(
                     mode="json", exclude={"run_id", "result_digest", "analyzed_at", "mode"}
                 )
             )
-            if actual_digest != result.result_digest:
+            if actual_digest != result.result_digest or recorded.mode != result.mode:
                 raise ExportError(
                     "Existing report contents do not match its declared result identity"
                 )

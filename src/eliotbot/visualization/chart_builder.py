@@ -12,6 +12,8 @@ from eliotbot.errors import ExportError
 from eliotbot.schemas.market import MarketDataBundle
 from eliotbot.schemas.wave import AnalysisResult
 
+PLOTLY_RENDER_VERSION = "plotly-v2"
+
 
 def bar_label(bar, result):
     if result.timeframe.endswith("m"):
@@ -156,17 +158,23 @@ def build_plotly(result: AnalysisResult, bundle: MarketDataBundle):
         )
     ticks = list(range(0, len(bars), max(1, len(bars) // 10)))
     fig.update_layout(
-        title=(
-            f"{result.instrument.canonical_symbol} · {result.timeframe} · {result.market_asof} · "
-            f"{result.feed} · {result.adjustment} · {bundle.provenance.provider}"
-        ),
+        title={
+            "text": (
+                f"{result.instrument.canonical_symbol} · {result.timeframe} · "
+                f"{result.market_asof} · {result.feed} · {result.adjustment} · "
+                f"{bundle.provenance.provider}"
+            ),
+            "subtitle": {
+                "text": f"数据模式 {result.mode} · 决策截止 {result.as_of.isoformat()}",
+            },
+        },
         template="plotly_white",
         height=900,
         xaxis_rangeslider_visible=False,
         shapes=shape_groups[0] if shape_groups else [],
-        updatemenus=[dict(buttons=buttons, x=0, y=1.12, direction="down")] if buttons else [],
+        updatemenus=[dict(buttons=buttons, x=0, y=1.06, direction="down")] if buttons else [],
         legend=dict(orientation="h", y=-0.10),
-        margin=dict(t=115, b=90),
+        margin=dict(t=145, b=90),
     )
     fig.update_xaxes(
         range=[max(0, len(bars) - 600), future],

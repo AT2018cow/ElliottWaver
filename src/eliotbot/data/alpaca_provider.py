@@ -8,19 +8,10 @@ from eliotbot.data.calendar import bar_window, latest_analyzable, load_calendar
 from eliotbot.data.http import HTTPClient
 from eliotbot.data.periods import aggregate_intraday, expected_starts, target_session
 from eliotbot.data.quality import normalize_bars
-from eliotbot.data.router import route_symbol
-from eliotbot.errors import DataError, InputError, SourceError
+from eliotbot.data.router import canonical_us_symbol
+from eliotbot.errors import DataError, SourceError
 from eliotbot.schemas.market import Bar, Instrument, MarketDataBundle, Provenance
 from eliotbot.util import digest
-
-
-def _canonical_asset_symbol(value) -> str | None:
-    if not isinstance(value, str) or not value.strip():
-        return None
-    try:
-        return route_symbol(value).provider_symbol
-    except InputError:
-        return None
 
 
 class AlpacaProvider:
@@ -96,7 +87,7 @@ class AlpacaProvider:
         asset_id = asset.get("id") if isinstance(asset, dict) else None
         if not isinstance(asset_id, str) or not asset_id or asset.get("class") != "us_equity":
             raise DataError("ASSET_IDENTITY_UNAVAILABLE: Alpaca did not verify a US equity")
-        asset_symbol = _canonical_asset_symbol(asset.get("symbol"))
+        asset_symbol = canonical_us_symbol(asset.get("symbol"))
         if asset_symbol != instrument.provider_symbol:
             raise DataError(
                 "ASSET_IDENTITY_MISMATCH: requested "

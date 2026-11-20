@@ -16,7 +16,7 @@ from eliotbot.errors import DataError, ExportError
 from eliotbot.schemas.brief import Brief, BriefPeriod, forecast_message
 from eliotbot.schemas.wave import AnalysisResult, WaveScenario
 from eliotbot.util import atomic_write, canonical_json, digest
-from eliotbot.visualization.chart_builder import render_html
+from eliotbot.visualization.chart_builder import PLOTLY_RENDER_VERSION, render_html
 
 
 def _parent(card) -> str:
@@ -484,20 +484,21 @@ def publish_brief(
         raise ExportError("Unsupported brief format")
     if run.result.input_snapshot_id != run.prepared.snapshot_id:
         raise ExportError("Brief result does not match the prepared input snapshot")
+    render_identity = [
+        run.brief.brief_digest,
+        formats,
+        renderer,
+        "brief-render-v3" if formats else "brief-render-v2",
+    ]
+    if renderer == "plotly" and "html" in formats:
+        render_identity.append(PLOTLY_RENDER_VERSION)
     destination = (
         root
         / run.result.instrument.market
         / run.brief.symbol
         / "brief"
         / str(run.brief.market_asof)
-        / digest(
-            [
-                run.brief.brief_digest,
-                formats,
-                renderer,
-                "brief-render-v3" if formats else "brief-render-v2",
-            ]
-        )
+        / digest(render_identity)
     )
     destination.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=".brief-", dir=destination.parent))

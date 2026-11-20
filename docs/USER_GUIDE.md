@@ -182,9 +182,20 @@ live 端点为 `https://api.alpaca.markets`。配置文件从当前工作目录�
 
 默认使用 `sip`；`iex` 必须显式指定，或通过配置修改。需要账户具有所选 feed 的访问权限，权限失败会报错，不会自动更换 feed。不同 feed 的结果会标记来源并分别缓存。
 
-美股原生日线按供应商日线口径处理：程序保守等到纽约当地次日零点再加访问缓冲后，才纳入该日线。分钟/小时线采用 RTH 口径，两者的数据截止时刻可能不同。
+取数前会先核对 Alpaca 资产端点返回的资产 ID、`us_equity` 类别和规范代码；返回不同标的时会在发出 K 线请求前终止。`BRK-B` 与 `BRK.B` 会解析到同一个资产。`data fetch` 会输出快照 ID、feed、复权口径、行情截止、分析截止和最后可用时刻；可用 `data inspect` 复核来源，再用 `brief --offline --snapshot` 或 `analyze --offline --snapshot` 离线复跑：
 
-当前美股适配器已通过冻结响应测试，尚未完成真实账户联调，详见[实现与验收状态](IMPLEMENTATION_STATUS.md)。
+```bash
+.venv/bin/eliot data fetch AAPL --timeframe 1d --feed sip
+.venv/bin/eliot data inspect <snapshot-id>
+.venv/bin/eliot brief AAPL --offline --snapshot <snapshot-id> --feed sip
+.venv/bin/eliot analyze AAPL --offline --snapshot <snapshot-id> --feed sip
+```
+
+离线入口会拒绝与快照不同的 feed 或标的。`brief` 的 JSON、Markdown、HTML 和终端摘要都会显示 `feed`、`adjustment`、`market_asof`、`as_of` 和 `mode`；批量自选也会在每条记录中保留来源和单项失败。
+
+美股原生日线按供应商日线口径处理：程序保守等到纽约当地次日零点再加访问缓冲后，才纳入该日线。分钟/小时线采用 RTH 口径，两者的数据截止时刻可能不同。周线只使用同一份已验证日线中会话齐备的完整周，周中请求使用上一个完整周。
+
+当前美股适配器已通过冻结响应、身份错配、分页、DST、假期、提前收盘、完整周、复权和离线入口测试；AAPL、BRK.B、SPY 的真实 SIP 小样本和 AAPL 的 IEX 样本也已通过，验收状态见[美股日用版验收](reviews/2026-11-20-us-equity-acceptance.md)。
 
 ### 4.3 沪深京指数
 

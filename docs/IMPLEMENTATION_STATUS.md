@@ -11,7 +11,7 @@
 | 项目、配置、Schema | Python 包、Typer CLI、严格字段校验、配置优先级、错误码与结果身份已实现；快照 schema 为 1.1 |
 | 沪深 A 股行情 | 新浪日线、因子、1/5/15/30/60 分钟；版本兼容与有期限的隔离进程；通过真实数据子集验证 |
 | 沪深京指数行情 | 新浪指数日线（`SH000*`、`SZ399*`、`BJ899*`），日线/周线；无复权，`feed=sina-index`；指数分钟线未启用；通过真实数据子集验证 |
-| 美股行情 | Alpaca REST v2 薄适配器，显式 feed/adjustment/end、全部分页、身份验证、认证错误与重复 token 防护；通过冻结响应测试，真实账户尚未联调 |
+| 美股行情 | Alpaca REST v2 适配器，显式 feed/adjustment/end、全部分页、资产 ID/类别/代码一致性核对、认证错误与重复 token 防护；日线/周线、DST、假期、提前收盘、完整周、raw/all 对齐和 SIP/IEX 分缓存已通过冻结响应与离线入口测试。AAPL、BRK.B、SPY 的真实 SIP 小样本和 AAPL 的 IEX 样本已通过，见[验收记录](reviews/2026-11-20-us-equity-acceptance.md) |
 | 主周期 | `1m、5m、15m、30m、60m、1d、1w`，支持 `1h` 别名；两市场合成样本全覆盖，A 股真实样本全周期覆盖；指数仅 `1d / 1w` |
 | 时间边界 | 不纳入未完成/尚不可用 bar；UTC 与交易所会话分开；节假日、DST、提前收市、午休、小时线尾段与完整周处理已测试 |
 | 复权 | 保存 raw 与因子；A 股基准日乘法复权；先复权日线再聚合周线；美股供应商 all 不进行二次复权 |
@@ -31,15 +31,15 @@
 ## 验证结果
 
 ```text
-python -m pytest tests -q              298 passed
+python -m pytest tests -q              341 passed
 ruff check src tests scripts           PASS
 ruff format --check src tests scripts  PASS
 pip check                             No broken requirements found
 ```
 
-测试在 Python 3.12 / Linux 环境执行。完整运行的 42 条告警来自 `exchange_calendars` 调用 NumPy 的 timedelta 弃用接口。实际安装版本记录在 [requirements.lock](../requirements.lock)。
+测试在 Python 3.12 / Linux 环境执行。完整运行的 92 条告警来自 `exchange_calendars` 调用 NumPy 的 timedelta 弃用接口。实际安装版本记录在 [requirements.lock](../requirements.lock)。
 
-测试包含手算 ATR/EMA、拆股因子方向、非交易日因子、同价不同日期保留、拐点确认前不可用、逐前缀不变性、镜像规则、第五浪 155/156 边界、影线合并违规、缺特征不增权、父级包含/精确腿/进行中父腿、5-3-5 子浪认证、区间外拐点不影响深度 2、分页与权限错误、快照篡改、导出中断、CLI 离线一致、事件同根歧义、时区等价、集合竞价、指数路由/无复权 provider/日线→周线/快照往返/分钟线拒绝及各主周期。
+测试包含手算 ATR/EMA、拆股因子方向、非交易日因子、同价不同日期保留、拐点确认前不可用、逐前缀不变性、镜像规则、第五浪 155/156 边界、影线合并违规、缺特征不增权、父级包含/精确腿/进行中父腿、5-3-5 子浪认证、区间外拐点不影响深度 2、分页与权限错误、快照篡改、导出中断、CLI 离线一致、事件同根歧义、时区等价、集合竞价、指数路由/无复权 provider/日线→周线/快照往返/分钟线拒绝及各主周期。美股另覆盖资产代码错配、分页尾页、raw/all 对齐、DST、假期、提前收盘、完整周、内部缺日、SIP/IEX 分缓存、离线入口和回放。
 
 真实行情验证使用 **2026-11-16 已完成行情**。下列统计来自 v3 的[个股多周期](validation_20261118_ext5_v3.json)、[沪深京指数](validation_20261118_cn_index_v3.json)和[长历史](validation_20261118_long_history_v3.json)记录。当前 v6 的三角形结构认证、复权修复和同批小回放见[修复与决策](reviews/2026-11-18-cn-triangle-classic-v6.md)。原始快照和大图保存在本地 `.cache/live-smoke/`、`.cache/eliotbot/` 和 `reports/`。
 
@@ -103,7 +103,7 @@ pip check                             No broken requirements found
 | 阶段 | 当前交付状态 |
 | --- | --- |
 | M0 | 骨架、配置与契约实现并通过针对性测试 |
-| M1 | 沪深真实子集通过；US 仅契约测试；未完成原计划 8–12 只跨市场真实样本验收 |
+| M1 | 沪深真实子集通过；US 已完成资产身份、分页、会话、完整周、复权、离线入口和回放验收；AAPL、BRK.B、SPY 真实 SIP 小样本和 AAPL IEX 样本通过，未完成原计划 8–12 只跨市场真实样本验收 |
 | M2–M5 | 核心 CLI 链路、规则、评分和报告已实现；次级分形认证按缺失证据处理 |
 | M6 | 平台、三角形、楔形、WXY 支持端点级硬规则。父级关联和子浪认证共用浪段规则，内部认证深度最多两层。收敛三角形使用经典整组门槛；E 腿嵌套为 `PROVISIONAL` 候选。 |
 | M7 | 已实现冻结数据逐前缀回放、日周线事件评估、基线对比、留出校准和模型注册机制。当前冻结样本的留出证据不足，尚未批准真实行情模型。 |

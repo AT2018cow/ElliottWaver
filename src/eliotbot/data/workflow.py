@@ -91,8 +91,12 @@ def fetch_bundle(
             cached = store.lookup(key, datetime.now(UTC), settings.data.cache_ttl_seconds)
             if cached is not None and cached.bars[-1].session_date == target:
                 # Calendar validation above proves the completed target is unchanged.
-                # Keep the actual fetched timestamp; never pretend the cache was downloaded again.
-                return cached.model_copy(update={"as_of": request.as_of})
+                # A later analysis cutoff changes bundle identity, so persist it instead
+                # of returning an id that has no snapshot directory.
+                if request.as_of > cached.as_of:
+                    cached = cached.model_copy(update={"as_of": request.as_of})
+                    store.remember(key, cached)
+                return cached
         source = provider or (
             AlpacaProvider(settings.data, feed=feed)
             if instrument.market == "US"

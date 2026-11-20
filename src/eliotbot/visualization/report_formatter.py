@@ -25,6 +25,7 @@ def markdown_report(result: AnalysisResult) -> str:
         f"# EliotBot · {result.instrument.canonical_symbol}",
         "",
         f"行情截止：{result.market_asof}；周期：{result.timeframe}；来源：{result.feed}；调整口径：{result.adjustment}。",
+        f"数据模式：`{result.mode}`；决策截止：`{result.as_of.isoformat()}`。",
         *(
             ["品种：指数；指数无复权，价格为原始点位。"]
             if result.instrument.asset_type == "INDEX"

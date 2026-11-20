@@ -471,6 +471,10 @@ def run_watchlist(
                 "status": "ERROR",
                 "brief_digest": None,
                 "market_asof": None,
+                "feed": None,
+                "adjustment": None,
+                "timeframe": None,
+                "mode": None,
                 "path": None,
                 "error": f"{route_error.code}: {route_error}",
                 "attempts": 0,
@@ -502,6 +506,10 @@ def run_watchlist(
                     "status": run.brief.status,
                     "brief_digest": run.brief.brief_digest,
                     "market_asof": str(run.brief.market_asof),
+                    "feed": run.brief.feed,
+                    "adjustment": run.brief.adjustment,
+                    "timeframe": run.brief.timeframe,
+                    "mode": run.brief.mode,
                     "path": str(output),
                     "error": "数据不足或陈旧" if exit_code else None,
                     "exit_code": exit_code,
@@ -513,6 +521,10 @@ def run_watchlist(
                     "status": "INSUFFICIENT_DATA",
                     "brief_digest": None,
                     "market_asof": None,
+                    "feed": None,
+                    "adjustment": None,
+                    "timeframe": None,
+                    "mode": None,
                     "path": None,
                     "error": "数据不足或陈旧",
                     "attempts": attempts,
@@ -524,6 +536,10 @@ def run_watchlist(
                     "status": "ERROR",
                     "brief_digest": None,
                     "market_asof": None,
+                    "feed": None,
+                    "adjustment": None,
+                    "timeframe": None,
+                    "mode": None,
                     "path": None,
                     "error": f"{exc.code}: {exc}",
                     "attempts": attempts,
@@ -535,6 +551,10 @@ def run_watchlist(
                     "status": "ERROR",
                     "brief_digest": None,
                     "market_asof": None,
+                    "feed": None,
+                    "adjustment": None,
+                    "timeframe": None,
+                    "mode": None,
                     "path": None,
                     "error": f"{type(exc).__name__}: {exc}",
                     "attempts": attempts,
@@ -556,11 +576,12 @@ def run_watchlist(
     if json_output:
         print(canonical_json(records))
     else:
-        table = Table("标的", "状态", "行情截止", "摘要", "尝试", "错误")
+        table = Table("标的", "状态", "来源", "行情截止", "摘要", "尝试", "错误")
         for record in records:
             table.add_row(
                 record["symbol"],
                 record["status"],
+                record.get("feed") or "—",
                 record["market_asof"] or "—",
                 (record["brief_digest"] or "—")[:12],
                 str(record["attempts"]),
@@ -815,6 +836,7 @@ def run_fetch(
         start=_day(start),
         end=_day(end),
         feed=feed,
+        mode="FROZEN_DATA_REPLAY" if as_of else "LIVE",
         timeframe=timeframe or settings.analysis.timeframe,
     )
     bundle = fetch_bundle(request, settings, refresh=refresh)
@@ -825,6 +847,11 @@ def run_fetch(
                 "symbol": bundle.instrument.canonical_symbol,
                 "asset_type": bundle.instrument.asset_type,
                 "feed": bundle.provenance.feed,
+                "adjustment": bundle.provenance.adjustment,
+                "market_asof": bundle.bars[-1].session_date,
+                "as_of": bundle.as_of.isoformat(),
+                "last_available_at": bundle.bars[-1].usable_at.isoformat(),
+                "mode": request.mode,
                 "first": bundle.bars[0].session_date,
                 "last": bundle.bars[-1].session_date,
                 "bars": len(bundle.bars),
@@ -847,6 +874,7 @@ def run_inspect(snapshot, *, config=None):
                 "bars": len(bundle.bars),
                 "first": bundle.bars[0].session_date,
                 "last": bundle.bars[-1].session_date,
+                "last_available_at": bundle.bars[-1].usable_at.isoformat(),
                 "provenance": bundle.provenance,
             }
         )

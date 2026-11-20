@@ -386,6 +386,8 @@ th,td{{border:1px solid #d8e2ea;padding:8px;text-align:left}}
 <main><header><h1>{html.escape(brief.symbol)} · 收盘摘要</h1>
 <p>行情截止 {brief.market_asof} · 周期 {html.escape(brief.timeframe)} ·
 状态 {html.escape(brief.status)} · 分析价格 {brief.latest_price:.4f}</p>
+<p>来源 <code>{html.escape(brief.feed)}</code> · 调整口径
+<code>{html.escape(brief.adjustment)}</code></p>
 <p>数据模式 <code>{html.escape(brief.mode)}</code> ·
 决策截止 <time datetime="{brief.as_of.isoformat()}">{brief.as_of.isoformat()}</time></p>
 <p>{html.escape(brief.timeframe_reason or "")}</p></header>

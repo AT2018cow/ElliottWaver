@@ -38,6 +38,8 @@ def test_alpaca_raw_and_all_are_kept_separate(monkeypatch):
     assert bundle.bars[0].close == 101
     assert bundle.bars[0].volume == 200
     assert bundle.provenance.feed == "sip"
+    assert bundle.provenance.adjustment == "provider_all"
+    assert bundle.provenance.session_profile == "provider_native_daily"
 
 
 def test_alpaca_rth_hourly_includes_only_completed_native_subbars(monkeypatch):

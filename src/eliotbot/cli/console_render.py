@@ -9,8 +9,10 @@ from eliotbot.visualization.brief_formatter import omission_text
 def render_result(result: AnalysisResult) -> None:
     console = Console()
     console.print(
-        f"[bold]EliotBot · {result.instrument.canonical_symbol}[/bold]  {result.timeframe}  {result.market_asof}  {result.feed}  {result.status}"
+        f"[bold]EliotBot · {result.instrument.canonical_symbol}[/bold]  {result.timeframe}  "
+        f"{result.market_asof}  {result.feed}  {result.adjustment}  {result.status}"
     )
+    console.print(f"数据模式 {result.mode} · 决策截止 {result.as_of.isoformat()}", markup=False)
     prefix = "指数 · " if result.instrument.asset_type == "INDEX" else ""
     console.print(
         f"{prefix}分析价格 {result.latest_price:.4f} · 结构歧义 {result.ambiguity} · 候选权重不是成功概率"
@@ -47,7 +49,7 @@ def render_brief(brief: Brief, result: AnalysisResult | None = None) -> None:
     console = Console()
     console.print(
         f"[bold]EliotBot Brief · {brief.symbol}[/bold]  {brief.timeframe}  "
-        f"{brief.market_asof}  {brief.status}"
+        f"{brief.market_asof}  {brief.feed}  {brief.adjustment}  {brief.status}"
     )
     console.print(f"数据模式 {brief.mode} · 决策截止 {brief.as_of.isoformat()}", markup=False)
     console.print(f"周期选择：{brief.timeframe_reason or '—'}")

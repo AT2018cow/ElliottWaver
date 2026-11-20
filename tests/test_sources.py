@@ -45,7 +45,12 @@ def test_alpaca_pagination_is_complete_and_never_changes_feed():
     assert [row["c"] for row in rows] == [10, 11]
     assert fake.requests[1][1]["page_token"] == "p2"
     assert all(
-        params["feed"] == "sip" and params["adjustment"] == "all" and params["end"]
+        params["feed"] == "sip"
+        and params["adjustment"] == "all"
+        and params["symbols"] == "AAPL"
+        and params["asof"] == "2024-02-01"
+        and params["timeframe"] == "1Day"
+        and params["end"]
         for _, params in fake.requests
     )
 

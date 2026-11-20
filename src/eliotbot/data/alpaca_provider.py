@@ -8,9 +8,19 @@ from eliotbot.data.calendar import bar_window, latest_analyzable, load_calendar
 from eliotbot.data.http import HTTPClient
 from eliotbot.data.periods import aggregate_intraday, expected_starts, target_session
 from eliotbot.data.quality import normalize_bars
-from eliotbot.errors import DataError, SourceError
+from eliotbot.data.router import route_symbol
+from eliotbot.errors import DataError, InputError, SourceError
 from eliotbot.schemas.market import Bar, Instrument, MarketDataBundle, Provenance
 from eliotbot.util import digest
+
+
+def _canonical_asset_symbol(value) -> str | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        return route_symbol(value).provider_symbol
+    except InputError:
+        return None
 
 
 class AlpacaProvider:
@@ -52,7 +62,10 @@ class AlpacaProvider:
         rows = []
         tokens = set()
         for _ in range(1000):
-            payload = self.http.get_json("https://data.alpaca.markets/v2/stocks/bars", params)
+            try:
+                payload = self.http.get_json("https://data.alpaca.markets/v2/stocks/bars", params)
+            except StopIteration as exc:
+                raise SourceError("Alpaca pagination ended before the final page") from exc
             if not isinstance(payload, dict) or not isinstance(payload.get("bars"), dict):
                 raise SourceError("Malformed Alpaca bars response")
             page = payload["bars"].get(symbol, [])
@@ -60,8 +73,10 @@ class AlpacaProvider:
                 raise SourceError("Malformed Alpaca symbol page")
             rows.extend(page)
             token = payload.get("next_page_token")
-            if not token:
+            if token is None or token == "":
                 return rows
+            if not isinstance(token, str):
+                raise SourceError("Malformed Alpaca page token")
             if token in tokens:
                 raise SourceError("Repeated Alpaca page token; refusing an incomplete response")
             tokens.add(token)
@@ -78,15 +93,22 @@ class AlpacaProvider:
         asset = self.http.get_json(
             f"{alpaca_asset_endpoint()}/v2/assets/{instrument.provider_symbol}"
         )
-        if not isinstance(asset, dict) or not asset.get("id") or asset.get("class") != "us_equity":
-            raise DataError("Alpaca did not verify this US equity's identity")
+        asset_id = asset.get("id") if isinstance(asset, dict) else None
+        if not isinstance(asset_id, str) or not asset_id or asset.get("class") != "us_equity":
+            raise DataError("ASSET_IDENTITY_UNAVAILABLE: Alpaca did not verify a US equity")
+        asset_symbol = _canonical_asset_symbol(asset.get("symbol"))
+        if asset_symbol != instrument.provider_symbol:
+            raise DataError(
+                "ASSET_IDENTITY_MISMATCH: requested "
+                f"{instrument.provider_symbol}, asset endpoint returned {asset.get('symbol')!r}"
+            )
         instrument = instrument.model_copy(
             update={
-                "instrument_id": f"alpaca:{asset['id']}",
-                "exchange": asset.get("exchange", "UNKNOWN"),
-                "name": asset.get("name", ""),
+                "instrument_id": f"alpaca:{asset_id}",
+                "exchange": asset.get("exchange") or "UNKNOWN",
+                "name": asset.get("name") or "",
                 "identity_verified": True,
-                "provider_symbol": asset.get("symbol", instrument.provider_symbol),
+                "provider_symbol": asset_symbol,
             }
         )
         zone = ZoneInfo(instrument.timezone)
@@ -102,17 +124,26 @@ class AlpacaProvider:
         def convert(rows):
             bars = []
             for row in rows:
-                stamp = datetime.fromisoformat(row["t"].replace("Z", "+00:00"))
+                if not isinstance(row, dict) or not isinstance(row.get("t"), str):
+                    raise SourceError("Malformed Alpaca bar record")
+                try:
+                    stamp = datetime.fromisoformat(row["t"].replace("Z", "+00:00"))
+                except ValueError as exc:
+                    raise SourceError("Malformed Alpaca bar timestamp") from exc
+                if stamp.tzinfo is None:
+                    raise SourceError("Alpaca timestamp lacks a timezone")
                 day = stamp.astimezone(zone).date()
                 if not start <= day <= target:
                     continue
+                if day not in calendar.dates:
+                    raise DataError(f"Alpaca returned a bar outside the verified calendar: {day}")
                 opened, closed, available = bar_window(
                     calendar.session(day), "US", self.config.delayed_access_buffer_minutes
                 )
                 if available > as_of:
                     continue
-                bars.append(
-                    Bar(
+                try:
+                    bar = Bar(
                         start_at=opened,
                         end_at=closed,
                         available_at=available,
@@ -125,10 +156,14 @@ class AlpacaProvider:
                         volume=row["v"],
                         source_revision=digest(row),
                     )
-                )
+                except (KeyError, ValueError) as exc:
+                    raise SourceError(f"Malformed Alpaca bar at {row['t']}") from exc
+                bars.append(bar)
             return normalize_bars(bars)
 
         raw_bars, bars = convert(raw), convert(adjusted)
+        if [bar.start_at for bar in raw_bars] != [bar.start_at for bar in bars]:
+            raise DataError("ALIGNMENT_ERROR: Alpaca raw and all bars do not align by timestamp")
         if not bars or bars[-1].session_date != target:
             raise DataError(f"STALE_DATA: Alpaca {self.feed} lacks the required {target} session")
         coordinate = digest(["alpaca", self.feed, "all", target, adjusted])

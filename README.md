@@ -12,6 +12,8 @@
 
 收盘报告、自动选窗和概率评估的完成标准见[产品路线图](docs/ROADMAP.md)。模块职责、数据契约和验收用例见[收盘分析与概率评估实施设计](docs/WAVE_ANALYSIS_DESIGN.md)。
 
+美股日用版的 Alpaca 联调、规则验证与验收见[美股实施计划](docs/US_EQUITY_IMPLEMENTATION_PLAN.md)和[美股验收记录](docs/reviews/2026-11-20-us-equity-acceptance.md)。
+
 ## 安装
 
 在源码目录使用 Python 3.11 或更高版本安装 A 股日用版。发布验证使用 Linux / Python 3.12。

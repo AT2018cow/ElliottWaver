@@ -43,4 +43,6 @@
 
 当前三角形采用经典 A 组口径，B 组保留作研究对照。后续规则修订记录具体模板、适用条件和独立预期。[规则决策](reviews/2026-11-18-cn-triangle-classic-v6.md)
 
-美股沿用 Alpaca 单周期入口，联合报告和概率按其实际 feed 单独验收。指数分钟线、独立 Web 服务按新增使用需求另行立项。每项完成后将实测结果登记到[验收记录](reviews/README.md)。
+美股日用版已完成 Alpaca 资产身份、分页、纽约会话、完整周、复权、离线入口、规则回放和自选验收；AAPL、BRK.B、SPY 的真实 SIP 小样本和 AAPL 的 IEX 样本已通过。[美股验收](reviews/2026-11-20-us-equity-acceptance.md) · [实施计划](US_EQUITY_IMPLEMENTATION_PLAN.md)
+
+指数分钟线、独立 Web 服务按新增使用需求另行立项。每项完成后将实测结果登记到[验收记录](reviews/README.md)。

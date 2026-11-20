@@ -156,7 +156,10 @@ def build_plotly(result: AnalysisResult, bundle: MarketDataBundle):
         )
     ticks = list(range(0, len(bars), max(1, len(bars) // 10)))
     fig.update_layout(
-        title=f"{result.instrument.canonical_symbol} · {result.timeframe} · {result.market_asof} · {result.feed} · {bundle.provenance.provider}",
+        title=(
+            f"{result.instrument.canonical_symbol} · {result.timeframe} · {result.market_asof} · "
+            f"{result.feed} · {result.adjustment} · {bundle.provenance.provider}"
+        ),
         template="plotly_white",
         height=900,
         xaxis_rangeslider_visible=False,
@@ -286,7 +289,7 @@ def render_html(result: AnalysisResult, bundle: MarketDataBundle, renderer="plot
     return f"""<!doctype html><html lang="zh"><meta charset="utf-8"><title>EliotBot {html.escape(result.instrument.canonical_symbol)}</title>
 <style>body{{font:15px system-ui;margin:24px;background:#f7f9fb;color:#1c3046}}.panel{{overflow:auto}}svg{{width:100%;height:auto}}select{{padding:10px}}code{{overflow-wrap:anywhere}}</style>
 <h1>{html.escape(result.instrument.canonical_symbol)} · {html.escape(bundle.provenance.provider)}</h1>
-<p>周期 {result.timeframe} · 行情截至 {result.market_asof} · {html.escape(result.feed)} · {html.escape(result.adjustment)}。候选权重不是成功概率。</p>
+<p>周期 {result.timeframe} · 行情截至 {result.market_asof} · {html.escape(result.feed)} · {html.escape(result.adjustment)} · {html.escape(result.mode)} · 决策截止 {result.as_of.isoformat()}。候选权重不是成功概率。</p>
 <select aria-label="切换剧本" onchange="document.querySelectorAll('.panel').forEach((p,i)=>p.style.display=i==this.value?'block':'none')">{"".join(choices)}</select>
 <label>缩放 <input aria-label="图表缩放" type="range" min="100" max="300" value="100" oninput="document.querySelectorAll('svg').forEach(s=>s.style.width=this.value+'%')"></label>
 {"".join(panels)}<p>输入快照：<code>{result.input_snapshot_id}</code></p></html>"""

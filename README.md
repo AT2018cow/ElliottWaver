@@ -2,9 +2,9 @@
 
 面向沪深个股、沪深指数以及美股个股和 ETF 的艾略特波浪分析程序，按“数据获取 → 多尺度拐点 → 候选数浪 → 规则校验 → 评分与点位 → 图表报告”组织能力。
 
-**0.5.0 的中文终端摘要直接显示主备浪型、当前浪、短期目标区和需要重新数浪的价位。** 日线观察接下来的 5 个完整交易日，周线观察 2 个完整交易周。需要查看单周期候选细节、盘中周期或长历史时，用 `eliot analyze`。CLI 也支持历史查询、自选批量和到期结算。 [版本说明](CHANGELOG.md)
+**中文终端摘要直接显示主备浪型、当前浪、短期目标区和需要重新数浪的价位。** 日线观察接下来的 5 个完整交易日，周线观察 2 个完整交易周。需要查看单周期候选细节、盘中周期或长历史时，用 `eliot analyze`。CLI 也支持历史查询、自选批量和到期结算。 [版本说明](CHANGELOG.md)
 
-已有环境可安装新版 wheel 或从源码更新，继续用原命令和行情快照分析。报告中的 `engine_version` 会显示本次计算采用的规则。 [升级步骤](docs/USER_GUIDE.md#从已有安装升级)
+当前版本为 **0.5.1**。已有环境可安装新版 wheel 或从源码升级。用 `eliot --version` 查看包版本，用报告中的 `engine_version` 核对分析规则。 [升级步骤](docs/USER_GUIDE.md#从已有安装升级)
 
 发布验收以日线和完整周线为主。沪深指数使用 `sina-index` 无复权行情，例如 `000688.SH`、`399001.SZ`。美股样本覆盖上市个股和 ETF。两边的个股也有小时线和分钟线入口，美股盘中目前有离线回归。候选权重表示相对评分。完整范围见[实现及验收状态](docs/IMPLEMENTATION_STATUS.md)。
 
@@ -23,6 +23,7 @@
 ```bash
 python3 -m venv .venv
 .venv/bin/python -m pip install '.[cn,us]'
+.venv/bin/eliot --version
 .venv/bin/eliot doctor --market CN
 .venv/bin/eliot doctor --market US
 ```

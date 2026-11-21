@@ -28,6 +28,7 @@ from eliotbot.data.demo import demo_bundle
 from eliotbot.data.router import route_symbol
 from eliotbot.data.snapshots import SnapshotStore
 from eliotbot.data.workflow import fetch_bundle
+from eliotbot.engine.templates import TEMPLATES
 from eliotbot.errors import DataError, EliotError, InputError
 from eliotbot.evaluation.replay import replay
 from eliotbot.forecast import ModelRegistry, load_model
@@ -985,7 +986,7 @@ def run_doctor(market="US"):
                 "network_smoke": "NOT_RUN",
                 "supported_timeframes": TIMEFRAMES,
                 "index_timeframes": ["1d", "1w"],
-                "supported_patterns": ["IMPULSE", "ZIGZAG_ABC"],
+                "supported_patterns": [template.name for template in TEMPLATES],
                 "bj_live": "INDEX_ONLY",
                 "calibrated_probability": "UNAVAILABLE",
             },
@@ -1133,6 +1134,23 @@ else:
     app = typer.Typer(no_args_is_help=True, help="Reproducible Elliott wave analysis")
     data_app = typer.Typer(no_args_is_help=True)
     app.add_typer(data_app, name="data")
+
+    def _show_version(value: bool) -> None:
+        if value:
+            typer.echo(__version__)
+            raise typer.Exit()
+
+    @app.callback()
+    def global_options(
+        show_version: bool = typer.Option(
+            False,
+            "--version",
+            callback=_show_version,
+            is_eager=True,
+            help="Show the version and exit.",
+        ),
+    ) -> None:
+        """Handle global CLI options."""
 
     @app.command("analyze")
     def analyze_command(

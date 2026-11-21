@@ -1,4 +1,4 @@
-# EliotBot 0.5.0 实现与验收状态
+# EliotBot 0.5.1 实现与验收状态
 
 更新于 2026-11-22。安装、日常操作和研究流程见[中文使用手册](USER_GUIDE.md)。目标规格见[详细实现方案](IMPLEMENTATION_PLAN.md)和[收盘分析与概率评估实施设计](WAVE_ANALYSIS_DESIGN.md)。
 
@@ -32,8 +32,10 @@
 
 ## 验证结果
 
+以下为 `v0.5.1` 发布验收结果。
+
 ```text
-python -m pytest tests -q              522 passed
+python -m pytest tests -q              524 passed
 ruff check src tests scripts           PASS
 ruff format --check src tests scripts  PASS
 pip check                             No broken requirements found
@@ -41,7 +43,15 @@ pip check                             No broken requirements found
 
 测试在 Python 3.12 / Linux 环境执行。告警来自 `exchange_calendars` 调用 NumPy 的 timedelta 弃用接口。实际安装版本记录在 [requirements.lock](../requirements.lock)。
 
+安装 0.5.1 wheel 后复验 `eliot --version`、中美市场的 `eliot doctor` 和离线演示。
+
+### v0.5.0 发布验收
+
+`v0.5.0` 发布时全量测试 522 项通过。
+
 0.5.0 验收使用冻结的 `600519.SH` 与 `AAPL` 行情检查中文首屏、目标显示与原始阈值。从冻结的 `AAPL` 和上证 50 复验日线短期事件与两周收盘事件，核对评估和核销状态、到期场次及行情摘要。前向评分入口使用合成同期发行记录测试，真实行情概率仍处于未校准状态。 [短期推演修复与复验](reviews/2026-11-22-prediction-outlook-pr01-pr04-repair.md)
+
+### 早期发布复验
 
 0.2.0 发布复验使用新浪的 `600519.SH` 和 Alpaca SIP 的 `AAPL` 生成实时摘要。冻结回归覆盖沪深个股及指数、美股个股及 ETF、SIP 和 IEX，核对 `brief` 与 `analyze` 的业务结果和报告校验值。[美股验收记录](reviews/2026-11-20-us-equity-acceptance.md)
 

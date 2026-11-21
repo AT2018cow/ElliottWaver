@@ -1,6 +1,6 @@
 # EliotBot 中文使用手册
 
-适用于 EliotBot 0.5.0。日用分析覆盖沪深个股与指数、美股个股与 ETF 的日线和周线。逐腿结构树和日周关联通过增强配置启用。 [升级步骤](#从已有安装升级)
+适用于 EliotBot 0.5.1。日用分析覆盖沪深个股与指数、美股个股与 ETF 的日线和周线。逐腿结构树和日周关联通过增强配置启用。 [升级步骤](#从已有安装升级)
 
 EliotBot 从股票和指数的 K 线中识别波浪候选，给出规则检查、推进价、失效价和目标区。日常用 `brief` 直接在终端看数浪和短期推演，单周期深入分析用 `analyze`。需要图表时，可另行打开 HTML 摘要。
 
@@ -58,6 +58,7 @@ DEMO_SNAPSHOT_ID='替换为演示命令打印的完整快照ID'
 ```bash
 python3 -m venv .venv
 .venv/bin/python -m pip install '.[cn,us]'
+.venv/bin/eliot --version
 .venv/bin/eliot doctor --market CN
 .venv/bin/eliot doctor --market US
 ```
@@ -70,15 +71,16 @@ python3 -m venv .venv
 .venv/bin/python -m pip install -e '.[cn,us]'
 ```
 
-也可以在已有虚拟环境中安装下节的 0.5.0 wheel。依赖要求为 `pydantic>=2.12,<3`。用 `eliot doctor` 查看包版本。用原快照重跑 `brief` 即可生成新版简报，历史简报仍可查询。 [版本说明](../CHANGELOG.md#050--2026-11-22)
+也可以在已有虚拟环境中安装下节的 0.5.1 wheel。依赖要求为 `pydantic>=2.12,<3`。用 `eliot --version` 确认安装版本。 [版本说明](../CHANGELOG.md#051--2026-11-22)
 
 ### 从发布 Wheel 安装
 
-将发布文件 `eliotbot-0.5.0-py3-none-any.whl` 放到当前目录。安装依赖需能访问所用 Python 包源。首次运行请在有写权限的工作目录执行。
+将发布文件 `eliotbot-0.5.1-py3-none-any.whl` 放到当前目录。安装依赖需能访问所用 Python 包源。首次运行请在有写权限的工作目录执行。
 
 ```bash
 python3 -m venv .venv
-.venv/bin/python -m pip install './eliotbot-0.5.0-py3-none-any.whl[cn,us]'
+.venv/bin/python -m pip install './eliotbot-0.5.1-py3-none-any.whl[cn,us]'
+.venv/bin/eliot --version
 .venv/bin/eliot demo --symbol 600519.SH
 ```
 
@@ -99,6 +101,7 @@ python3 -m venv .venv
 
 | 字段或现象 | 含义 |
 | --- | --- |
+| `supported_patterns` | 引擎支持的浪型，包括推动浪、锯齿、三角形、平台、楔形和 WXY |
 | `alpaca_credentials_configured: false` | 未配置美股凭证；不影响 A 股和离线演示 |
 | `kaleido: null` | 未安装 Plotly 的 PNG 导出依赖；不影响 HTML、Markdown 或 SVG 渲染器的 PNG |
 | `network_smoke: NOT_RUN` | 该命令没有测试网络，也没有验证真实行情权限 |

@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import date
+from typing import Literal
 
 from eliotbot.schemas.market import Bar, MarketDataBundle
 from eliotbot.schemas.wave import LevelCondition, WaveScenario
@@ -22,6 +23,80 @@ def condition_hit(condition: LevelCondition, bar: Bar) -> bool:
 class EventOutcome:
     status: str
     session: date | None = None
+
+
+@dataclass(frozen=True)
+class EventSpec:
+    event_id: str
+    timeframe: Literal["1d", "1w"]
+    horizon: int
+    unit: Literal["SESSIONS", "WEEKS"]
+    scope: Literal["SYMBOL", "CARD"]
+    evaluator: Literal["close_band", "advance_first", "target_first"]
+    success_label: str
+    training_label: str
+
+
+EVENT_SPECS: dict[str, EventSpec] = {
+    "CLOSE_BAND_5D_V1": EventSpec(
+        "CLOSE_BAND_5D_V1", "1d", 5, "SESSIONS", "SYMBOL", "close_band", "UP", "UP"
+    ),
+    "CLOSE_BAND_2W_V1": EventSpec(
+        "CLOSE_BAND_2W_V1", "1w", 2, "WEEKS", "SYMBOL", "close_band", "UP", "UP"
+    ),
+    "CONFIRM_FIRST_20D_V1": EventSpec(
+        "CONFIRM_FIRST_20D_V1",
+        "1d",
+        20,
+        "SESSIONS",
+        "CARD",
+        "advance_first",
+        "CONFIRMED_FIRST",
+        "YES",
+    ),
+    "TARGET_FIRST_20D_V1": EventSpec(
+        "TARGET_FIRST_20D_V1", "1d", 20, "SESSIONS", "CARD", "target_first", "TARGET_FIRST", "YES"
+    ),
+    "CONFIRM_FIRST_8W_V1": EventSpec(
+        "CONFIRM_FIRST_8W_V1", "1w", 8, "WEEKS", "CARD", "advance_first", "CONFIRMED_FIRST", "YES"
+    ),
+    "TARGET_FIRST_8W_V1": EventSpec(
+        "TARGET_FIRST_8W_V1", "1w", 8, "WEEKS", "CARD", "target_first", "TARGET_FIRST", "YES"
+    ),
+    "ADVANCE_FIRST_5D_V1": EventSpec(
+        "ADVANCE_FIRST_5D_V1",
+        "1d",
+        5,
+        "SESSIONS",
+        "CARD",
+        "advance_first",
+        "CONFIRMED_FIRST",
+        "YES",
+    ),
+    "ADVANCE_FIRST_2W_V1": EventSpec(
+        "ADVANCE_FIRST_2W_V1", "1w", 2, "WEEKS", "CARD", "advance_first", "CONFIRMED_FIRST", "YES"
+    ),
+    "OUTLOOK_TARGET_FIRST_5D_V1": EventSpec(
+        "OUTLOOK_TARGET_FIRST_5D_V1",
+        "1d",
+        5,
+        "SESSIONS",
+        "CARD",
+        "target_first",
+        "TARGET_FIRST",
+        "YES",
+    ),
+    "OUTLOOK_TARGET_FIRST_2W_V1": EventSpec(
+        "OUTLOOK_TARGET_FIRST_2W_V1",
+        "1w",
+        2,
+        "WEEKS",
+        "CARD",
+        "target_first",
+        "TARGET_FIRST",
+        "YES",
+    ),
+}
 
 
 def evaluate_event(

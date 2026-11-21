@@ -88,3 +88,21 @@ done
 ## 样本边界
 
 早期扩大样本协议包含 11 只个股和 5 个指数。本轮发布验证使用另一份冻结名单。结论的适用范围以各协议的快照、日期和样本为准。
+
+## 短期事件的历史与前向评分
+
+先用 `evaluate_briefs.py` 生成开发评估，再用 `train_forecasts.py freeze` 拟合指定事件和候选位置。历史留出协议使用 `HISTORICAL_HOLDOUT`，以常规回放生成留出评估，运行 `score --candidate CANDIDATE.json --holdout HOLDOUT_DIR --output-dir SCORE_DIR`。显式 `--frozen-at` 表示模拟历史切分，实际参数冻结时间保存在 `frozen_at` 字段。历史评分报告保留指标和原因，发布状态为回顾性研究。
+
+正式前向路径使用实际冻结后的新候选。参考 `prediction-outlook-holdout-*-v1.json` 准备未来网格、标的、事件和其他规则。先运行 `seal` 保存计划。在网格规定的决策日保留正常实时 `eliot brief` 生成的 `LIVE` 报告和发行快照。到期后仅填入已经取得的结果快照 ID，把协议状态改为 `SEALED_FORWARD_HOLDOUT`，再执行回放和评分。
+
+```bash
+.venv/bin/python scripts/train_forecasts.py seal \
+  --candidate CANDIDATE.json --protocol PLAN.json --output SEAL.json
+.venv/bin/python scripts/evaluate_briefs.py \
+  --protocol PLAN.json --live-reports LIVE_REPORTS_DIR --output-dir HOLDOUT_DIR
+.venv/bin/python scripts/train_forecasts.py score \
+  --candidate CANDIDATE.json --holdout HOLDOUT_DIR \
+  --seal SEAL.json --live-reports LIVE_REPORTS_DIR --output-dir SCORE_DIR
+```
+
+将大写占位路径替换成实际文件或目录。实时报告目录每标的、周期和决策日应只有一份指定发行，可保留同一报告的多种导出格式。带 `--offline` 或 `--as-of` 的复算会生成冻结回放报告。正式评分核对封存计划、源码身份、真实发行简报及其快照，再应用现有概率门槛。

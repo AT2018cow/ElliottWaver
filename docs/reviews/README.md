@@ -6,6 +6,11 @@ A 股三角形子浪对照已完成固定样本试跑。后续实施与复验见
 
 | 日期 | 范围 | 结论 | 证据 |
 | --- | --- | --- | --- |
+| 2026-11-22 | 短期预测增强 PR-01 至 PR-04 修复 | 修正阶段信号、冻结会话与数据可用性、评估字段及前向证据要求。中美冻结快照的短期事件已复验，历史评分保留回顾性身份。 | [修复与复验](2026-11-22-prediction-outlook-pr01-pr04-repair.md) |
+| 2026-11-22 | 短期预测增强修复独立复验 | 暂不通过。512 项测试通过，旧 AAPL 摘要和周中发行日期已恢复。仍有 4 项问题，涉及推进信号、冻结周完整性、历史评估字段和前向证据判定。六项历史复算仍无可发布概率。 | [逐项复验与待修问题](2026-11-22-prediction-outlook-independent-recheck.md) |
+| 2026-11-21 | 短期预测增强独立验收修复 | PO-01 至 PO-09 已修复并逐项复验：512 项测试通过。历史评分仍为 INSUFFICIENT_EVIDENCE，旧产物只作回顾性研究，未注册操作性模型。 | [修复复验](2026-11-21-prediction-outlook-review-followup.md) · [P-01–P-08/PO 矩阵](2026-11-21-prediction-outlook-p01-p08-evidence.json) |
+| 2026-11-21 | 短期预测增强独立验收 | 暂不通过。485 项测试通过，独立复现阶段信号错误、观察窗偏移、模型样本混用及开发数据可重用为留出。六项历史评分仍无可发布概率。 | [缺陷与复验标准](2026-11-21-prediction-outlook-independent-review.md) |
+| 2026-11-21 | 短期预测增强 PE-1 至 PE-6 | 推演契约、观察窗、事件核销、特征版本 4、freeze/score、概率展示、核销回放和 P-08 四标的全流程通过；开发协议、历史 holdout 和未来队列已提交；历史 holdout 已覆盖目标先达、推进和 2 周收盘事件，均正式记录为 INSUFFICIENT_EVIDENCE；真实评分模型的 brief 路径已演示。 | [PE-1 至 PE-3](2026-11-21-prediction-outlook-pe1-pe3.md) · [PE-4](2026-11-21-prediction-outlook-pe4.md) · [PE-5](2026-11-21-prediction-outlook-pe5.md) · [PE-6](2026-11-21-prediction-outlook-pe6.md) · [P-08](2026-11-21-prediction-outlook-p08.md) · [协议/队列](2026-11-21-prediction-outlook-protocols.md) · [历史 holdout](2026-11-21-prediction-outlook-history-holdout.md) · [真实模型与矩阵](2026-11-21-prediction-outlook-pe5-real-model.md) · [P-01–P-08 证据](2026-11-21-prediction-outlook-p01-p08-evidence.json) |
 | 2026-11-21 | 多浪级引擎第二轮复验 | 12 项复核问题已修复，覆盖浪 5 边界、递归认证、日周深度、换窗、回放和验收统计。 | [修复复验](2026-11-21-wave-engine-followup-repair.md) |
 | 2026-11-20 | 多浪级引擎修复复验 | 修复独立验收发现，恢复默认行为并复验增强引擎。 | [修复复验](2026-11-20-wave-engine-repair.md) |
 | 2026-11-20 | 多浪级引擎 Codex 独立验收 | 未通过。415 项测试通过，独立复现默认模式回归、子浪误认证、日周父腿误判、亚型误判和提前核销条件。 | [独立验收](2026-11-20-wave-engine-codex-review.md) |

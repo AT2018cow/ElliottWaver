@@ -1,0 +1,90 @@
+{
+  "protocol_version": "1",
+  "cache_root": ".cache/us-acceptance",
+  "grid": {
+    "start": "2023-01-01",
+    "end": "2026-09-30",
+    "cadence": "LAST_SESSION_OF_WEEK",
+    "outcome_as_of": "2026-09-30"
+  },
+  "splits": {
+    "train": {
+      "start": "2023-01-01",
+      "end": "2024-06-30"
+    },
+    "calibration": {
+      "start": "2024-07-01",
+      "end": "2025-12-31"
+    },
+    "test": {
+      "start": "2026-04-01",
+      "end": "2026-09-30"
+    }
+  },
+  "events": [
+    "ADVANCE_FIRST_5D_V1",
+    "OUTLOOK_TARGET_FIRST_5D_V1",
+    "CONFIRM_FIRST_20D_V1",
+    "TARGET_FIRST_20D_V1",
+    "CLOSE_BAND_5D_V1"
+  ],
+  "feature_version": "4",
+  "settings": {
+    "analysis": {
+      "engine_profile": "hierarchical_v1",
+      "scales": [
+        1.0,
+        1.4,
+        2.4,
+        3.8
+      ],
+      "max_analysis_bars": 600,
+      "top_k": 20
+    },
+    "search": {
+      "max_subwave_depth": 1,
+      "max_expansions": 100000,
+      "beam_width": 512,
+      "max_bridge_intervals": 5
+    },
+    "scoring": {
+      "min_quality": 0,
+      "min_coverage": 0.1,
+      "unclear_below": 0
+    }
+  },
+  "protocol_id": "prediction-outlook-dev-us-v1",
+  "samples": [
+    {
+      "symbol": "AAPL",
+      "asset_type": "EQUITY",
+      "source_timeframe": "1d",
+      "snapshot_id": "cff55390639d9397a6d5417974193d7cc1ae6b7ddc53a869bce59faee6d3b1d3"
+    },
+    {
+      "symbol": "SPY",
+      "asset_type": "EQUITY",
+      "source_timeframe": "1d",
+      "snapshot_id": "27ac145f8599cf679dbe830acdcda6f54fd60471a290f361a94700d023919659"
+    }
+  ],
+  "release": {
+    "reliability_bins": [
+      0.0,
+      0.2,
+      0.4,
+      0.6,
+      0.8,
+      1.0
+    ],
+    "min_bin_count": 50,
+    "min_bin_dates": 10,
+    "reliability_tolerance": 0.1,
+    "min_test_rows": 50,
+    "min_test_dates": 10,
+    "min_test_symbols": 5,
+    "min_supported_coverage": 0.5,
+    "bootstrap_repetitions": 2000,
+    "bootstrap_seed": 20261119
+  }
+}

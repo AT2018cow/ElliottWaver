@@ -14,6 +14,7 @@ def main() -> int:
     parser.add_argument("--model-registry", type=Path)
     parser.add_argument("--model", type=Path)
     parser.add_argument("--model-approved-at")
+    parser.add_argument("--live-reports", type=Path)
     args = parser.parse_args()
     summary = evaluate_protocol(
         args.protocol,
@@ -21,6 +22,7 @@ def main() -> int:
         model_registry=args.model_registry,
         model=args.model,
         model_approved_at=args.model_approved_at,
+        issued_reports=args.live_reports,
     )
     print(json.dumps(summary, indent=2, ensure_ascii=False))
     return 0

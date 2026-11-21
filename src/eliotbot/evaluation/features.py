@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import math
 
+from eliotbot.schemas.outlook import OutlookCase
 from eliotbot.schemas.wave import WaveScenario
 
 FEATURE_VERSION = "2"
-SUPPORTED_FEATURE_VERSIONS = {"2", "3"}
+SUPPORTED_FEATURE_VERSIONS = {"2", "3", "4"}
 
 DECISION_FEATURES = [
     "log_return_20",
@@ -40,6 +41,27 @@ CANDIDATE_FEATURES = [
     "missing_invalidation",
     "candidate_rank",
 ]
+OUTLOOK_PRICE_FEATURES = [
+    "outlook_advance_distance",
+    "outlook_stop_distance",
+    "outlook_stage_exit_distance",
+    "outlook_target_low_distance",
+    "outlook_target_high_distance",
+    "outlook_target_mode_active",
+    "outlook_target_mode_after_advance",
+]
+OUTLOOK_WAVE_FEATURES = [
+    "outlook_current_leg_up",
+    "outlook_current_leg_down",
+    "outlook_advance_up",
+    "outlook_advance_down",
+    "outlook_double_three",
+    "outlook_subwave_verified",
+    "outlook_subwave_depth",
+    "outlook_relation_verified",
+    "outlook_window_same_count",
+]
+OUTLOOK_FEATURES = OUTLOOK_PRICE_FEATURES + OUTLOOK_WAVE_FEATURES
 PATTERNS = ["IMPULSE", "ZIGZAG_ABC", "TRIANGLE", "FLAT", "DIAGONAL", "WXY"]
 STAGES = [
     "COMPLETE",
@@ -145,6 +167,55 @@ def candidate_features(
     }
 
 
+def outlook_features(
+    case: OutlookCase,
+    scenario: WaveScenario,
+    current: float,
+    atr: float,
+    *,
+    wave_relations=(),
+    window_state: str | None = None,
+) -> dict[str, float]:
+    """Features that describe the frozen outlook geometry and wave evidence."""
+
+    def distance(prices: list[float]) -> float:
+        if not prices or not math.isfinite(atr) or atr <= 0 or current <= 0:
+            return 0.0
+        return min(abs(price - current) for price in prices) / atr
+
+    def role(role_name: str) -> list[float]:
+        return [item.condition.price for item in case.conditions if item.role == role_name]
+
+    target_low = case.target.low if case.target is not None else 0.0
+    target_high = case.target.high if case.target is not None else 0.0
+    relation_verified = any(
+        (item.get("daily_scenario_id") if isinstance(item, dict) else item.daily_scenario_id)
+        == scenario.scenario_id
+        and (item.get("status") if isinstance(item, dict) else item.status) == "VERIFIED"
+        for item in wave_relations
+    )
+    return {
+        "outlook_advance_distance": distance(role("ADVANCE")),
+        "outlook_stop_distance": distance(role("INVALIDATION") + role("STAGE_EXIT")),
+        "outlook_stage_exit_distance": distance(role("STAGE_EXIT")),
+        "outlook_target_low_distance": distance([target_low]) if target_low else 0.0,
+        "outlook_target_high_distance": distance([target_high]) if target_high else 0.0,
+        "outlook_target_mode_active": float(case.target_mode == "ACTIVE"),
+        "outlook_target_mode_after_advance": float(case.target_mode == "AFTER_ADVANCE"),
+        "outlook_current_leg_up": float(case.current_leg_direction == "UP"),
+        "outlook_current_leg_down": float(case.current_leg_direction == "DOWN"),
+        "outlook_advance_up": float(case.advance_direction == "UP"),
+        "outlook_advance_down": float(case.advance_direction == "DOWN"),
+        "outlook_double_three": float(scenario.variant == "DOUBLE_THREE"),
+        "outlook_subwave_verified": float(scenario.subwave_status == "VERIFIED"),
+        "outlook_subwave_depth": (
+            scenario.structure.verified_depth / 2 if scenario.structure is not None else 0.0
+        ),
+        "outlook_relation_verified": float(relation_verified),
+        "outlook_window_same_count": float(window_state == "SAME_COUNT"),
+    }
+
+
 def feature_vector(
     feature_order: list[str],
     decision: dict[str, float],
@@ -154,6 +225,9 @@ def feature_vector(
     for name in feature_order:
         if name in decision:
             values.append(float(decision[name]))
+        elif name in OUTLOOK_FEATURES and candidate is not None:
+            value = candidate.get(name, 0.0)
+            values.append(float(value) if value is not None else 0.0)
         elif name in TARGET_FEATURES:
             if candidate is None or name not in candidate:
                 raise ValueError(f"Missing target geometry feature: {name}")
@@ -173,8 +247,14 @@ def event_feature_order(event_id: str, feature_version: str = FEATURE_VERSION) -
     if feature_version not in SUPPORTED_FEATURE_VERSIONS:
         raise ValueError(f"Unsupported feature_version: {feature_version}")
     order = list(DECISION_FEATURES)
-    if event_id.startswith(("CONFIRM_FIRST_", "TARGET_FIRST_")):
+    if event_id.startswith(
+        ("CONFIRM_FIRST_", "TARGET_FIRST_", "ADVANCE_FIRST_", "OUTLOOK_TARGET_FIRST_")
+    ):
         order += CANDIDATE_FEATURES + PATTERNS + STAGES
-        if feature_version == "3" and event_id.startswith("TARGET_FIRST_"):
+        if feature_version in {"3", "4"} and event_id.startswith(
+            ("TARGET_FIRST_", "OUTLOOK_TARGET_FIRST_")
+        ):
             order += TARGET_FEATURES
+        if feature_version == "4":
+            order += OUTLOOK_FEATURES
     return order

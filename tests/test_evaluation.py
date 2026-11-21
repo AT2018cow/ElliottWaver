@@ -102,6 +102,42 @@ def test_evaluate_protocol_writes_decisions_events_and_summary(bundle, tmp_path)
     assert len(manifest["merged_from"]) == 2
 
 
+def test_mixed_event_order_preserves_outlook_columns_through_merge(bundle, tmp_path):
+    store = SnapshotStore(tmp_path / "cache")
+    day = str(bundle.bars[-20].session_date)
+    protocol = {
+        "protocol_version": "1",
+        "protocol_id": "mixed-event-order",
+        "cache_root": str(store.root),
+        "samples": [
+            {
+                "symbol": "AAPL",
+                "asset_type": "EQUITY",
+                "source_timeframe": "1d",
+                "snapshot_id": store.save(bundle),
+            }
+        ],
+        "grid": {"start": day, "end": day, "cadence": "EVERY_SESSION"},
+        "events": ["CLOSE_BAND_5D_V1", "OUTLOOK_TARGET_FIRST_5D_V1"],
+    }
+    path = tmp_path / "protocol.json"
+    rows_by_order = []
+    for index in range(2):
+        path.write_text(json.dumps(protocol))
+        shard = tmp_path / f"shard-{index}"
+        merged = tmp_path / f"merged-{index}"
+        evaluate_protocol(path, shard)
+        merge_evaluations(path, [shard], merged)
+        table = pq.read_table(merged / "events.parquet")
+        assert {"slot", "outlook_version", "structure_key"} <= set(table.column_names)
+        rows = [row for row in table.to_pylist() if row["event_id"].startswith("OUTLOOK_TARGET")]
+        assert rows and rows[0]["outlook_version"] == "1.0"
+        assert "PRIMARY" in {row["slot"] for row in rows}
+        rows_by_order.append(rows)
+        protocol["events"].reverse()
+    assert rows_by_order[0] == rows_by_order[1]
+
+
 @pytest.mark.parametrize("profile", ["classic_v4", "hierarchical_v1"])
 def test_replay_uses_published_comparison_mode_and_primary_key(
     bundle, tmp_path, monkeypatch, profile

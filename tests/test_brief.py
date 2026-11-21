@@ -79,6 +79,22 @@ def test_plotly_brief_regenerates_after_render_version_changes(bundle, tmp_path,
     assert (old / "brief.json").read_bytes() == (current / "brief.json").read_bytes()
 
 
+def test_human_brief_render_version_changes_directory_without_changing_json(
+    bundle, tmp_path, monkeypatch
+):
+    from eliotbot.visualization import brief_formatter
+
+    run = build_brief(AnalysisRequest(symbol="AAPL", as_of=bundle.as_of), bundle, Settings())
+    with monkeypatch.context() as old_version:
+        old_version.setattr(brief_formatter, "BRIEF_TEXT_RENDER_VERSION", "brief-render-v3")
+        old = publish_brief(run, tmp_path, formats=("md",))
+        json_only = publish_brief(run, tmp_path, formats=())
+    current = publish_brief(run, tmp_path, formats=("md",))
+    assert current != old
+    assert publish_brief(run, tmp_path, formats=()) == json_only
+    assert (old / "brief.json").read_bytes() == (current / "brief.json").read_bytes()
+
+
 def test_brief_no_candidates_is_an_explicit_issue(bundle):
     request = AnalysisRequest(symbol="AAPL", as_of=bundle.as_of)
     run = build_brief(

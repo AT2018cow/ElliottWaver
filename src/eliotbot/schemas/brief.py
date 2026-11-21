@@ -6,6 +6,7 @@ from typing import Literal
 from pydantic import AwareDatetime, Field
 
 from eliotbot.schemas.market import Contract
+from eliotbot.schemas.outlook import BriefOutlook
 from eliotbot.schemas.wave import (
     Degree,
     LevelCondition,
@@ -61,6 +62,7 @@ class BriefCard(Contract):
     target_zones: tuple[PriceZone, ...] = ()
     warnings: tuple[str, ...] = ()
     structure: WaveStructure | None = Field(None, exclude_if=lambda value: value is None)
+    forecasts: tuple["BriefForecast", ...] = Field((), exclude_if=lambda value: not value)
 
 
 class BriefIssue(Contract):
@@ -110,9 +112,14 @@ class BriefForecast(Contract):
     model_id: str | None = None
     reason: str | None = None
     scenario_id: str | None = None
+    outlook_version: str | None = Field(None, exclude_if=lambda value: value is None)
+    outlook_slot: str | None = Field(None, exclude_if=lambda value: value is None)
     sample_count: int | None = None
     calibration_end: date | None = None
     scope: dict | None = None
+
+
+BriefCard.model_rebuild()
 
 
 class BriefPrevious(Contract):
@@ -209,6 +216,7 @@ class Brief(Contract):
     decision_atr: float | None = Field(None, ge=0)
     outcome_dates: tuple[date, ...] = ()
     wave_relations: tuple[WaveRelation, ...] = Field((), exclude_if=lambda value: not value)
+    outlook: BriefOutlook | None = Field(None, exclude_if=lambda value: value is None)
     forecast_note: str = "价格概率尚未校准；当前只提供条件情景与候选权重。"
 
 

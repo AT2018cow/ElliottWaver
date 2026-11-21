@@ -1,11 +1,13 @@
 """Conditional targets subject to the same hard boundaries as the count."""
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime
 
 from eliotbot.engine.matcher import Candidate
 from eliotbot.engine.rules import wave5_length_cap
 from eliotbot.schemas.market import Bar
+from eliotbot.schemas.outlook import ConditionRole, OutlookCondition
 from eliotbot.schemas.wave import LevelCondition, PriceZone, ProjectedPoint
 
 
@@ -205,3 +207,237 @@ def project(
         for i, zone in enumerate(zones)
     )
     return tuple(conditions), tuple(zones), path
+
+
+@dataclass(frozen=True)
+class Projection:
+    conditions: tuple[OutlookCondition, ...]
+    zones: tuple[PriceZone, ...]
+    path: tuple[ProjectedPoint, ...]
+    active_wave: str | None
+    current_leg_direction: str
+    advance_direction: str
+    advance_pending: bool = False
+    stop_hit: bool = False
+
+
+def active_wave_label(candidate: Candidate) -> str | None:
+    if candidate.stage == "COMPLETE":
+        return None
+    labels = candidate.template.labels
+    index = len(candidate.completed)
+    return labels[index] if 0 <= index < len(labels) else None
+
+
+def _direction(value: int) -> str:
+    return "UP" if value > 0 else "DOWN"
+
+
+def current_leg_direction(candidate: Candidate) -> str:
+    if candidate.stage == "COMPLETE":
+        return "UNKNOWN"
+    index = len(candidate.completed)
+    same_as_parent = index % 2 == 1
+    return _direction(candidate.direction if same_as_parent else -candidate.direction)
+
+
+def advance_direction(candidate: Candidate) -> str:
+    if candidate.stage == "COMPLETE":
+        return "UNKNOWN"
+    return _direction(candidate.direction)
+
+
+def _role(candidate: Candidate, condition: LevelCondition, variant: str | None) -> ConditionRole:
+    if condition.kind == "INVALIDATION":
+        return "INVALIDATION"
+    if condition.kind == "STAGE_EXIT":
+        return "STAGE_EXIT"
+    if condition.kind != "CONFIRMATION":
+        return "CURRENT_EVIDENCE"
+    if candidate.template.name in {"IMPULSE", "DIAGONAL"}:
+        return (
+            "ADVANCE"
+            if candidate.stage in {"W2_DEVELOPING", "W4_DEVELOPING"}
+            else "CURRENT_EVIDENCE"
+        )
+    if candidate.template.name == "ZIGZAG_ABC":
+        return "ADVANCE" if candidate.stage == "B_DEVELOPING" else "CURRENT_EVIDENCE"
+    if candidate.template.name == "WXY" and variant != "DOUBLE_THREE":
+        direction_side = "HIGH" if candidate.direction > 0 else "LOW"
+        if candidate.stage == "X_DEVELOPING" and condition.side == direction_side:
+            return "ADVANCE"
+    return "CURRENT_EVIDENCE"
+
+
+def _hit(condition: LevelCondition, bar: Bar) -> bool:
+    value = getattr(bar, condition.side.lower())
+    return {
+        "<": value < condition.price,
+        "<=": value <= condition.price,
+        ">": value > condition.price,
+        ">=": value >= condition.price,
+    }[condition.op]
+
+
+def _condition(
+    kind: str,
+    price: float,
+    upward: bool,
+    reason: str,
+    *,
+    as_of: datetime,
+    coordinate_id: str,
+    inclusive: bool = False,
+) -> LevelCondition:
+    return LevelCondition(
+        kind=kind,
+        side="HIGH" if upward else "LOW",
+        op=(">=" if inclusive else ">") if upward else ("<=" if inclusive else "<"),
+        price=price,
+        active_from=as_of,
+        reason=reason,
+        coordinate_id=coordinate_id,
+    )
+
+
+def _outlook_conditions(
+    candidate: Candidate,
+    conditions: tuple[LevelCondition, ...],
+    as_of: datetime,
+    coordinate_id: str,
+    tick: float,
+) -> tuple[tuple[LevelCondition, ...], bool]:
+    """Add outlook-only gates and drop evidence that belongs to an invalid stage."""
+    points = candidate.points
+    p = [point.price for point in points]
+    s = candidate.direction
+    kept = list(conditions)
+    suppress_targets = False
+    if candidate.stage == "COMPLETE":
+        return tuple(kept), False
+    if (
+        candidate.template.name == "FLAT"
+        and candidate.stage != "B_DEVELOPING"
+        and s * (p[2] - p[0]) < -tick
+    ):
+        kept = [item for item in kept if "平台C" not in item.reason]
+        suppress_targets = True
+    if candidate.template.name == "TRIANGLE":
+        kept = [item for item in kept if "三角形" not in item.reason]
+        kept.append(
+            _condition(
+                "STAGE_EXIT",
+                p[-1],
+                s > 0,
+                "三角形尚未完成，越过当前端点需要重新数浪",
+                as_of=as_of,
+                coordinate_id=coordinate_id,
+            )
+        )
+        suppress_targets = True
+    if (
+        candidate.template.name in {"IMPULSE", "DIAGONAL"}
+        and candidate.stage == "W3_DEVELOPING"
+        and len(points) <= 4
+    ):
+        kept.append(
+            _condition(
+                "STAGE_EXIT",
+                p[2],
+                s < 0,
+                "浪3严格穿越已确认浪2终点需要重数",
+                as_of=as_of,
+                coordinate_id=coordinate_id,
+            )
+        )
+    return tuple(kept), suppress_targets
+
+
+def _target_direction(candidate: Candidate) -> int:
+    return -candidate.direction if candidate.stage == "COMPLETE" else candidate.direction
+
+
+def _filter_zones(
+    candidate: Candidate,
+    zones: tuple[PriceZone, ...],
+    gated: tuple[OutlookCondition, ...],
+    current: float,
+    tick: float,
+) -> tuple[PriceZone, ...]:
+    """Keep only targets beyond the advance gate and before a same-way stop."""
+    direction = _target_direction(candidate)
+    if direction == 0:
+        return ()
+    gates = [item.condition.price for item in gated if item.role == "ADVANCE"]
+    stops = [item.condition.price for item in gated if item.role in {"INVALIDATION", "STAGE_EXIT"}]
+    kept = []
+    for zone in zones:
+        if direction > 0:
+            if any(zone.low <= gate + tick for gate in gates):
+                continue
+            if any(current + tick < stop <= zone.low for stop in stops):
+                continue
+        else:
+            if any(zone.high >= gate - tick for gate in gates):
+                continue
+            if any(zone.high <= stop < current - tick for stop in stops):
+                continue
+        kept.append(zone)
+    return tuple(kept)
+
+
+def project_with_gates(
+    candidate: Candidate,
+    bars: Sequence[Bar],
+    atr: float,
+    coordinate_id: str,
+    as_of: datetime,
+    tick: float,
+    timeframe: str = "1d",
+    variant: str | None = None,
+) -> Projection:
+    """Return the existing projection plus typed condition roles for the outlook."""
+    conditions, zones, path = project(candidate, bars, atr, coordinate_id, as_of, tick, timeframe)
+    current = bars[-1].close
+    all_conditions, suppress_targets = _outlook_conditions(
+        candidate, conditions, as_of, coordinate_id, tick
+    )
+    source_indexes = {condition: index for index, condition in enumerate(conditions)}
+    gated = tuple(
+        OutlookCondition(
+            role=_role(candidate, condition, variant),
+            condition=condition,
+            source_index=source_indexes.get(condition),
+        )
+        for condition in all_conditions
+    )
+    if variant == "DOUBLE_THREE":
+        gated = tuple(
+            item
+            for item in gated
+            if not any(
+                marker in item.condition.reason
+                for marker in ("双锯齿", "W终点", "X不可触及", "X端点")
+            )
+        )
+        zones = ()
+    if suppress_targets:
+        zones = ()
+    zones = _filter_zones(candidate, zones, gated, current, tick)
+    stop_hit = any(
+        item.role in {"INVALIDATION", "STAGE_EXIT"} and _hit(item.condition, bars[-1])
+        for item in gated
+    )
+    advance_pending = any(
+        item.role == "ADVANCE" and not _hit(item.condition, bars[-1]) for item in gated
+    )
+    return Projection(
+        conditions=gated,
+        zones=zones,
+        path=path,
+        active_wave=active_wave_label(candidate),
+        current_leg_direction=current_leg_direction(candidate),
+        advance_direction=advance_direction(candidate),
+        advance_pending=advance_pending,
+        stop_hit=stop_hit,
+    )

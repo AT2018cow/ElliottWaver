@@ -1,0 +1,121 @@
+{
+  "protocol_version": "1",
+  "protocol_id": "prediction-outlook-history-holdout-cn-v1",
+  "cache_root": ".cache/eliotbot",
+  "samples": [
+    {
+      "symbol": "000016.SH",
+      "asset_type": "INDEX",
+      "source_timeframe": "1d",
+      "snapshot_id": "abfd7531e5f8e49a3cec1f27100d21cccc67c2d53c07c68e684fd0ac39c16a4f"
+    },
+    {
+      "symbol": "399006.SZ",
+      "asset_type": "INDEX",
+      "source_timeframe": "1d",
+      "snapshot_id": "c4f08c1272b6a297f70f3e717a4702c3383266ac1c415041ac3a069639521928"
+    },
+    {
+      "symbol": "300750.SZ",
+      "asset_type": "EQUITY",
+      "source_timeframe": "1d",
+      "snapshot_id": "25e8ab0aa16c69cd4a32b168bb36f05ed68075cf1fb4262555d918c9e3fa6cf9"
+    },
+    {
+      "symbol": "600036.SH",
+      "asset_type": "EQUITY",
+      "source_timeframe": "1d",
+      "snapshot_id": "b2243746e0528404e410da64bb9d44fb261761a393853f97aebc240a6eb79e81"
+    },
+    {
+      "symbol": "600002.SH",
+      "asset_type": "EQUITY",
+      "source_timeframe": "1d",
+      "snapshot_id": "08a21f6470b1a8ccd4169f9d0aa269d5623912706e7376a2c0838736f93dcdc7"
+    },
+    {
+      "symbol": "600001.SH",
+      "asset_type": "EQUITY",
+      "source_timeframe": "1d",
+      "snapshot_id": "54dd6ca5af208768bd5f71b75378c8ec623e0f8c5b64cd05d3785cdcd2e51774"
+    },
+    {
+      "symbol": "600000.SH",
+      "asset_type": "EQUITY",
+      "source_timeframe": "1d",
+      "snapshot_id": "42ed5d45a1f12b957743fd727e5686695358b55538f7f3a7be3ff7cdbbe1e544"
+    }
+  ],
+  "grid": {
+    "start": "2026-04-01",
+    "end": "2026-11-18",
+    "cadence": "LAST_SESSION_OF_WEEK",
+    "outcome_as_of": "2026-11-30"
+  },
+  "splits": {
+    "train": {
+      "start": "2024-01-01",
+      "end": "2024-12-31"
+    },
+    "calibration": {
+      "start": "2025-01-01",
+      "end": "2025-12-31"
+    },
+    "test": {
+      "start": "2026-04-01",
+      "end": "2026-11-18"
+    }
+  },
+  "events": [
+    "ADVANCE_FIRST_5D_V1",
+    "OUTLOOK_TARGET_FIRST_5D_V1",
+    "CONFIRM_FIRST_20D_V1",
+    "TARGET_FIRST_20D_V1",
+    "CLOSE_BAND_5D_V1"
+  ],
+  "feature_version": "4",
+  "settings": {
+    "analysis": {
+      "engine_profile": "hierarchical_v1",
+      "scales": [
+        1.0,
+        1.4,
+        2.4,
+        3.8
+      ],
+      "max_analysis_bars": 600,
+      "top_k": 20
+    },
+    "search": {
+      "max_subwave_depth": 1,
+      "max_expansions": 100000,
+      "beam_width": 512,
+      "max_bridge_intervals": 5
+    },
+    "scoring": {
+      "min_quality": 0,
+      "min_coverage": 0.1,
+      "unclear_below": 0
+    }
+  },
+  "release": {
+    "reliability_bins": [
+      0.0,
+      0.2,
+      0.4,
+      0.6,
+      0.8,
+      1.0
+    ],
+    "min_bin_count": 50,
+    "min_bin_dates": 10,
+    "reliability_tolerance": 0.1,
+    "min_test_rows": 50,
+    "min_test_dates": 10,
+    "min_test_symbols": 5,
+    "min_supported_coverage": 0.5,
+    "bootstrap_repetitions": 2000,
+    "bootstrap_seed": 20261119
+  },
+  "data_status": "HISTORICAL_HOLDOUT"
+}

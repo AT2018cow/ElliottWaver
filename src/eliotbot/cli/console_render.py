@@ -3,135 +3,159 @@ from rich.table import Table
 
 from eliotbot.schemas.brief import Brief, forecast_message
 from eliotbot.schemas.wave import AnalysisResult
-from eliotbot.visualization.brief_formatter import (
+from eliotbot.visualization.brief_formatter import structure_evidence
+from eliotbot.visualization.brief_text import (
+    DEGREE,
+    METRIC_NOTE,
+    adjustment_text,
+    anchor_text,
+    candidate_title,
+    card_role,
+    comparison_text,
+    diagnostic_text,
+    feed_text,
+    forecast_row,
+    mode_text,
     omission_text,
-    relation_evidence,
-    structure_evidence,
-    transition_evidence,
+    outlook_heading,
+    price_text,
+    status_text,
+    summary_cards,
+    target_range_text,
+    timeframe_text,
 )
 
 
 def render_result(result: AnalysisResult) -> None:
     console = Console()
-    console.print(
-        f"[bold]EliotBot · {result.instrument.canonical_symbol}[/bold]  {result.timeframe}  "
-        f"{result.market_asof}  {result.feed}  {result.adjustment}  {result.status}"
-    )
-    console.print(f"数据模式 {result.mode} · 决策截止 {result.as_of.isoformat()}", markup=False)
     prefix = "指数 · " if result.instrument.asset_type == "INDEX" else ""
     console.print(
-        f"{prefix}分析价格 {result.latest_price:.4f} · 结构歧义 {result.ambiguity} · 候选权重不是成功概率"
+        f"{prefix}{result.instrument.canonical_symbol} · {timeframe_text(result.timeframe)} · "
+        f"行情截至 {result.market_asof} · {status_text(result.status)}",
+        style="bold",
+        markup=False,
     )
-    table = Table(
-        "剧本", "浪级", "父级", "阶段", "子浪", "质量", "证据覆盖", "候选权重", "第一目标"
+    console.print(
+        f"{mode_text(result.mode)} · {feed_text(result.feed)} · {adjustment_text(result.adjustment)}",
+        markup=False,
     )
-    for i, scenario in enumerate(result.scenarios, 1):
+    ambiguity = {"LOW": "较小", "MEDIUM": "中等", "HIGH": "较大"}[result.ambiguity]
+    console.print(
+        f"分析价格 {price_text(result.latest_price)} · 数浪分歧{ambiguity}"
+        f" · 决策截止 {result.as_of.isoformat()}",
+        markup=False,
+    )
+    for index, scenario in enumerate(result.scenarios, 1):
         zone = scenario.target_zones[0] if scenario.target_zones else None
-        parent = (
-            "UNKNOWN"
-            if scenario.parent_context == "UNKNOWN"
-            else f"{scenario.parent_context}/{scenario.parent_degree}/{scenario.parent_wave_label}"
+        target = target_range_text(zone) if zone else "暂无目标"
+        console.print(
+            f"候选 {index} · {candidate_title(scenario)} · {DEGREE[scenario.degree]} · 第一目标 {target}",
+            markup=False,
         )
-        table.add_row(
-            f"S{i}",
-            scenario.degree,
-            parent,
-            scenario.stage,
-            scenario.subwave_status,
-            f"{scenario.score.quality_score:.1f}/100",
-            f"{scenario.score.coverage:.0%}",
-            f"{scenario.relative_weight:.1%}",
-            f"{zone.low:.2f}–{zone.high:.2f}" if zone else "暂无合法目标",
+        console.print(
+            f"  子浪{status_text(scenario.subwave_status)} · 质量分 {scenario.score.quality_score:.1f}/100"
+            f" · 证据覆盖 {scenario.score.coverage:.0%} · 候选权重 {scenario.relative_weight:.1%}",
+            markup=False,
         )
-    console.print(table)
-    for scenario in result.scenarios:
         if scenario.structure is not None:
             for line in structure_evidence(scenario.structure):
-                console.print(line, markup=False)
+                console.print(f"  {line}", markup=False)
+    if result.scenarios:
+        console.print(METRIC_NOTE, style="dim", markup=False)
+    else:
+        console.print("当前没有达到规则和证据要求的候选。")
+    warnings = []
     for warning in result.warnings:
+        code, _, message = warning.partition(":")
+        warnings.append(diagnostic_text(code, message.strip()) if message else warning)
+    for warning in dict.fromkeys(warnings):
         console.print(warning, style="yellow", markup=False)
-    if not result.scenarios:
-        console.print("当前没有达到质量与证据门槛的候选。")
+
+
+def render_outlook(brief: Brief, *, console: Console | None = None) -> None:
+    console = console or Console()
+    if heading := outlook_heading(brief):
+        console.print(heading, style="bold", markup=False)
+    for title, lines in summary_cards(brief):
+        console.print(title, style="bold", markup=False)
+        for line in lines:
+            console.print(f"  {line}", markup=False)
+    if not brief.cards and brief.outlook is None:
+        console.print("当前没有达到规则和证据要求的候选。")
 
 
 def render_brief(brief: Brief, result: AnalysisResult | None = None) -> None:
     console = Console()
     console.print(
-        f"[bold]EliotBot Brief · {brief.symbol}[/bold]  {brief.timeframe}  "
-        f"{brief.market_asof}  {brief.feed}  {brief.adjustment}  {brief.status}"
+        f"{brief.symbol} · 收盘摘要 · {timeframe_text(brief.timeframe)} · "
+        f"行情截至 {brief.market_asof} · {status_text(brief.status)}",
+        style="bold",
+        markup=False,
     )
-    console.print(f"数据模式 {brief.mode} · 决策截止 {brief.as_of.isoformat()}", markup=False)
-    console.print(f"周期选择：{brief.timeframe_reason or '—'}")
     console.print(
-        f"窗口：{brief.window.start} → {brief.window.end} · "
-        f"{brief.window.bar_count} 根 · 锚点 {len(brief.window.anchors)} 个"
+        f"{mode_text(brief.mode)} · {feed_text(brief.feed)} · {adjustment_text(brief.adjustment)}",
+        markup=False,
     )
-    for anchor in brief.window.anchor_details:
-        confirm = (
-            f" · {anchor.background_timeframe} 确认于 {anchor.confirmed_at}"
-            if anchor.confirmed_at
-            else ""
-        )
-        console.print(f"{anchor.date} · {anchor.origin}{confirm}", markup=False)
-    if brief.retrospective:
-        console.print("回顾性重算 · 使用显式指定的模型", style="yellow")
-    table = Table("角色", "候选", "浪级", "阶段", "父级", "子浪", "质量", "覆盖", "权重")
-    for card in brief.cards:
-        parent = (
-            "UNKNOWN"
-            if card.parent_context == "UNKNOWN"
-            else f"{card.parent_context}/{card.parent_degree}/{card.parent_wave_label}"
-        )
-        table.add_row(
-            card.role,
-            card.name,
-            card.degree,
-            card.stage,
-            parent,
-            card.subwave_status,
-            f"{card.quality_score:.1f}/100",
-            f"{card.coverage:.0%}",
-            f"{card.relative_weight:.1%}",
-        )
-    console.print(table)
-    scenarios = {item.scenario_id: item for item in result.scenarios} if result else {}
-    for card in brief.cards:
-        if card.structure is not None:
-            for line in structure_evidence(card.structure):
-                console.print(line, markup=False)
-        scenario = scenarios.get(card.scenario_id)
-        if scenario is None:
-            continue
-        counts = {
-            status: sum(rule.status == status for rule in scenario.rules)
-            for status in ("PASS", "FAIL", "PENDING")
-        }
-        console.print(
-            f"规则复核 · {card.name} · 通过 {counts['PASS']} · "
-            f"违反 {counts['FAIL']} · 证据不足 {counts['PENDING']}",
-            markup=False,
-        )
-    relations = relation_evidence(brief)
-    for line in (*relations[:12], *transition_evidence(brief)):
+    console.print(f"分析价格 {price_text(brief.latest_price)}", markup=False)
+    console.print()
+    render_outlook(brief, console=console)
+    console.print()
+    for line in comparison_text(brief):
         console.print(line, markup=False)
-    if len(relations) > 12:
-        console.print(f"另有 {len(relations) - 12} 条日周关联，见报告或 JSON。", markup=False)
-    if not brief.cards:
-        console.print("当前没有达到质量与证据门槛的候选。")
-    console.print(omission_text(brief), style="dim", markup=False)
-    for issue in brief.issues:
-        console.print(f"{issue.code}: {issue.message}", style="yellow", markup=False)
+    if brief.retrospective:
+        console.print("模型结果为回顾性重算。", style="yellow")
+    console.print(forecast_message(brief.forecast_status), style="dim", markup=False)
     if brief.forecasts:
         forecasts = Table("事件", "候选", "期限", "状态", "概率")
         for item in brief.forecasts:
-            forecasts.add_row(
-                item.event_id,
-                item.scenario_id or "标的",
-                f"{item.horizon_sessions} {item.horizon_unit}",
-                item.status,
-                ", ".join(f"{key} {value:.1%}" for key, value in item.probabilities.items())
-                if item.probabilities
-                else item.reason or "—",
-            )
+            forecasts.add_row(*forecast_row(brief, item))
         console.print(forecasts)
-    console.print(forecast_message(brief.forecast_status), style="dim", markup=False)
+    console.print()
+    console.print("核对依据", style="bold")
+    console.print(f"决策截止 {brief.as_of.isoformat()}", markup=False)
+    console.print(
+        f"分析范围 {brief.window.start} 至 {brief.window.end} · {brief.window.bar_count} 根 K 线",
+        markup=False,
+    )
+    for anchor in brief.window.anchor_details:
+        console.print(anchor_text(anchor), markup=False)
+    scenarios = {item.scenario_id: item for item in result.scenarios} if result else {}
+    if brief.cards:
+        console.print(METRIC_NOTE, style="dim", markup=False)
+    for index, card in enumerate(brief.cards):
+        role = card_role(index)
+        if card.structure is not None:
+            structure = card.structure
+            evidence = (
+                f" · 子浪已验证 {structure.verified_depth} 层，"
+                f"检查深度为 {structure.requested_depth} 层"
+            )
+        else:
+            evidence = f" · 子浪{status_text(card.subwave_status)}"
+        console.print(
+            f"{role} · {DEGREE[card.degree]} · 质量分 {card.quality_score:.1f}/100"
+            f" · 证据覆盖 {card.coverage:.0%} · 候选权重 {card.relative_weight:.1%}{evidence}",
+            markup=False,
+        )
+        if scenario := scenarios.get(card.scenario_id):
+            counts = {
+                status: sum(rule.status == status for rule in scenario.rules)
+                for status in ("PASS", "FAIL", "PENDING")
+            }
+            console.print(
+                f"  规则复核 · 通过 {counts['PASS']} · 违反 {counts['FAIL']}"
+                f" · 证据不足 {counts['PENDING']}",
+                markup=False,
+            )
+    if omitted := omission_text(brief):
+        console.print(omitted, style="dim", markup=False)
+    for issue in dict.fromkeys(
+        diagnostic_text(issue.code, issue.message) for issue in brief.issues
+    ):
+        console.print(issue, style="yellow", markup=False)
+    if brief.wave_relations:
+        console.print(
+            f"日周父子浪对应共 {len(brief.wave_relations)} 条，见报告的核对依据或 JSON。",
+            style="dim",
+            markup=False,
+        )

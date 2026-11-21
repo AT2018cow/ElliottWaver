@@ -1,6 +1,6 @@
 """Shared deterministic analysis facade used by CLI and replay."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -16,7 +16,7 @@ from eliotbot.engine.hierarchical import build_structure, is_confirmed
 from eliotbot.engine.indicators import calculate
 from eliotbot.engine.matcher import Candidate, SearchBudget, deduplicate_candidates, search
 from eliotbot.engine.parents import attach_parent_context
-from eliotbot.engine.projector import project
+from eliotbot.engine.projector import Projection, project, project_with_gates
 from eliotbot.engine.scorer import score, weight_scenarios
 from eliotbot.engine.span_selector import require_history, select_anchor_details
 from eliotbot.engine.subwaves import SubwaveCertification, certify_subwaves
@@ -144,6 +144,7 @@ class AnalysisContext:
     qualified: tuple[WaveScenario, ...]
     anchors: tuple[BriefAnchor, ...]
     zigzags: tuple[ZigZagResult, ...] = ()
+    projections: dict[str, Projection] = field(default_factory=dict)
 
 
 class AnalysisService:
@@ -232,6 +233,7 @@ class AnalysisService:
             warnings.append("EXPLICIT_ANCHOR_UNMATCHED: 指定锚点没有匹配合法的当前计数")
         parent_links = attach_parent_context(candidates, request.timeframe)
         scenarios = []
+        projections: dict[str, Projection] = {}
         interval_cache = {}
         excluded: list[tuple[float, float, str, Candidate]] = []
         structural_rejections = 0
@@ -376,6 +378,17 @@ class AnalysisService:
                 bundle.instrument.tick_size,
                 timeframe=request.timeframe,
             )
+            projection = project_with_gates(
+                candidate,
+                bars,
+                float(indicators.atr[-1]),
+                bundle.provenance.price_coordinate_id,
+                request.as_of,
+                bundle.instrument.tick_size,
+                timeframe=request.timeframe,
+                variant=scenario_variant,
+            )
+            projections[candidate.key] = projection
             bias = -candidate.direction if candidate.stage == "COMPLETE" else candidate.direction
             structure_status = structure.status if structure is not None else certification.status
             if config.search.max_subwave_depth == 0:
@@ -556,4 +569,5 @@ class AnalysisService:
             qualified,
             anchor_details,
             tuple(zigzags),
+            projections,
         )

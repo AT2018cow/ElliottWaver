@@ -314,12 +314,16 @@ def test_brief_surfaces_feed_adjustment_mode_and_cutoff():
     for text in (
         brief_markdown(run.brief, run.result),
         brief_html(run.brief, run.result),
-        render_html(run.result, run.prepared),
     ):
-        assert "sip" in text
-        assert "provider_all" in text
-        assert "FROZEN_DATA_REPLAY" in text
+        assert "Alpaca 合并行情（SIP）" in text
+        assert "按供应商口径复权" in text
+        assert "使用已保存行情回放" in text
         assert request.as_of.isoformat() in text
+    chart = render_html(run.result, run.prepared)
+    assert all(
+        token in chart
+        for token in ("sip", "provider_all", "FROZEN_DATA_REPLAY", request.as_of.isoformat())
+    )
 
 
 def test_console_brief_and_result_surface_feed_and_adjustment(capsys):
@@ -333,8 +337,8 @@ def test_console_brief_and_result_surface_feed_and_adjustment(capsys):
     render_brief(run.brief, run.result)
     render_result(run.result)
     output = capsys.readouterr().out
-    assert "sip" in output
-    assert "provider_all" in output
+    assert "Alpaca 合并行情（SIP）" in output
+    assert "按供应商口径复权" in output
 
 
 def test_offline_brief_rejects_a_different_feed(tmp_path):

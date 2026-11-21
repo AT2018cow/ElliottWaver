@@ -16,6 +16,7 @@ from eliotbot.errors import DataError
 from eliotbot.evaluation.events import condition_hit
 from eliotbot.evaluation.outcomes import outcome_window, period_dates, scheduled_dates, target_hit
 from eliotbot.forecast import forecasts_for_brief
+from eliotbot.outlook import build_outlook
 from eliotbot.schemas.brief import (
     Brief,
     BriefAnchor,
@@ -481,6 +482,7 @@ def build_brief(
     include_weekly: bool = True,
     check_windows: bool = True,
     model: dict | None = None,
+    models: tuple[dict, ...] | None = None,
     model_approved_at: datetime | None = None,
     retrospective: bool = False,
     model_issue: str | None = None,
@@ -516,28 +518,7 @@ def build_brief(
 
     indicators = calculate(prepared.bars)
     cards = _select_cards(result, prepared)
-    forecast_weekly = weekly_result
-    if model is not None and not include_weekly and source.timeframe == request.timeframe == "1d":
-        try:
-            forecast_weekly = service.weekly_background(request, source)[0].result
-        except DataError:
-            pass
-    forecasts = forecasts_for_brief(
-        result,
-        prepared,
-        indicators,
-        model,
-        qualified=context.qualified,
-        weekly=forecast_weekly,
-        candidate_ids={card.scenario_id for card in cards},
-    )
-    if any(item.status == "APPROVED" for item in forecasts):
-        forecast_status = "APPROVED"
-    elif forecasts:
-        forecast_status = "INSUFFICIENT_EVIDENCE"
-    else:
-        forecast_status = "UNCALIBRATED"
-    cross_timeframe = _cross_timeframe(result, weekly_result)
+    outlook = build_outlook(cards, result, prepared, context.projections)
     wave_relations = ()
     if advanced and weekly_context is not None and weekly_prepared is not None:
         wave_relations = link_timeframes(
@@ -549,6 +530,14 @@ def build_brief(
             depth=settings.search.max_subwave_depth,
             budget=SearchBudget(settings.search.max_expansions),
         )
+    forecast_weekly = weekly_result
+    active_models = tuple(models) if models is not None else ((model,) if model is not None else ())
+    if active_models and not include_weekly and source.timeframe == request.timeframe == "1d":
+        try:
+            forecast_weekly = service.weekly_background(request, source)[0].result
+        except DataError:
+            pass
+    cross_timeframe = _cross_timeframe(result, weekly_result)
 
     alternate_result = None
     alternate_prepared = None
@@ -579,6 +568,33 @@ def build_brief(
             request, prepared, context, service, day_budget
         )
 
+    forecasts = forecasts_for_brief(
+        result,
+        prepared,
+        indicators,
+        qualified=context.qualified,
+        models=active_models,
+        weekly=forecast_weekly,
+        candidate_ids={card.scenario_id for card in cards},
+        outlook=outlook,
+        wave_relations=wave_relations,
+        window_state=window_comparison.state,
+    )
+    by_scenario = {}
+    for item in forecasts:
+        if item.scenario_id is not None:
+            by_scenario.setdefault(item.scenario_id, []).append(item)
+    cards = tuple(
+        card.model_copy(update={"forecasts": tuple(by_scenario.get(card.scenario_id, ()))})
+        for card in cards
+    )
+    if any(item.status == "APPROVED" for item in forecasts):
+        forecast_status = "APPROVED"
+    elif forecasts:
+        forecast_status = "INSUFFICIENT_EVIDENCE"
+    else:
+        forecast_status = "UNCALIBRATED"
+
     brief = Brief(
         schema_version="1.2" if advanced else "1.1",
         brief_digest="",
@@ -608,6 +624,7 @@ def build_brief(
         weekly=weekly,
         cross_timeframe=cross_timeframe,
         wave_relations=wave_relations,
+        outlook=outlook,
         window_comparison=window_comparison,
         forecasts=forecasts,
         forecast_status=forecast_status,

@@ -293,7 +293,7 @@ def test_main_training_pipeline_preserves_candidate_geometry(monkeypatch, tmp_pa
         "features": {"target_distance_atr": 2.5, "invalidation_distance": 1.25},
     }
 
-    def capture(_protocol, _windows, _manifest, _cohort, rows, _output):
+    def capture(_protocol, _windows, _manifest, _cohort, rows, _output, **_kwargs):
         order = ["target_distance_atr", "invalidation_distance"]
         return {"vector": train_forecasts._features(rows[0], decision, order)}
 

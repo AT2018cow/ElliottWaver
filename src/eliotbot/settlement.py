@@ -13,14 +13,30 @@ from eliotbot.data.router import route_symbol
 from eliotbot.data.snapshots import SnapshotStore
 from eliotbot.engine.indicators import calculate
 from eliotbot.errors import DataError
-from eliotbot.evaluation.outcomes import Outcome, close_band, first_touch, outcome_window
+from eliotbot.evaluation.events import EVENT_SPECS
+from eliotbot.evaluation.outcomes import (
+    Outcome,
+    close_band,
+    evaluate_outlook_event,
+    first_touch,
+    outcome_window,
+    outlook_window,
+)
 from eliotbot.schemas.brief import Brief
 from eliotbot.schemas.market import AnalysisRequest, MarketDataBundle
+from eliotbot.schemas.outlook import OutlookCase
 from eliotbot.service import prepare_bundle
 from eliotbot.util import canonical_json, digest
 from eliotbot.visualization.brief_formatter import read_brief_report
 
-NON_FINAL = {"RIGHT_CENSORED", "INCOMPLETE_DATA", "INPUT_UNAVAILABLE", "PRICE_BASIS_UNVERIFIED"}
+NON_FINAL = {
+    "RIGHT_CENSORED",
+    "INCOMPLETE_DATA",
+    "INPUT_UNAVAILABLE",
+    "PRICE_BASIS_UNVERIFIED",
+    "UNDEFINED_EVENT",
+    "SETTLEMENT_CALENDAR_MISMATCH",
+}
 EVENT_ROWS = {
     "1d": (
         ("CLOSE_BAND_5D_V1", 5, "SESSIONS"),
@@ -29,16 +45,21 @@ EVENT_ROWS = {
     "1w": (
         ("CLOSE_BAND_5W_V1", 5, "WEEKS"),
         ("CLOSE_BAND_20W_V1", 20, "WEEKS"),
+        ("CLOSE_BAND_2W_V1", 2, "WEEKS"),
     ),
 }
 CANDIDATE_EVENTS = {
     "1d": (
         ("CONFIRM_FIRST_20D_V1", 20, "SESSIONS"),
         ("TARGET_FIRST_20D_V1", 20, "SESSIONS"),
+        ("ADVANCE_FIRST_5D_V1", 5, "SESSIONS"),
+        ("OUTLOOK_TARGET_FIRST_5D_V1", 5, "SESSIONS"),
     ),
     "1w": (
         ("CONFIRM_FIRST_8W_V1", 8, "WEEKS"),
         ("TARGET_FIRST_8W_V1", 8, "WEEKS"),
+        ("ADVANCE_FIRST_2W_V1", 2, "WEEKS"),
+        ("OUTLOOK_TARGET_FIRST_2W_V1", 2, "WEEKS"),
     ),
 }
 SUPPORT_TESTS = (
@@ -52,11 +73,19 @@ def event_specs(brief: Brief) -> list[tuple[str, str, int, str]]:
     """Return (event_id, scope, horizon, unit) for one issued brief."""
     if brief.timeframe not in EVENT_ROWS:
         raise DataError(f"Unsupported settlement timeframe: {brief.timeframe}")
+    available = brief.outlook is not None and brief.outlook.status == "AVAILABLE"
     specs = [
         (event_id, brief.symbol, horizon, unit)
         for event_id, horizon, unit in EVENT_ROWS[brief.timeframe]
+        if available or event_id != "CLOSE_BAND_2W_V1"
     ]
+    if not available:
+        # Old or unavailable reports keep exactly the event list they were issued with.
+        return specs
+    case_ids = {case.scenario_id for case in brief.outlook.cases}
     for card in brief.cards:
+        if card.scenario_id not in case_ids:
+            continue
         for event_id, horizon, unit in CANDIDATE_EVENTS[brief.timeframe]:
             specs.append((event_id, card.scenario_id, horizon, unit))
     return specs
@@ -118,6 +147,7 @@ class SettlementStore:
                     settlement_snapshot_id TEXT NOT NULL,
                     settlement_input_snapshot_id TEXT,
                     price_coordinate_id TEXT,
+                    evidence TEXT,
                     source_hash TEXT NOT NULL,
                     settled_at TEXT NOT NULL,
                     is_initial INTEGER NOT NULL,
@@ -126,6 +156,11 @@ class SettlementStore:
                 )
                 """
             )
+            revision_columns = {
+                row[1] for row in db.execute("PRAGMA table_info(settlement_revisions)")
+            }
+            if "evidence" not in revision_columns:
+                db.execute("ALTER TABLE settlement_revisions ADD COLUMN evidence TEXT")
             db.execute(
                 "CREATE INDEX IF NOT EXISTS settlement_symbol "
                 "ON settlements(symbol, market_asof, event_id)"
@@ -216,7 +251,14 @@ class SettlementStore:
             if latest is not None:
                 same = all(
                     latest[name] == observation[name]
-                    for name in ("status", "outcome", "session", "value", "source_hash")
+                    for name in (
+                        "status",
+                        "outcome",
+                        "session",
+                        "value",
+                        "evidence",
+                        "source_hash",
+                    )
                 )
                 if same:
                     return False
@@ -234,9 +276,9 @@ class SettlementStore:
                 INSERT INTO settlement_revisions
                 (brief_digest, event_id, scope, revision, status, outcome, session,
                  value, settlement_snapshot_id, settlement_input_snapshot_id,
-                 price_coordinate_id, source_hash, settled_at, is_initial,
+                 price_coordinate_id, evidence, source_hash, settled_at, is_initial,
                  supersedes_revision)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     *key,
@@ -248,6 +290,7 @@ class SettlementStore:
                     observation["settlement_snapshot_id"],
                     observation["settlement_input_snapshot_id"],
                     observation["price_coordinate_id"],
+                    observation["evidence"],
                     observation["source_hash"],
                     now,
                     is_initial,
@@ -317,35 +360,79 @@ class SettlementStore:
                 if not provider_bridge:
                     raise
                 price_scale = None
+        if brief.outlook is not None:
+            if (
+                brief.outlook.price_coordinate_id is not None
+                and brief.outlook.price_coordinate_id != brief.price_coordinate_id
+            ):
+                raise DataError("SETTLEMENT_ISSUANCE_MISMATCH")
+            if brief.outlook.issued_at is not None and brief.outlook.issued_at != brief.as_of:
+                raise DataError("SETTLEMENT_ISSUANCE_MISMATCH")
         scenarios = {scenario.scenario_id: scenario for scenario in result.scenarios}
         for event_id, scope, horizon, _unit in event_specs(brief):
             if price_scale is None:
                 outcome = Outcome("PRICE_BASIS_UNVERIFIED")
                 used = ()
             else:
-                window = outcome_window(
-                    source_bundle,
-                    brief.market_asof,
-                    horizon,
-                    issuance_factors=issuance_factors,
-                    issuance_dates=brief.outcome_dates,
-                    price_scale=price_scale,
+                frozen_event = event_id == "CLOSE_BAND_2W_V1" or event_id.startswith(
+                    ("ADVANCE_FIRST_", "OUTLOOK_TARGET_FIRST_")
                 )
+                if frozen_event and brief.outlook is not None:
+                    window = outlook_window(
+                        source_bundle,
+                        brief.market_asof,
+                        brief.outlook.periods,
+                        horizon,
+                        issuance_factors=issuance_factors,
+                        price_scale=price_scale,
+                    )
+                else:
+                    window = outcome_window(
+                        source_bundle,
+                        brief.market_asof,
+                        horizon,
+                        issuance_factors=issuance_factors,
+                        issuance_dates=brief.outcome_dates,
+                        price_scale=price_scale,
+                    )
                 if event_id.startswith("CLOSE_BAND_"):
                     outcome = close_band(window, brief.latest_price, atr, horizon)
-                    used = (window.close_bar(horizon),)
+                    used = (window.close_bar(horizon),) if outcome.value is not None else ()
                 else:
                     scenario = scenarios.get(scope)
-                    outcome = (
-                        Outcome("UNDEFINED_EVENT")
-                        if scenario is None
-                        else first_touch(
-                            scenario,
-                            window,
-                            horizon,
-                            confirmation=event_id.startswith("CONFIRM_FIRST_"),
+                    if event_id.startswith(("ADVANCE_FIRST_", "OUTLOOK_TARGET_FIRST_")):
+                        case = next(
+                            (
+                                OutlookCase.model_validate(item)
+                                for item in (
+                                    brief.outlook.cases if brief.outlook is not None else ()
+                                )
+                                if item.scenario_id == scope
+                            ),
+                            None,
                         )
-                    )
+                        if case is None:
+                            outcome = Outcome("UNDEFINED_EVENT")
+                        else:
+                            outcome = evaluate_outlook_event(EVENT_SPECS[event_id], case, window)
+                            if outcome.status == "UNDEFINED_EVENT":
+                                state = next(
+                                    (item for item in case.events if item.event_id == event_id),
+                                    None,
+                                )
+                                if state is not None and state.reason:
+                                    outcome = Outcome("UNDEFINED_EVENT", evidence=(state.reason,))
+                    else:
+                        outcome = (
+                            Outcome("UNDEFINED_EVENT")
+                            if scenario is None
+                            else first_touch(
+                                scenario,
+                                window,
+                                horizon,
+                                confirmation=event_id.startswith("CONFIRM_FIRST_"),
+                            )
+                        )
                     used = tuple(
                         bar
                         for day, bar in zip(window.dates, window.bars, strict=True)
@@ -362,6 +449,7 @@ class SettlementStore:
                 "settlement_snapshot_id": settlement_snapshot_id,
                 "settlement_input_snapshot_id": source_bundle.snapshot_id,
                 "price_coordinate_id": brief.price_coordinate_id,
+                "evidence": (canonical_json(list(outcome.evidence)) if outcome.evidence else None),
                 "source_hash": _source_hash(bar for bar in used if bar is not None),
             }
             self._record(observation)
@@ -438,6 +526,9 @@ def support_matrix(model_summary: dict | None = None) -> dict:
                             "horizon": horizon,
                             "horizon_unit": unit,
                             "scope": cohort.get("scope"),
+                            "outlook_version": (cohort.get("scope") or {}).get("outlook_version"),
+                            "outlook_slot": (cohort.get("scope") or {}).get("outlook_slot"),
+                            "symbols": (cohort.get("scope") or {}).get("symbols"),
                             "model_id": cohort.get("model_id") if status == "APPROVED" else None,
                             "model_status": status,
                             "applicable_model": status == "APPROVED",

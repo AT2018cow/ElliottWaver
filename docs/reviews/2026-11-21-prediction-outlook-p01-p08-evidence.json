@@ -1,0 +1,292 @@
+{
+  "schema_version": "1.1",
+  "date": "2026-11-21",
+  "pe5_status": "INSUFFICIENT_EVIDENCE",
+  "real_model_brief": {
+    "cn": {
+      "model": "reports/prediction/outlook/history-score-cn/model.json",
+      "forecast_status": "INSUFFICIENT_EVIDENCE",
+      "card_slot": "PRIMARY",
+      "event_id": "OUTLOOK_TARGET_FIRST_5D_V1",
+      "study_mode": "RETROSPECTIVE",
+      "operational_allowed": false
+    },
+    "us": {
+      "model": "reports/prediction/outlook/history-score-us/model.json",
+      "forecast_status": "INSUFFICIENT_EVIDENCE",
+      "card_slot": "PRIMARY",
+      "event_id": "OUTLOOK_TARGET_FIRST_5D_V1",
+      "study_mode": "RETROSPECTIVE",
+      "operational_allowed": false
+    }
+  },
+  "cases": [
+    {
+      "id": "P-01",
+      "status": "PASS",
+      "evidence": [
+        "tests/test_outlook.py::test_project_with_gates_assigns_impulse_advance_role",
+        "tests/test_outlook.py::test_project_with_gates_down_mirror",
+        "tests/test_prediction_review_followup.py::test_wxy_x_retracement_has_no_advance_or_target_gate",
+        "tests/test_prediction_review_followup.py::test_wxy_x_retracement_down_mirror_has_no_advance"
+      ]
+    },
+    {
+      "id": "P-02",
+      "status": "PASS",
+      "evidence": [
+        "tests/test_outlook.py::test_project_with_gates_assigns_completed_stage_exit_only",
+        "tests/test_outlook.py::test_project_with_gates_suppresses_double_zigzag_specific_evidence",
+        "tests/test_prediction_pe6.py::test_stage_exit_is_strict_at_the_boundary",
+        "tests/test_engine.py::test_diagonal_fifth_projection_respects_shortest_third_boundary",
+        "tests/test_prediction_review_followup.py::test_flat_b_beyond_origin_suppresses_c_confirmation_and_target",
+        "tests/test_prediction_review_followup.py::test_unfinished_triangle_has_stage_exit_and_no_target",
+        "tests/test_prediction_review_followup.py::test_wave3_has_a_strict_stage_exit_below_wave2_end",
+        "tests/test_prediction_review_followup.py::test_target_filter_rejects_equal_stop_and_target_before_advance_gate",
+        "tests/test_prediction_review_followup.py::test_build_outlook_refuses_search_limited_result"
+      ]
+    },
+    {
+      "id": "P-03",
+      "status": "PASS",
+      "evidence": [
+        "tests/test_outlook_events.py::test_outlook_advance_event_confirms_before_stop",
+        "tests/test_outlook_events.py::test_outlook_advance_event_same_bar_is_ambiguous",
+        "tests/test_outlook_events.py::test_outlook_target_waits_for_advance_then_hits",
+        "tests/test_prediction_review_followup.py::test_weekly_outlook_starts_after_the_issue_time",
+        "tests/test_prediction_review_followup.py::test_delayed_weekly_data_does_not_count_an_already_started_week",
+        "tests/test_prediction_review_followup.py::test_daily_outlook_skips_a_session_already_open_at_issue",
+        "tests/test_prediction_review_followup.py::test_settlement_and_replay_share_the_frozen_periods"
+      ]
+    },
+    {
+      "id": "P-04",
+      "status": "PASS",
+      "evidence": [
+        "tests/test_outlook.py::test_build_outlook_has_five_sessions_and_cases",
+        "tests/test_outlook.py::test_build_outlook_weekly_has_two_periods",
+        "tests/test_prediction_pe6.py::test_weekly_outlook_skips_the_current_week",
+        "tests/test_prediction_pe6.py::test_daily_outlook_skips_holiday_sessions",
+        "tests/test_prediction_pe6.py::test_outcome_window_explicit_cutoff_is_right_censored",
+        "tests/test_hierarchical_engine.py::test_link_timeframes_tolerates_a_missing_daily_session",
+        "tests/test_prediction_review_followup.py::test_train_requires_and_filters_the_outlook_slot",
+        "tests/test_prediction_review_followup.py::test_score_filters_rows_to_the_frozen_symbol_and_slot"
+      ]
+    },
+    {
+      "id": "P-05",
+      "status": "PASS",
+      "evidence": [
+        "tests/test_prediction_pe6.py::test_cn_split_settlement_matches_unsplit",
+        "tests/test_review_followup.py::test_provider_split_uses_verified_issuance_basis",
+        "tests/test_prediction_review_followup.py::test_freeze_rejects_a_backdated_frozen_at",
+        "tests/test_prediction_review_followup.py::test_score_rejects_a_reused_development_artifact",
+        "tests/test_prediction_review_followup.py::test_score_keeps_an_untrained_frozen_event_insufficient",
+        "tests/test_prediction_review_followup.py::test_registry_rejects_new_outlook_approval_without_holdout_provenance"
+      ]
+    },
+    {
+      "id": "P-06",
+      "status": "PASS",
+      "evidence": [
+        "tests/test_prediction_pe6.py::test_settle_brief_records_outlook_events",
+        "tests/test_prediction_pe6.py::test_old_report_without_outlook_reads_and_renders",
+        "tests/test_review_followup.py::test_settle_cli_deduplicates_reports_and_propagates_errors",
+        "tests/test_prediction_pe6.py::test_previous_brief_replay_preserves_outlook",
+        "tests/test_prediction_review_followup.py::test_new_outlook_labels_map_stage_exit_and_ambiguity_to_no",
+        "tests/test_prediction_review_followup.py::test_same_bar_double_stop_is_hard_invalidation_with_both_reasons"
+      ]
+    },
+    {
+      "id": "P-07",
+      "status": "PASS",
+      "evidence": [
+        "tests/test_outlook_forecast.py::test_outlook_model_requires_scope_fields",
+        "tests/test_outlook_forecast.py::test_new_outlook_model_approval_requires_completed_holdout",
+        "tests/test_forecasts.py::test_model_registry_register_withdraw_and_fallback",
+        "tests/test_outlook_forecast.py::test_validate_model_rejects_multiple_new_outlook_events",
+        "tests/test_outlook_forecast.py::test_validate_model_requires_symbol_slot_for_close_event",
+        "tests/test_outlook_forecast.py::test_registry_queries_by_event_and_outlook_slot",
+        "tests/test_prediction_review_followup.py::test_brief_uses_models_for_two_events_and_two_slots",
+        "tests/test_prediction_review_followup.py::test_brief_keeps_an_old_model_alongside_new_outlook_models",
+        "tests/test_prediction_review_followup.py::test_build_brief_resolves_window_state_before_forecasting",
+        "tests/test_prediction_review_followup.py::test_replay_event_features_read_the_frozen_window_state"
+      ]
+    },
+    {
+      "id": "P-08",
+      "status": "PASS",
+      "evidence": [
+        "docs/reviews/2026-11-21-prediction-outlook-p08.md",
+        "tests/test_prediction_pe6.py::test_brief_markdown_html_and_terminal_include_outlook",
+        "tests/test_prediction_pe6.py::test_event_specs_include_outlook_events",
+        "tests/test_prediction_review_followup.py::test_console_condition_precision_matches_executable_boundary",
+        "tests/test_prediction_review_followup.py::test_console_outlook_explains_slot_and_target_mode"
+      ]
+    }
+  ],
+  "review_followup": [
+    {
+      "id": "PO-01",
+      "status": "PASS",
+      "fix": "WXY X 浪只产生当前浪证据；只有 Y 浪越过 W 终点才是推进门槛，目标等待推进。",
+      "tests": [
+        "tests/test_prediction_review_followup.py::test_wxy_x_retracement_has_no_advance_or_target_gate",
+        "tests/test_prediction_review_followup.py::test_wxy_x_retracement_down_mirror_has_no_advance"
+      ]
+    },
+    {
+      "id": "PO-02",
+      "status": "PASS",
+      "fix": "推演层按亚型、阶段、推进门槛和硬边界过滤目标；补浪 3 严格阶段退出；搜索受限时不发行。旧分析投影保持不变。",
+      "tests": [
+        "tests/test_prediction_review_followup.py::test_flat_b_beyond_origin_suppresses_c_confirmation_and_target",
+        "tests/test_prediction_review_followup.py::test_unfinished_triangle_has_stage_exit_and_no_target",
+        "tests/test_prediction_review_followup.py::test_wave3_has_a_strict_stage_exit_below_wave2_end",
+        "tests/test_prediction_review_followup.py::test_target_filter_rejects_equal_stop_and_target_before_advance_gate",
+        "tests/test_prediction_review_followup.py::test_build_outlook_refuses_search_limited_result"
+      ]
+    },
+    {
+      "id": "PO-03",
+      "status": "PASS",
+      "fix": "发行按发行时刻冻结完整会话和周成员；回放与核销读取同一 outlook.periods、价格坐标和观测截止；旧报告保持原事件清单。",
+      "tests": [
+        "tests/test_prediction_review_followup.py::test_weekly_outlook_starts_after_the_issue_time",
+        "tests/test_prediction_review_followup.py::test_delayed_weekly_data_does_not_count_an_already_started_week",
+        "tests/test_prediction_review_followup.py::test_daily_outlook_skips_a_session_already_open_at_issue",
+        "tests/test_prediction_review_followup.py::test_settlement_and_replay_share_the_frozen_periods"
+      ]
+    },
+    {
+      "id": "PO-04",
+      "status": "PASS",
+      "fix": "训练和评分按事件、候选位置、市场、资产、feed、复权、周期和冻结标的筛选；一标的一决策一位置最多一行；多队列必须显式选择。",
+      "tests": [
+        "tests/test_prediction_review_followup.py::test_train_requires_and_filters_the_outlook_slot",
+        "tests/test_prediction_review_followup.py::test_score_filters_rows_to_the_frozen_symbol_and_slot"
+      ]
+    },
+    {
+      "id": "PO-05",
+      "status": "PASS",
+      "fix": "冻结记录实际冻结时刻和开发末次标签可用时刻；评分拒绝重叠、开发产物重用和未封存留出；历史评分标记为回顾性且禁止操作性发布。",
+      "tests": [
+        "tests/test_prediction_review_followup.py::test_freeze_rejects_a_backdated_frozen_at",
+        "tests/test_prediction_review_followup.py::test_score_rejects_a_reused_development_artifact",
+        "tests/test_prediction_review_followup.py::test_score_keeps_an_untrained_frozen_event_insufficient",
+        "tests/test_prediction_review_followup.py::test_registry_rejects_new_outlook_approval_without_holdout_provenance"
+      ]
+    },
+    {
+      "id": "PO-06",
+      "status": "PASS",
+      "fix": "新事件把阶段退出和同根歧义映射为 NO；双停止同根归硬失效并保留两条触发证据；旧事件标签不变。",
+      "tests": [
+        "tests/test_prediction_review_followup.py::test_new_outlook_labels_map_stage_exit_and_ambiguity_to_no",
+        "tests/test_prediction_review_followup.py::test_same_bar_double_stop_is_hard_invalidation_with_both_reasons"
+      ]
+    },
+    {
+      "id": "PO-07",
+      "status": "PASS",
+      "fix": "正式入口和回放按事件及候选位置批量选择模型；先冻结换窗状态再预测；回放传入 outlook、日周关系和 SAME_COUNT 状态。",
+      "tests": [
+        "tests/test_prediction_review_followup.py::test_brief_uses_models_for_two_events_and_two_slots",
+        "tests/test_prediction_review_followup.py::test_brief_keeps_an_old_model_alongside_new_outlook_models",
+        "tests/test_prediction_review_followup.py::test_build_brief_resolves_window_state_before_forecasting",
+        "tests/test_prediction_review_followup.py::test_replay_event_features_read_the_frozen_window_state"
+      ]
+    },
+    {
+      "id": "PO-08",
+      "status": "PASS",
+      "fix": "终端和报告按事件比较精度显示可执行阈值；中文说明主备、当前方向、目标模式和重新数浪条件；用户手册补充短期观察。",
+      "tests": [
+        "tests/test_prediction_review_followup.py::test_console_condition_precision_matches_executable_boundary",
+        "tests/test_prediction_review_followup.py::test_console_outlook_explains_slot_and_target_mode"
+      ]
+    },
+    {
+      "id": "PO-09",
+      "status": "PASS",
+      "fix": "旧分析继续使用原 project() 条件、目标和路径；新语义和过滤只进入 project_with_gates 与 outlook 契约。",
+      "tests": [
+        "tests/test_prediction_review_followup.py::test_project_keeps_legacy_analysis_conditions_while_outlook_filters"
+      ]
+    }
+  ],
+  "remaining": [
+    "No APPROVED model: target/advance/2-week close historical holdouts are all INSUFFICIENT_EVIDENCE.",
+    "Existing historical score artifacts were produced before the scope/window fixes and are retained only as retrospective research; they are not used for approval.",
+    "Future forward queue remains optional."
+  ],
+  "model_query": {
+    "api": "ModelRegistry.active_event_at/load_event_at/active_models_at",
+    "event_id": "required",
+    "outlook_slot": "optional filter",
+    "one_event_one_slot": "enforced for new outlook/2W close models",
+    "tests": [
+      "tests/test_outlook_forecast.py::test_validate_model_rejects_multiple_new_outlook_events",
+      "tests/test_outlook_forecast.py::test_validate_model_requires_symbol_slot_for_close_event",
+      "tests/test_outlook_forecast.py::test_registry_queries_by_event_and_outlook_slot",
+      "tests/test_prediction_review_followup.py::test_brief_uses_models_for_two_events_and_two_slots"
+    ]
+  },
+  "validation": {
+    "pytest": "512 passed",
+    "ruff": "PASS",
+    "format": "PASS",
+    "pip_check": "PASS",
+    "review_probes": {
+      "backdated_freeze": "REJECTED: Frozen time precedes the development window's last available label",
+      "development_directory_reuse": "REJECTED: Holdout is not an independent sealed holdout",
+      "cn_target_scope": "score keeps only CN/EQUITY/sina/basis_date_qfq/PRIMARY rows and 2 frozen symbols; 214 -> 46 holdout rows",
+      "us_target_scope": "score keeps only US/EQUITY/sip/provider_all/PRIMARY rows and 2 frozen symbols; 88 -> 24 holdout rows",
+      "holdout_rerun": {
+        "cn_target": {"rows": 46, "brier": 0.1727, "status": "INSUFFICIENT_EVIDENCE"},
+        "us_target": {"rows": 24, "brier": 0.0828, "status": "INSUFFICIENT_EVIDENCE"},
+        "cn_advance": {"rows": 5, "brier": 0.2089, "status": "INSUFFICIENT_EVIDENCE"},
+        "us_advance": {"rows": 5, "brier": 0.1989, "status": "INSUFFICIENT_EVIDENCE"},
+        "cn_weekly": {"rows": 62, "brier": 0.7310, "status": "INSUFFICIENT_EVIDENCE"},
+        "us_weekly": {"rows": 57, "brier": 0.6094, "status": "INSUFFICIENT_EVIDENCE"}
+      },
+      "refreeze_scope": {
+        "cn_target": {
+          "sample_counts": {"train": 72, "calibration": 65, "test": 46},
+          "brier": 0.1792,
+          "status": "INSUFFICIENT_EVIDENCE",
+          "reason": "test rows 46 < 50; price baseline improvement negative"
+        },
+        "cn_advance": {
+          "sample_counts": {"train": 1, "calibration": 10, "test": 2},
+          "status": "INSUFFICIENT_EVIDENCE",
+          "reason": "correct scope leaves too few training rows"
+        },
+        "cn_weekly": {
+          "sample_counts": {"train": 4, "calibration": 33, "test": 102},
+          "status": "INSUFFICIENT_EVIDENCE",
+          "reason": "correct scope leaves too few training rows"
+        },
+        "us_weekly": {
+          "sample_counts": {"train": 88, "calibration": 95, "test": 57},
+          "brier": 0.5373,
+          "status": "INSUFFICIENT_EVIDENCE",
+          "reason": "all baseline improvements negative; test symbols 2 < 5"
+        },
+        "us_target": {
+          "sample_counts": {"train": 69, "calibration": 51, "test": 24},
+          "brier": 0.1311,
+          "status": "INSUFFICIENT_EVIDENCE",
+          "reason": "test rows 24 < 50; price baseline CI lower bound <= 0"
+        },
+        "us_advance": {
+          "sample_counts": {"train": 19, "calibration": 6, "test": 7},
+          "brier": 0.3241,
+          "status": "INSUFFICIENT_EVIDENCE",
+          "reason": "test rows 7 < 50; all baseline improvements negative"
+        }
+      }
+    }
+  }
+}

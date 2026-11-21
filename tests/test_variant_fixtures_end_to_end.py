@@ -83,8 +83,10 @@ def test_certifiable_variant_matches_analyze_and_brief(prices, density, subtype,
     if subtype == "DOUBLE_THREE":
         p = [w.pivot.price for w in scenario.completed_waves]
         assert p[1] - p[2] < (p[1] - p[0]) / 2 and p[3] < p[1]
-        assert subtype in brief_markdown(run.brief, run.result)
-        assert subtype in brief_html(run.brief, run.result)
+        for report in (brief_markdown(run.brief, run.result), brief_html(run.brief, run.result)):
+            assert "双重三浪 WXY" in report
+            assert subtype not in report
+        assert scenario.model_dump(mode="json")["variant"] == subtype
 
 
 @pytest.mark.parametrize(

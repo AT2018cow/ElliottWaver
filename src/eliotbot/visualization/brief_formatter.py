@@ -13,58 +13,33 @@ from pathlib import Path
 
 from eliotbot.brief import BriefRun
 from eliotbot.errors import DataError, ExportError
-from eliotbot.schemas.brief import Brief, BriefPeriod, forecast_message
+from eliotbot.schemas.brief import Brief, BriefCard, forecast_message
 from eliotbot.schemas.wave import AnalysisResult, WaveScenario, WaveStructure
 from eliotbot.util import atomic_write, canonical_json, digest
+from eliotbot.visualization.brief_text import (
+    DEGREE,
+    METRIC_NOTE,
+    PATTERN,
+    adjustment_text,
+    anchor_text,
+    candidate_title,
+    card_role,
+    comparison_text,
+    condition_text,
+    diagnostic_text,
+    feed_text,
+    forecast_row,
+    mode_text,
+    omission_text,
+    outlook_heading,
+    price_text,
+    status_text,
+    summary_cards,
+    timeframe_text,
+)
 from eliotbot.visualization.chart_builder import PLOTLY_RENDER_VERSION, render_html
 
-
-def _parent(card) -> str:
-    if card.parent_context == "UNKNOWN":
-        return "UNKNOWN"
-    return (
-        f"{card.parent_context}/{card.parent_pattern or '—'}/"
-        f"{card.parent_degree or '—'}/{card.parent_wave_label or '—'}"
-    )
-
-
-def _anchor_text(anchor):
-    reason = {
-        "EXPLICIT": "手动起点",
-        "FALLBACK": "历史窗口回退",
-        "MACRO_HIGH": "背景高点",
-        "MACRO_LOW": "背景低点",
-    }[anchor.origin]
-    context = (
-        f" · {anchor.background_timeframe} · 确认时刻 {anchor.confirmed_at}"
-        if anchor.confirmed_at
-        else ""
-    )
-    return f"{anchor.date} · {reason}{context}"
-
-
-def _forecast_evidence(item):
-    scope = item.scope or {}
-    fields = [
-        str(value)
-        for name in ("markets", "asset_types", "timeframes", "feed")
-        for value in scope.get(name, [])
-    ]
-    if item.sample_count is not None:
-        fields.append(f"留出 {item.sample_count} 条")
-    if item.calibration_end is not None:
-        fields.append(f"校准截至 {item.calibration_end}")
-    return " · ".join(fields) or "—"
-
-
-def omission_text(period: Brief | BriefPeriod) -> str:
-    engine = f"引擎 Top-K 之外的候选权重 {period.omitted_weight:.1%}"
-    if period.omitted_top_k_count is None or period.omitted_top_k_weight is None:
-        return engine
-    return (
-        f"{engine}。摘要另省略 Top-K 内 {period.omitted_top_k_count} 个候选"
-        f"（权重 {period.omitted_top_k_weight:.1%}）。"
-    )
+BRIEF_TEXT_RENDER_VERSION = "brief-render-v5"
 
 
 def rule_evidence(scenario: WaveScenario) -> tuple[str, ...]:
@@ -100,10 +75,24 @@ def structure_evidence(structure: WaveStructure) -> tuple[str, ...]:
     nodes = {node.node_id: node for node in structure.nodes}
     root = nodes.get(structure.root_id)
     if root is None:
-        return ("结构证据的根节点不可用",)
+        return ("没有找到这套浪形的结构证据",)
+    reasons = {
+        "ALL_ALLOWED_STRUCTURES_FAILED": "可用子浪均未通过规则",
+        "BUDGET_EXHAUSTED": "搜索达到上限",
+        "DEPTH_DISABLED": "未开启更深层的子浪验证",
+        "DEVELOPING_LEG": "这一浪仍在形成",
+        "EMPTY_INTERVAL": "该浪没有足够的行情区间",
+        "INCOMPLETE_TEMPLATE_COVERAGE": "现有浪型无法覆盖这段结构",
+        "INSUFFICIENT_FINER_PIVOTS": "细一级的已确认拐点不足",
+        "NO_ALLOWED_TEMPLATE": "未找到适用的子浪模板",
+        "UNAVAILABLE_BAR_IN_INTERVAL": "浪内缺少必要 K 线",
+        "UNCONFIRMED_BOUNDARY": "端点尚未确认",
+        "WXY_SUBDIVISION_UNVERIFIED": "组合调整的子浪尚未确认",
+    }
     lines = [
-        f"结构 {root.variant or root.pattern_type} · {structure.status} · "
-        f"已验证深度 {structure.verified_depth}/{structure.requested_depth}"
+        f"{PATTERN.get(root.variant or '', PATTERN[root.pattern_type])} · "
+        f"{status_text(structure.status)} · 子浪已验证 {structure.verified_depth} 层，"
+        f"检查深度为 {structure.requested_depth} 层"
     ]
 
     def visit(node, path: str) -> None:
@@ -111,13 +100,14 @@ def structure_evidence(structure: WaveStructure) -> tuple[str, ...]:
             label = f"{path}{leg.wave_label}"
             child = nodes.get(leg.child_node_id)
             if child is None:
-                evidence = leg.reason_code or "等待证据"
+                evidence = reasons.get(leg.reason_code or "", "等待结构证据")
                 if leg.failed_rule_ids:
-                    evidence += f" · {', '.join(leg.failed_rule_ids)}"
+                    evidence += f" · {len(leg.failed_rule_ids)} 项规则未通过"
             else:
                 prices = " → ".join(f"{point.pivot.price:.4f}" for point in child.points)
-                evidence = f"{child.variant or child.pattern_type} · {prices} · {child.status}"
-            lines.append(f"浪 {label} · {leg.status} · {evidence}")
+                pattern = PATTERN.get(child.variant or "", PATTERN[child.pattern_type])
+                evidence = f"{pattern} · {prices} · {status_text(child.status)}"
+            lines.append(f"浪 {label} · {status_text(leg.status)} · {evidence}")
             if child is not None and path.count(".") + 1 < structure.requested_depth:
                 visit(child, f"{label}.")
 
@@ -126,21 +116,40 @@ def structure_evidence(structure: WaveStructure) -> tuple[str, ...]:
 
 
 def relation_evidence(brief: Brief) -> tuple[str, ...]:
-    return tuple(
-        f"周线 {item.weekly_scenario_id or '—'} · 浪 {item.parent_wave_label or '—'} · "
-        f"日线 {item.daily_scenario_id or '历史区间'} · {item.status} · {item.reason}"
-        for item in brief.wave_relations
-    )
+    daily = {card.scenario_id: card_role(index) for index, card in enumerate(brief.cards)}
+    weekly_cards = brief.weekly.cards if brief.weekly else ()
+    weekly = {card.scenario_id: card_role(index) for index, card in enumerate(weekly_cards)}
+    lines = []
+    for item in brief.wave_relations:
+        parent = weekly.get(item.weekly_scenario_id or "", "其他候选")
+        child = (
+            daily.get(item.daily_scenario_id, "其他候选") if item.daily_scenario_id else "历史区间"
+        )
+        reason = item.reason.removeprefix("SEARCH_LIMITED: ")
+        for key, value in PATTERN.items():
+            reason = reason.replace(key, value)
+        wave = f"浪 {item.parent_wave_label}" if item.parent_wave_label else "浪段待定"
+        lines.append(f"周线{parent} · {wave} · 日线{child} · {status_text(item.status)} · {reason}")
+    return tuple(lines)
 
 
 def transition_evidence(brief: Brief) -> tuple[str, ...]:
     if brief.previous is None:
         return ()
-    return tuple(
-        f"{event['session']} · {event.get('kind', '同根先后')} · {event['status']} · "
-        f"K 线 {event['bar_id']}"
+    kinds = {
+        "CONFIRMATION": "确认条件",
+        "INVALIDATION": "失效条件",
+        "STAGE_EXIT": "重新数浪条件",
+        "TARGET": "目标区",
+    }
+    recorded = tuple(
+        f"{event['session']} · {kinds.get(event.get('kind'), '价格触及记录')} · "
+        f"{status_text(event['status'])}"
         for event in brief.previous.events
         if event.get("type") in {"condition", "outcome"}
+    )
+    return recorded or tuple(
+        condition_text(condition) for condition in brief.previous.triggered_conditions
     )
 
 
@@ -158,163 +167,111 @@ def _other_structures(brief: Brief, result: AnalysisResult | None) -> tuple[str,
     )
 
 
+def _card_metrics(card: BriefCard) -> str:
+    parent = f"父浪关系{status_text(card.parent_context)}"
+    if card.parent_pattern is not None and card.parent_wave_label is not None:
+        parent += f"（{PATTERN[card.parent_pattern]}的浪 {card.parent_wave_label}）"
+    attributes = [
+        DEGREE[card.degree],
+        parent,
+        f"子浪{status_text(card.subwave_status)}",
+        f"质量分 {card.quality_score:.1f}/100",
+        f"证据覆盖 {card.coverage:.0%}",
+        f"候选权重 {card.relative_weight:.1%}",
+    ]
+    return " · ".join(attributes)
+
+
+def _window_details(brief: Brief) -> tuple[str, ...]:
+    window = brief.window
+    lines = [
+        f"决策截止 {brief.as_of.isoformat()}",
+        f"分析范围 {window.start} 至 {window.end} · {window.bar_count} 根 K 线",
+    ]
+    if window.primary_pattern_start:
+        lines.append(f"首选浪形起始于 {window.primary_pattern_start}")
+    if (comparison := brief.window_comparison) and comparison.alternate_start:
+        lines.append(f"另用 {comparison.alternate_start} 作为起点复核")
+    lines.extend(anchor_text(anchor) for anchor in window.anchor_details)
+    return tuple(lines)
+
+
+def _display_issues(brief: Brief) -> tuple[str, ...]:
+    return tuple(
+        dict.fromkeys(diagnostic_text(issue.code, issue.message) for issue in brief.issues)
+    )
+
+
+def _md_items(lines: tuple[str, ...]) -> list[str]:
+    return [f"- {line}" for line in lines]
+
+
 def brief_markdown(brief: Brief, result: AnalysisResult | None = None) -> str:
     scenarios = {item.scenario_id: item for item in result.scenarios} if result else {}
     lines = [
         f"# {brief.symbol} · 收盘摘要",
         "",
-        (
-            f"行情截止：{brief.market_asof}；周期：{brief.timeframe}；"
-            f"来源：{brief.feed}；调整口径：{brief.adjustment}。"
-        ),
-        f"分析状态：**{brief.status}**；分析价格：{brief.latest_price:.4f}。",
-        f"数据模式 `{brief.mode}` · 决策截止 `{brief.as_of.isoformat()}`。",
-        f"周期选择：{brief.timeframe_reason or '—'}。",
-        "",
-        (
-            f"分析窗口：{brief.window.start} → {brief.window.end}，"
-            f"{brief.window.bar_count} 根；锚点："
-            + (", ".join(str(day) for day in brief.window.anchors) or "—")
-        ),
-        (
-            f"首选结构起点：{brief.window.primary_pattern_start or '—'}；"
-            f"锚点回退：{'是' if brief.window.fallback else '否'}。"
-        ),
+        f"{timeframe_text(brief.timeframe)} · 行情截至 {brief.market_asof} · {status_text(brief.status)}",
+        f"{mode_text(brief.mode)} · {feed_text(brief.feed)} · {adjustment_text(brief.adjustment)}",
+        f"分析价格 {price_text(brief.latest_price)}",
         "",
     ]
-    lines.extend(f"- {_anchor_text(anchor)}" for anchor in brief.window.anchor_details)
+    if (heading := outlook_heading(brief)) is not None:
+        lines += [f"## {heading}", ""]
+    for title, content in summary_cards(brief):
+        lines += [f"### {title}", "", *_md_items(content), ""]
+    if not brief.cards and brief.outlook is None:
+        lines += ["当前没有达到规则和证据要求的候选。", ""]
+    lines += [*_md_items(comparison_text(brief)), "", forecast_message(brief.forecast_status), ""]
     if brief.retrospective:
-        lines += ["", "**回顾性重算**。使用显式指定的模型。", ""]
-    if brief.cross_timeframe is not None:
-        cross = brief.cross_timeframe
-        lines += [
-            f"跨周期：**{cross.state}**；日线下一段 {cross.primary_bias}；"
-            f"周线下一段 {cross.weekly_bias or '—'}。{cross.reason}",
-            "",
-        ]
-    if brief.window_comparison is not None:
-        window = brief.window_comparison
-        lines += [
-            f"换窗复核：**{window.state}**；替代起点 {window.alternate_start or '—'}；"
-            f"根数 {window.alternate_bar_count or '—'}。{window.reason}",
-            "",
-        ]
-    if brief.previous is not None:
-        previous = brief.previous
-        lines += [
-            f"上次判断：**{previous.change}**；{previous.reason}；"
-            f"上次行情截止 {previous.previous_market_asof or '—'}。",
-            "",
-        ]
-    if brief.previous and brief.previous.triggered_conditions:
-        lines += [
-            "上次已触发的条件",
-            *[
-                f"- {cond.kind} {cond.side} {cond.op} {cond.price:.4f}"
-                for cond in brief.previous.triggered_conditions
-            ],
-            "",
-        ]
+        lines += ["模型结果为回顾性重算。", ""]
     if brief.forecasts:
         lines += [
-            "| 事件 | 候选 | 状态 | 期限 | 概率 | 校准证据 |",
-            "| --- | --- | --- | ---: | --- | --- |",
+            "| 事件 | 候选 | 期限 | 状态 | 概率 |",
+            "| --- | --- | --- | --- | --- |",
+            *("| " + " | ".join(forecast_row(brief, item)) + " |" for item in brief.forecasts),
+            "",
         ]
-        for forecast in brief.forecasts:
-            probabilities = (
-                ", ".join(f"{name}={value:.1%}" for name, value in forecast.probabilities.items())
-                if forecast.probabilities
-                else forecast.reason or "—"
-            )
-            lines.append(
-                f"| {forecast.event_id} | {forecast.scenario_id or '标的'} | {forecast.status} | "
-                f"{forecast.horizon_sessions} {forecast.horizon_unit} | {probabilities} | {_forecast_evidence(forecast)} |"
-            )
-        lines.append("")
-    lines += [
-        "候选权重只表示本次枚举候选之间的相对评分，不是成功概率。",
-        "",
-        "| 角色 | 候选 | 浪级 | 阶段 | 父级 | 子浪 | 质量 | 覆盖 | 权重 |",
-        "| --- | --- | --- | --- | --- | --- | ---: | ---: | ---: |",
-    ]
-    for card in brief.cards:
-        lines.append(
-            f"| {card.role} | {card.name} | {card.degree} | {card.stage} | "
-            f"{_parent(card)} | {card.subwave_status} | {card.quality_score:.1f} | "
-            f"{card.coverage:.1%} | {card.relative_weight:.1%} |"
-        )
-    if not brief.cards:
-        lines += ["", "当前没有达到质量与证据门槛的候选。"]
-    lines += ["", omission_text(brief)]
-    if brief.wave_relations:
-        lines += ["", "## 日周父子浪", "", *(f"- {line}" for line in relation_evidence(brief))]
-    if transitions := transition_evidence(brief):
-        lines += ["", "## 条件回放证据", "", *(f"- {line}" for line in transitions)]
-    if other := _other_structures(brief, result):
-        lines += ["", "## 其他候选的结构证据", "", *(f"- {line}" for line in other)]
-    for index, card in enumerate(brief.cards, 1):
+    lines += ["## 核对依据", "", *_md_items(_window_details(brief)), ""]
+    if brief.cards:
+        lines += [METRIC_NOTE, ""]
+        if omitted := omission_text(brief):
+            lines += [omitted, ""]
+    for index, card in enumerate(brief.cards):
         lines += [
+            f"### {card_role(index)} · {candidate_title(card)}",
             "",
-            f"## {index}. {card.name}",
-            "",
-            f"角色：{card.role}；与主选差异：{card.difference}；下一段方向：{card.next_leg_bias}。",
+            _card_metrics(card),
             "",
         ]
-        for condition in card.conditions:
-            lines.append(
-                f"- {condition.kind}：{condition.side} {condition.op} "
-                f"**{condition.price:.4f}**，{condition.reason}。"
-            )
-        for zone in card.target_zones:
-            lines.append(
-                f"- {zone.label}：**{zone.low:.4f}–{zone.high:.4f}**；"
-                f"来源：{', '.join(zone.methods)}。"
-            )
-        if not card.conditions and not card.target_zones:
-            lines.append("- 当前没有可用的确认、失效或目标条件。")
         if card.structure is not None:
-            lines.extend(f"- {line}" for line in structure_evidence(card.structure))
-        for warning in card.warnings:
-            lines.append(f"- {warning}")
-        if card.scenario_id in scenarios:
-            lines.extend(("", "### 规则复核", ""))
-            lines.extend(f"- {line}" for line in rule_evidence(scenarios[card.scenario_id]))
+            lines += [*_md_items(structure_evidence(card.structure)), ""]
+        if scenario := scenarios.get(card.scenario_id):
+            lines += ["#### 规则复核", "", *_md_items(rule_evidence(scenario)), ""]
     if brief.weekly is not None:
         weekly = brief.weekly
         lines += [
+            "### 周线背景",
             "",
-            "## 周线背景",
+            f"行情截至 {weekly.market_asof} · {status_text(weekly.status)}",
             "",
-            f"状态：{weekly.status}；行情截止：{weekly.market_asof}；"
-            f"窗口：{weekly.window.start} → {weekly.window.end}，{weekly.window.bar_count} 根。",
+            *(
+                f"- {card_role(index)} · {candidate_title(card)}"
+                for index, card in enumerate(weekly.cards)
+            ),
             "",
-            "| 角色 | 候选 | 浪级 | 阶段 | 父级 | 子浪 | 质量 | 覆盖 | 权重 |",
-            "| --- | --- | --- | --- | --- | --- | ---: | ---: | ---: |",
         ]
-        for card in weekly.cards:
-            lines.append(
-                f"| {card.role} | {card.name} | {card.degree} | {card.stage} | "
-                f"{_parent(card)} | {card.subwave_status} | {card.quality_score:.1f} | "
-                f"{card.coverage:.1%} | {card.relative_weight:.1%} |"
-            )
-        if not weekly.cards:
-            lines.append("| — | 当前没有达到门槛的周线候选 | — | — | — | — | — | — | — |")
-    lines += ["", "## 数据与搜索提示", ""]
-    if brief.issues:
-        for issue in brief.issues:
-            lines.append(f"- `{issue.code}`（{issue.scope}）：{issue.message}")
-    else:
-        lines.append("- 未记录额外问题。")
+    evidence = (
+        ("日周父子浪", relation_evidence(brief)),
+        ("历史条件触发记录", transition_evidence(brief)),
+        ("其他候选的结构证据", _other_structures(brief, result)),
+        ("数据与搜索提示", _display_issues(brief)),
+    )
+    for title, items in evidence:
+        if items:
+            lines += [f"### {title}", "", *_md_items(items), ""]
     lines += [
-        "",
-        "## 概率状态",
-        "",
-        f"- {brief.forecast_status}：{forecast_message(brief.forecast_status)}",
-        "",
-        f"- 源快照：`{brief.source_snapshot_id}`",
-        f"- 分析输入：`{brief.input_snapshot_id}`",
-        f"- 业务结果：`{brief.result_digest}`",
-        f"- 引擎：`{brief.engine_version}`",
+        "原始代码、精确分析字段和快照标识可查 [摘要 JSON](brief.json) 与 [规则 JSON](daily.json)。",
         "",
     ]
     return "\n".join(lines)
@@ -322,128 +279,62 @@ def brief_markdown(brief: Brief, result: AnalysisResult | None = None) -> str:
 
 def brief_html(brief: Brief, result: AnalysisResult | None = None) -> str:
     scenarios = {item.scenario_id: item for item in result.scenarios} if result else {}
-    cards = []
-    for card in brief.cards:
-        conditions = (
-            "".join(
-                f"<li>{html.escape(condition.kind)}：{html.escape(condition.side)} "
-                f"{html.escape(condition.op)} <b>{condition.price:.4f}</b>，"
-                f"{html.escape(condition.reason)}</li>"
-                for condition in card.conditions
-            )
-            or "<li>当前没有可用条件。</li>"
-        )
-        zones = (
-            "".join(
-                f"<li>{html.escape(zone.label)}：<b>{zone.low:.4f}–{zone.high:.4f}</b>；"
-                f"{html.escape(', '.join(zone.methods))}</li>"
-                for zone in card.target_zones
-            )
-            or "<li>当前没有可用目标区。</li>"
-        )
-        review = ""
-        if card.scenario_id in scenarios:
-            entries = "".join(
-                f"<li>{html.escape(line)}</li>"
-                for line in rule_evidence(scenarios[card.scenario_id])
-            )
-            review = f"<details><summary>规则复核</summary><ul>{entries}</ul></details>"
-        if card.structure is not None:
-            review += _evidence_details("展开子浪证据", structure_evidence(card.structure))
-        cards.append(
-            f"<section class='card'><h2>{html.escape(card.role)} · "
-            f"{html.escape(card.name)}</h2>"
-            f"<p>浪级 {html.escape(card.degree)} · 阶段 {html.escape(card.stage)} · "
-            f"父级 {html.escape(_parent(card))} · 子浪 {html.escape(card.subwave_status)}</p>"
-            f"<p>质量 {card.quality_score:.1f}/100 · 覆盖 {card.coverage:.1%} · "
-            f"权重 {card.relative_weight:.1%} · 差异 {html.escape(card.difference)}</p>"
-            f"<h3>条件</h3><ul>{conditions}</ul><h3>目标区</h3><ul>{zones}</ul>{review}</section>"
-        )
-    if not cards:
-        cards.append("<p>当前没有达到质量与证据门槛的候选。</p>")
-    issues = (
-        "".join(
-            f"<li><code>{html.escape(issue.code)}</code>（{html.escape(issue.scope)}）："
-            f"{html.escape(issue.message)}</li>"
-            for issue in brief.issues
-        )
-        or "<li>未记录额外问题。</li>"
+    heading = outlook_heading(brief)
+    outlook = f"<h2>{html.escape(heading)}</h2>" if heading else ""
+    cards = "".join(
+        f"<section class='card'><h3>{html.escape(title)}</h3>{_item_list(lines)}</section>"
+        for title, lines in summary_cards(brief)
     )
-    cross = ""
-    if brief.cross_timeframe is not None:
-        value = brief.cross_timeframe
-        cross = (
-            f"<p>跨周期：<b>{html.escape(value.state)}</b>；日线下一段 "
-            f"{html.escape(value.primary_bias)}；周线下一段 "
-            f"{html.escape(value.weekly_bias or '—')}。{html.escape(value.reason)}</p>"
-        )
-    window = ""
-    if brief.window_comparison is not None:
-        value = brief.window_comparison
-        window = (
-            f"<p>换窗复核：<b>{html.escape(value.state)}</b>；替代起点 "
-            f"{value.alternate_start or '—'}；根数 {value.alternate_bar_count or '—'}。"
-            f"{html.escape(value.reason)}</p>"
-        )
-    anchors = "".join(
-        f"<li>{html.escape(_anchor_text(anchor))}</li>" for anchor in brief.window.anchor_details
-    )
-    retrospective = "<p><b>回顾性重算</b>。使用显式指定的模型。</p>" if brief.retrospective else ""
+    if not cards and brief.outlook is None:
+        cards = "<p>当前没有达到规则和证据要求的候选。</p>"
+    comparisons = "".join(f"<p>{html.escape(line)}</p>" for line in comparison_text(brief))
+    retrospective = "<p>模型结果为回顾性重算。</p>" if brief.retrospective else ""
     forecasts = ""
     if brief.forecasts:
         rows = "".join(
-            f"<tr><td>{html.escape(item.event_id)}</td>"
-            f"<td>{html.escape(item.scenario_id or '标的')}</td><td>{html.escape(item.status)}</td>"
-            f"<td>{item.horizon_sessions} {html.escape(item.horizon_unit)}</td><td>"
-            + (
-                html.escape(
-                    ", ".join(f"{name}={value:.1%}" for name, value in item.probabilities.items())
-                )
-                if item.probabilities
-                else html.escape(item.reason or "—")
-            )
-            + f"</td><td>{html.escape(_forecast_evidence(item))}</td></tr>"
+            "<tr>"
+            + "".join(f"<td>{html.escape(cell)}</td>" for cell in forecast_row(brief, item))
+            + "</tr>"
             for item in brief.forecasts
         )
         forecasts = (
-            "<h2>概率模型</h2><table><thead><tr><th>事件</th><th>候选</th><th>状态</th>"
-            "<th>期限</th><th>概率</th><th>校准证据</th></tr></thead>"
-            f"<tbody>{rows}</tbody></table>"
+            "<h2>概率结果</h2><table><thead><tr><th>事件</th><th>候选</th><th>期限</th>"
+            f"<th>状态</th><th>概率</th></tr></thead><tbody>{rows}</tbody></table>"
         )
-    previous = ""
-    if brief.previous is not None:
-        value = brief.previous
-        previous = (
-            f"<p>上次判断：<b>{html.escape(value.change)}</b>；"
-            f"{html.escape(value.reason)}；上次行情截止 "
-            f"{value.previous_market_asof or '—'}。</p>"
+
+    evidence = [_evidence_details("分析范围和起点", _window_details(brief))]
+    for index, card in enumerate(brief.cards):
+        lines = _evidence_details(
+            "子浪证据", structure_evidence(card.structure) if card.structure is not None else ()
         )
-    if brief.previous and brief.previous.triggered_conditions:
-        conditions = ", ".join(
-            f"{c.kind} {c.side} {c.op} {c.price:.4f}" for c in brief.previous.triggered_conditions
+        if scenario := scenarios.get(card.scenario_id):
+            lines += _evidence_details("规则复核", rule_evidence(scenario))
+        title = f"{card_role(index)} · {candidate_title(card)}"
+        evidence.append(
+            f"<section><h3>{html.escape(title)}</h3><p>{html.escape(_card_metrics(card))}</p>{lines}</section>"
         )
-        previous += f"<p>上次已触发的条件 · {html.escape(conditions)}</p>"
-    weekly = ""
-    if brief.weekly is not None:
-        value = brief.weekly
-        rows = (
-            "".join(
-                f"<tr><td>{html.escape(card.role)}</td><td>{html.escape(card.name)}</td>"
-                f"<td>{html.escape(card.degree)}</td><td>{html.escape(card.stage)}</td>"
-                f"<td>{html.escape(_parent(card))}</td><td>{html.escape(card.subwave_status)}</td>"
-                f"<td>{card.quality_score:.1f}</td><td>{card.coverage:.1%}</td>"
-                f"<td>{card.relative_weight:.1%}</td></tr>"
-                for card in value.cards
+    if weekly := brief.weekly:
+        evidence.append(
+            _evidence_details(
+                "周线背景",
+                (
+                    f"行情截至 {weekly.market_asof} · {status_text(weekly.status)}",
+                    *(
+                        f"{card_role(index)} · {candidate_title(card)}"
+                        for index, card in enumerate(weekly.cards)
+                    ),
+                ),
             )
-            or "<tr><td colspan='9'>当前没有达到门槛的周线候选</td></tr>"
         )
-        weekly = (
-            f"<h2>周线背景</h2><p>状态 {html.escape(value.status)} · 行情截止 "
-            f"{value.market_asof} · 窗口 {value.window.start} → {value.window.end}</p>"
-            "<table><thead><tr><th>角色</th><th>候选</th><th>浪级</th><th>阶段</th>"
-            "<th>父级</th><th>子浪</th><th>质量</th><th>覆盖</th><th>权重</th></tr></thead>"
-            f"<tbody>{rows}</tbody></table>"
+    evidence.extend(
+        (
+            _evidence_details("日周父子浪", relation_evidence(brief)),
+            _evidence_details("历史条件触发记录", transition_evidence(brief)),
+            _evidence_details("其他候选的结构证据", _other_structures(brief, result)),
+            _evidence_details("数据与搜索提示", _display_issues(brief)),
         )
+    )
+    metrics = f"<p>{METRIC_NOTE}</p>" if brief.cards else ""
     return f"""<!doctype html>
 <html lang="zh"><meta charset="utf-8">
 <title>{html.escape(brief.symbol)} · EliotBot 收盘摘要</title>
@@ -452,43 +343,34 @@ body{{font:15px/1.55 system-ui,sans-serif;margin:0;background:#f4f7fa;color:#1b2
 main{{max-width:1100px;margin:24px auto;padding:0 18px}}
 header{{background:#12324a;color:#fff;padding:22px;border-radius:10px}}
 .card{{background:#fff;border:1px solid #d8e2ea;border-radius:10px;padding:16px;margin:14px 0}}
-code{{overflow-wrap:anywhere}} .muted{{color:#5a6b7b}}
 table{{border-collapse:collapse;width:100%;background:#fff}}
 th,td{{border:1px solid #d8e2ea;padding:8px;text-align:left}}
 </style>
 <main><header><h1>{html.escape(brief.symbol)} · 收盘摘要</h1>
-<p>行情截止 {brief.market_asof} · 周期 {html.escape(brief.timeframe)} ·
-状态 {html.escape(brief.status)} · 分析价格 {brief.latest_price:.4f}</p>
-<p>来源 <code>{html.escape(brief.feed)}</code> · 调整口径
-<code>{html.escape(brief.adjustment)}</code></p>
-<p>数据模式 <code>{html.escape(brief.mode)}</code> ·
-决策截止 <time datetime="{brief.as_of.isoformat()}">{brief.as_of.isoformat()}</time></p>
-<p>{html.escape(brief.timeframe_reason or "")}</p></header>
-<p class="muted">候选权重不是成功概率。{html.escape(forecast_message(brief.forecast_status))}</p>
+<p>{html.escape(timeframe_text(brief.timeframe))} · 行情截至 {brief.market_asof} ·
+{html.escape(status_text(brief.status))}</p>
+<p>{html.escape(mode_text(brief.mode))} · {html.escape(feed_text(brief.feed))} ·
+{html.escape(adjustment_text(brief.adjustment))}</p>
+<p>分析价格 {price_text(brief.latest_price)}</p></header>
+{outlook}{cards}{comparisons}{retrospective}
+<p>{html.escape(forecast_message(brief.forecast_status))}</p>{forecasts}
 <p><a href="daily.html">打开 K 线图</a></p>
-<h2>分析窗口</h2>
-<p>{brief.window.start} → {brief.window.end} · {brief.window.bar_count} 根 ·
-锚点 {html.escape(", ".join(str(day) for day in brief.window.anchors) or "—")} ·
-首选结构起点 {brief.window.primary_pattern_start or "—"}</p>
-{f"<ul>{anchors}</ul>" if anchors else ""}
-{cross}{window}{previous}{retrospective}{forecasts}{weekly}
-{_evidence_details("日周父子浪", relation_evidence(brief))}
-{_evidence_details("条件回放证据", transition_evidence(brief))}
-{"".join(cards)}
-{_evidence_details("其他候选的结构证据", _other_structures(brief, result))}
-<p>{html.escape(omission_text(brief))}</p>
-<h2>数据与搜索提示</h2><ul>{issues}</ul>
-<p class="muted">源快照 <code>{html.escape(brief.source_snapshot_id)}</code> ·
-分析输入 <code>{html.escape(brief.input_snapshot_id)}</code> ·
-引擎 <code>{html.escape(brief.engine_version)}</code></p>
+<h2>核对依据</h2>{metrics}<p>{html.escape(omission_text(brief))}</p>
+{"".join(evidence)}
+<p><a href="brief.json">原始摘要 JSON</a> · <a href="daily.json">分析与规则 JSON</a></p>
 </main></html>"""
+
+
+def _item_list(lines: tuple[str, ...]) -> str:
+    if not lines:
+        return ""
+    return "<ul>" + "".join(f"<li>{html.escape(line)}</li>" for line in lines) + "</ul>"
 
 
 def _evidence_details(title: str, lines: tuple[str, ...]) -> str:
     if not lines:
         return ""
-    items = "".join(f"<li>{html.escape(line)}</li>" for line in lines)
-    return f"<details><summary>{html.escape(title)}</summary><ul>{items}</ul></details>"
+    return f"<details><summary>{html.escape(title)}</summary>{_item_list(lines)}</details>"
 
 
 def read_brief_report(
@@ -571,11 +453,7 @@ def publish_brief(
         run.brief.brief_digest,
         formats,
         renderer,
-        "brief-render-v4"
-        if formats and run.brief.schema_version == "1.2"
-        else "brief-render-v3"
-        if formats
-        else "brief-render-v2",
+        BRIEF_TEXT_RENDER_VERSION if formats else "brief-render-v2",
     ]
     if renderer == "plotly" and "html" in formats:
         render_identity.append(PLOTLY_RENDER_VERSION)

@@ -19,8 +19,10 @@ from eliotbot.evaluation.features import (
     decision_features,
     event_feature_order,
     feature_vector,
+    outlook_features,
 )
 from eliotbot.schemas.brief import BriefForecast
+from eliotbot.schemas.outlook import BriefOutlook
 from eliotbot.util import atomic_write, digest
 
 CLOSE_EVENTS = {
@@ -28,12 +30,17 @@ CLOSE_EVENTS = {
     "CLOSE_BAND_20D_V1",
     "CLOSE_BAND_5W_V1",
     "CLOSE_BAND_20W_V1",
+    "CLOSE_BAND_2W_V1",
 }
 CANDIDATE_EVENTS = {
     "CONFIRM_FIRST_20D_V1",
     "TARGET_FIRST_20D_V1",
     "CONFIRM_FIRST_8W_V1",
     "TARGET_FIRST_8W_V1",
+    "ADVANCE_FIRST_5D_V1",
+    "ADVANCE_FIRST_2W_V1",
+    "OUTLOOK_TARGET_FIRST_5D_V1",
+    "OUTLOOK_TARGET_FIRST_2W_V1",
 }
 
 
@@ -42,6 +49,8 @@ def event_horizon(event_id: str) -> int:
         return 20
     if "8W" in event_id:
         return 8
+    if "2W" in event_id:
+        return 2
     return 5
 
 
@@ -65,10 +74,29 @@ def validate_model(model: dict, *, operational: bool = False) -> dict:
         or len(set(symbols)) != len(symbols)
     ):
         raise ValueError("MODEL_INVALID: invalid scoped symbols")
+    scope = model.get("scope") or {}
+    new_outlook_events = {
+        event_id
+        for event_id in models
+        if event_id.startswith(("ADVANCE_FIRST_", "OUTLOOK_TARGET_FIRST_"))
+    }
+    new_close_event = "CLOSE_BAND_2W_V1" in models
+    if new_outlook_events or new_close_event:
+        if len(models) != 1:
+            raise ValueError("MODEL_INVALID: a new outlook model must contain exactly one event")
+        if scope.get("outlook_version") != "1.0":
+            raise ValueError("MODEL_INVALID: new outlook model requires outlook_version 1.0")
+        if new_close_event:
+            if scope.get("outlook_slot") != "SYMBOL":
+                raise ValueError("MODEL_INVALID: close event requires outlook_slot SYMBOL")
+        elif scope.get("outlook_slot") not in {"PRIMARY", "ALTERNATE_1", "ALTERNATE_2"}:
+            raise ValueError("MODEL_INVALID: new outlook model requires a card outlook_slot")
     release = model.get("release")
     if operational and any(
         entry.get("status") == "APPROVED" for entry in models.values() if isinstance(entry, dict)
     ):
+        if model.get("operational_allowed") is False:
+            raise ValueError("MODEL_INVALID: retrospective score is not operational")
         scope = model.get("scope") or {}
         if (
             model.get("feature_version") not in SUPPORTED_FEATURE_VERSIONS
@@ -93,6 +121,38 @@ def validate_model(model: dict, *, operational: bool = False) -> dict:
             raise ValueError(
                 "MODEL_INVALID: missing current release evidence or single-cohort scope"
             )
+        if new_outlook_events or new_close_event:
+            source = model.get("holdout_source_sha256")
+            evidence = model.get("forward_evidence") or {}
+            if (
+                not isinstance(scope.get("symbols"), list)
+                or not scope["symbols"]
+                or not model.get("frozen_candidate_id")
+                or not isinstance(source, str)
+                or len(source) != 64
+                or any(character not in "0123456789abcdef" for character in source)
+                or model.get("data_status") != "SEALED_FORWARD_HOLDOUT"
+                or model.get("study_mode") != "DECISION_TIME"
+                or model.get("operational_allowed") is not True
+                or not isinstance(evidence, dict)
+                or not all(
+                    isinstance(evidence.get(key), str)
+                    and len(evidence[key]) == 64
+                    and all(character in "0123456789abcdef" for character in evidence[key])
+                    for key in ("seal_id", "receipt_sha256")
+                )
+                or not isinstance(evidence.get("receipt_count"), int)
+                or evidence["receipt_count"] <= 0
+            ):
+                raise ValueError("MODEL_INVALID: new outlook model lacks frozen holdout provenance")
+            try:
+                frozen_at = _parse_time(model["frozen_at"])
+                sealed_at = _parse_time(evidence["sealed_at"])
+                test_start = date.fromisoformat(model["splits"]["test"]["start"])
+            except (KeyError, TypeError, ValueError) as exc:
+                raise ValueError("MODEL_INVALID: invalid frozen holdout provenance dates") from exc
+            if frozen_at > sealed_at or sealed_at.date() >= test_start:
+                raise ValueError("MODEL_INVALID: holdout was not sealed before the test")
     for event_id, entry in models.items():
         if not isinstance(entry, dict):
             raise ValueError(f"MODEL_INVALID: {event_id} entry must be an object")
@@ -401,6 +461,8 @@ class ModelRegistry:
         adjustment: str | None = None,
         market: str | None = None,
         symbol: str | None = None,
+        outlook_version: str | None = None,
+        outlook_slot: str | None = None,
     ) -> bool:
         if (
             engine_version
@@ -411,7 +473,7 @@ class ModelRegistry:
         if config_hash and model.get("config_hash") and model["config_hash"] != config_hash:
             return False
         scope_info = model.get("scope") or {}
-        if scope_info.get("symbols") and symbol not in scope_info["symbols"]:
+        if symbol and scope_info.get("symbols") and symbol not in scope_info["symbols"]:
             return False
         if market and scope_info.get("markets") and market not in scope_info["markets"]:
             return False
@@ -430,6 +492,14 @@ class ModelRegistry:
             and scope_info.get("adjustment")
             and adjustment not in scope_info["adjustment"]
         ):
+            return False
+        if (
+            outlook_version
+            and scope_info.get("outlook_version")
+            and scope_info["outlook_version"] != outlook_version
+        ):
+            return False
+        if outlook_slot and scope_info.get("outlook_slot") not in {None, outlook_slot}:
             return False
         return True
 
@@ -472,12 +542,96 @@ class ModelRegistry:
                 }
         return None
 
+    def active_models_at(self, at, scope: str = "default", **filters) -> list[dict]:
+        """Return every model approved and not withdrawn at ``at``, newest first."""
+        when = _parse_time(at)
+        entry = self._read().get("scopes", {}).get(scope)
+        if entry is None:
+            return []
+        events = self._seed_history(entry)
+        active: dict[str, dict] = {}
+        for event in sorted(events, key=lambda item: _parse_time(item["at"])):
+            event_at = _parse_time(event["at"])
+            if event_at > when:
+                break
+            if event["action"] == "APPROVED":
+                active[event["model_id"]] = event
+            else:
+                active.pop(event["model_id"], None)
+        candidates = sorted(
+            active.values(), key=lambda event: _parse_time(event["at"]), reverse=True
+        )
+        result = []
+        seen = set()
+        for event in candidates:
+            model = self._load_record(event, **filters)
+            if model is None or model.get("model_id") in seen:
+                continue
+            seen.add(model["model_id"])
+            result.append(
+                {
+                    "model": model,
+                    "model_id": model["model_id"],
+                    "approved_at": event["at"],
+                    "path": event.get("path"),
+                }
+            )
+        return result
+
     def load_at(self, at, scope: str = "default", **filters) -> dict | None:
         active = self.active_at(at, scope, **filters)
         return None if active is None else active["model"]
 
     def load(self, scope: str = "default", **filters) -> dict | None:
         return self.load_at(datetime.now(UTC), scope, **filters)
+
+    def active_event_at(
+        self,
+        at,
+        event_id: str,
+        outlook_slot: str | None = None,
+        scope: str = "default",
+        **filters,
+    ) -> dict | None:
+        """Return the latest active model that contains ``event_id`` and slot."""
+        when = _parse_time(at)
+        entry = self._read().get("scopes", {}).get(scope)
+        if entry is None:
+            return None
+        events = self._seed_history(entry)
+        active: dict[str, dict] = {}
+        for event in sorted(events, key=lambda item: _parse_time(item["at"])):
+            event_at = _parse_time(event["at"])
+            if event_at > when:
+                break
+            if event["action"] == "APPROVED":
+                active[event["model_id"]] = event
+            else:
+                active.pop(event["model_id"], None)
+        candidates = sorted(
+            active.values(), key=lambda event: _parse_time(event["at"]), reverse=True
+        )
+        for event in candidates:
+            model = self._load_record(event, **filters)
+            if model is None or event_id not in (model.get("models") or {}):
+                continue
+            model_slot = (model.get("scope") or {}).get("outlook_slot")
+            if outlook_slot is not None and model_slot not in {None, outlook_slot}:
+                continue
+            return {
+                "model": model,
+                "model_id": model["model_id"],
+                "approved_at": event["at"],
+                "path": event.get("path"),
+                "event_id": event_id,
+                "outlook_slot": model_slot,
+                "entry": model["models"][event_id],
+            }
+        return None
+
+    def load_event_at(self, at, event_id: str, outlook_slot: str | None = None, **filters):
+        active = self.active_event_at(at, event_id, outlook_slot, **filters)
+        return None if active is None else active["model"]
 
 
 def _bin_supported(value: float, supported: list[dict]) -> bool:
@@ -491,23 +645,163 @@ def forecasts_for_brief(
     result,
     prepared,
     indicators,
-    model: dict | None,
+    model: dict | None = None,
     *,
+    models: tuple[dict, ...] | list[dict] | None = None,
     qualified=None,
     weekly=None,
     candidate_ids: set[str] | None = None,
+    outlook: BriefOutlook | None = None,
+    wave_relations=(),
+    window_state: str | None = None,
 ) -> tuple[BriefForecast, ...]:
-    if model is None or not ModelRegistry._compatible(
-        model, symbol=result.instrument.canonical_symbol
-    ):
+    model_list = list(models) if models is not None else ([model] if model is not None else [])
+    model_list = [
+        item
+        for item in model_list
+        if item is not None
+        and ModelRegistry._compatible(item, symbol=result.instrument.canonical_symbol)
+    ]
+    if not model_list:
         return ()
     scenarios = result.scenarios if qualified is None else qualified
     decision = decision_features(result, prepared, indicators, qualified=scenarios, weekly=weekly)
     atr = float(indicators.atr[-1])
+    selections: dict[tuple[str, str | None], tuple[dict, dict]] = {}
+    for candidate_model in model_list:
+        for event_id, entry in candidate_model["models"].items():
+            if (result.timeframe, _horizon_unit(event_id)) not in {
+                ("1d", "SESSIONS"),
+                ("1w", "WEEKS"),
+            }:
+                continue
+            new_event = event_id.startswith(("ADVANCE_FIRST_", "OUTLOOK_TARGET_FIRST_"))
+            slot = (candidate_model.get("scope") or {}).get("outlook_slot") if new_event else None
+            selections.setdefault((event_id, slot), (candidate_model, entry))
+
     forecasts = []
-    for event_id, entry in model["models"].items():
-        if (result.timeframe, _horizon_unit(event_id)) not in {("1d", "SESSIONS"), ("1w", "WEEKS")}:
+    for (event_id, model_slot), (active_model, entry) in selections.items():
+        scope = active_model.get("scope")
+        model_id = active_model.get("model_id")
+        calibration_end = ((active_model.get("splits") or {}).get("calibration") or {}).get("end")
+        if event_id.startswith(("ADVANCE_FIRST_", "OUTLOOK_TARGET_FIRST_")):
+            slot = model_slot
+            case = next(
+                (
+                    item
+                    for item in (outlook.cases if outlook is not None else ())
+                    if item.slot == slot
+                ),
+                None,
+            )
+            if case is None:
+                forecasts.append(
+                    BriefForecast(
+                        event_id=event_id,
+                        horizon_sessions=event_horizon(event_id),
+                        horizon_unit=_horizon_unit(event_id),
+                        model_id=model_id,
+                        status="UNDEFINED_EVENT",
+                        reason="OUTLOOK_UNAVAILABLE: 没有匹配的推演卡片",
+                        outlook_version=outlook.version if outlook is not None else None,
+                        outlook_slot=slot,
+                        scope=scope,
+                    )
+                )
+                continue
+            scenario = next(
+                (item for item in scenarios if item.scenario_id == case.scenario_id),
+                None,
+            )
+            attrs = dict(
+                event_id=event_id,
+                horizon_sessions=event_horizon(event_id),
+                horizon_unit=_horizon_unit(event_id),
+                model_id=model_id,
+                scenario_id=case.scenario_id,
+                outlook_version=outlook.version if outlook is not None else None,
+                outlook_slot=case.slot,
+                sample_count=entry.get("test_rows"),
+                calibration_end=calibration_end,
+                scope=scope,
+            )
+            status = entry["status"]
+            if status != "APPROVED":
+                forecasts.append(
+                    BriefForecast(
+                        **attrs,
+                        status=status,
+                        reason=entry.get("reason") or ", ".join(entry.get("reasons", [])) or None,
+                    )
+                )
+                continue
+            event_state = next((item for item in case.events if item.event_id == event_id), None)
+            if event_state is None or event_state.state != "DEFINED":
+                forecasts.append(
+                    BriefForecast(
+                        **attrs,
+                        status="UNDEFINED_EVENT",
+                        reason=(event_state.reason if event_state is not None else "事件未定义")
+                        or "事件未定义",
+                    )
+                )
+                continue
+            if (
+                scenario is None
+                or result.status not in {"OK", "UNCLEAR"}
+                or not math.isfinite(atr)
+                or atr <= 0
+            ):
+                forecasts.append(
+                    BriefForecast(
+                        **attrs, status="INSUFFICIENT_EVIDENCE", reason="决策输入不足或搜索未完成"
+                    )
+                )
+                continue
+            candidate = candidate_features(
+                scenario,
+                prepared.bars[-1].close,
+                atr,
+                rank=("PRIMARY", "ALTERNATE_1", "ALTERNATE_2").index(case.slot) + 1,
+            )
+            candidate.update(
+                outlook_features(
+                    case,
+                    scenario,
+                    prepared.bars[-1].close,
+                    atr,
+                    wave_relations=wave_relations,
+                    window_state=window_state,
+                )
+            )
+            vector = feature_vector(entry["feature_order"], decision, candidate)
+            normal = (np.asarray([vector]) - np.asarray(entry["mean"])) / np.asarray(entry["scale"])
+            weights = np.asarray(entry["weights"]).reshape(len(vector), len(entry["classes"]))
+            probabilities = predict(
+                normal, weights, np.asarray(entry["intercept"]), entry.get("temperature", 1.0)
+            )[0]
+            if not np.isfinite(probabilities).all():
+                forecasts.append(
+                    BriefForecast(**attrs, status="MODEL_INVALID", reason="模型返回非有限值")
+                )
+                continue
+            probability_map = dict(zip(entry["classes"], map(float, probabilities), strict=True))
+            support = entry.get("support_bins")
+            if support is not None and any(
+                not _bin_supported(value, support.get(name, []))
+                for name, value in probability_map.items()
+            ):
+                forecasts.append(
+                    BriefForecast(
+                        **attrs, status="UNSUPPORTED_BIN", reason="概率落入未获支持的档位"
+                    )
+                )
+                continue
+            forecasts.append(
+                BriefForecast(**attrs, status="APPROVED", probabilities=probability_map)
+            )
             continue
+
         candidates = event_id in CANDIDATE_EVENTS
         targets = (
             [
@@ -523,12 +817,14 @@ def forecasts_for_brief(
                 event_id=event_id,
                 horizon_sessions=event_horizon(event_id),
                 horizon_unit=_horizon_unit(event_id),
-                model_id=model.get("model_id"),
+                model_id=model_id,
                 scenario_id=scenario.scenario_id if scenario else None,
                 sample_count=entry.get("test_rows"),
-                calibration_end=((model.get("splits") or {}).get("calibration") or {}).get("end"),
-                scope=model.get("scope"),
+                calibration_end=calibration_end,
+                scope=scope,
             )
+            if event_id == "CLOSE_BAND_2W_V1":
+                attrs.update({"outlook_version": "1.0", "outlook_slot": "SYMBOL"})
             status = entry["status"]
             if status != "APPROVED":
                 forecasts.append(

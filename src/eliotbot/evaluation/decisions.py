@@ -15,18 +15,29 @@ import pyarrow.parquet as pq
 
 from eliotbot.brief import BriefRun, build_brief, compare_decisions
 from eliotbot.config import Settings
+from eliotbot.data.adjustment import provider_price_scale
 from eliotbot.data.periods import as_weekly
 from eliotbot.data.snapshots import SnapshotStore
 from eliotbot.engine.indicators import calculate
 from eliotbot.engine.zigzag import extract
 from eliotbot.errors import DataError, InputError
+from eliotbot.evaluation.events import EVENT_SPECS
 from eliotbot.evaluation.features import (
     FEATURE_VERSION,
     SUPPORTED_FEATURE_VERSIONS,
     candidate_features,
     decision_features,
+    outlook_features,
 )
-from eliotbot.evaluation.outcomes import close_band, first_touch, outcome_window, period_dates
+from eliotbot.evaluation.forward import live_reports
+from eliotbot.evaluation.outcomes import (
+    close_band,
+    evaluate_outlook_event,
+    first_touch,
+    outcome_window,
+    outlook_window,
+    period_dates,
+)
 from eliotbot.forecast import (
     ModelRegistry,
     event_horizon,
@@ -35,6 +46,7 @@ from eliotbot.forecast import (
     validate_approval_time,
 )
 from eliotbot.schemas.market import AnalysisRequest, MarketDataBundle
+from eliotbot.schemas.outlook import OutlookCase, OutlookPeriod
 from eliotbot.service import engine_rules_version
 from eliotbot.util import atomic_write, canonical_json, digest
 
@@ -47,6 +59,11 @@ SUPPORTED_EVENTS = {
     "CLOSE_BAND_20W_V1",
     "CONFIRM_FIRST_8W_V1",
     "TARGET_FIRST_8W_V1",
+    "CLOSE_BAND_2W_V1",
+    "ADVANCE_FIRST_5D_V1",
+    "ADVANCE_FIRST_2W_V1",
+    "OUTLOOK_TARGET_FIRST_5D_V1",
+    "OUTLOOK_TARGET_FIRST_2W_V1",
 }
 DAILY_EVENTS = {event for event in SUPPORTED_EVENTS if event.endswith("D_V1")}
 WEEKLY_EVENTS = {event for event in SUPPORTED_EVENTS if event.endswith("W_V1")}
@@ -64,6 +81,36 @@ EVENT_SUCCESS.update(
     {
         event: ("CONFIRMED_FIRST", {"CONFIRMED_FIRST", "INVALIDATED_FIRST", "EXPIRED"})
         for event in ("CONFIRM_FIRST_20D_V1", "CONFIRM_FIRST_8W_V1")
+    }
+)
+EVENT_SUCCESS.update(
+    {
+        event: (
+            "TARGET_FIRST",
+            {
+                "TARGET_FIRST",
+                "INVALIDATED_FIRST",
+                "STAGE_EXIT_FIRST",
+                "AMBIGUOUS_SAME_BAR",
+                "EXPIRED",
+            },
+        )
+        for event in ("OUTLOOK_TARGET_FIRST_5D_V1", "OUTLOOK_TARGET_FIRST_2W_V1")
+    }
+)
+EVENT_SUCCESS.update(
+    {
+        event: (
+            "CONFIRMED_FIRST",
+            {
+                "CONFIRMED_FIRST",
+                "INVALIDATED_FIRST",
+                "STAGE_EXIT_FIRST",
+                "AMBIGUOUS_SAME_BAR",
+                "EXPIRED",
+            },
+        )
+        for event in ("ADVANCE_FIRST_5D_V1", "ADVANCE_FIRST_2W_V1")
     }
 )
 
@@ -291,29 +338,131 @@ def _structure_stats(decisions: list[dict]) -> dict:
     }
 
 
-def _event_rows(protocol, decision, source, prepared, qualified, atr):
+def _window_source_hash(window, outcome, *, close_horizon: int | None = None) -> str:
+    if close_horizon is not None:
+        used = (window.close_bar(close_horizon),) if outcome.value is not None else ()
+    else:
+        used = tuple(
+            bar
+            for day, bar in zip(window.dates, window.bars, strict=True)
+            if outcome.session is None or day <= outcome.session
+        )
+    return digest(
+        [bar.model_dump(mode="json", exclude={"observed_at"}) for bar in used if bar is not None]
+    )
+
+
+def _event_rows(protocol, decision, source, prepared, qualified, atr, *, price_scale=1.0):
     rows = []
+    outlook = decision.get("outlook") or {}
+    frozen_periods = tuple(
+        OutlookPeriod.model_validate(period) for period in (outlook.get("periods") or ())
+    )
     for event_id in protocol["events"]:
         if event_id not in (DAILY_EVENTS if prepared.timeframe == "1d" else WEEKLY_EVENTS):
             continue
         horizon = event_horizon(event_id)
         cutoff = protocol["grid"].get("outcome_as_of")
-        window = outcome_window(
-            source,
-            prepared.bars[-1].session_date,
-            horizon,
-            outcome_as_of=date.fromisoformat(cutoff) if cutoff else None,
+        frozen_event = event_id == "CLOSE_BAND_2W_V1" or event_id.startswith(
+            ("ADVANCE_FIRST_", "OUTLOOK_TARGET_FIRST_")
         )
+        if frozen_event and (outlook.get("status") != "AVAILABLE" or not frozen_periods):
+            continue
+        if frozen_event and frozen_periods:
+            window = outlook_window(
+                source,
+                prepared.bars[-1].session_date,
+                frozen_periods,
+                horizon,
+                issuance_factors=prepared.factors,
+                outcome_as_of=date.fromisoformat(cutoff) if cutoff else None,
+                price_scale=price_scale,
+            )
+        else:
+            window = outcome_window(
+                source,
+                prepared.bars[-1].session_date,
+                horizon,
+                outcome_as_of=date.fromisoformat(cutoff) if cutoff else None,
+            )
         current = prepared.bars[-1].close
         is_close = event_id.startswith("CLOSE_BAND_")
         targets = [(0, None)] if is_close else enumerate(qualified, 1)
         due_date = window.dates[-1] if len(window.dates) == horizon else None
-        due_bar = (
-            next((bar for bar in source.bars if bar.session_date == due_date), None)
-            if due_date is not None
-            else None
-        )
+        if frozen_event:
+            due_bar = (
+                window.close_bar(horizon)
+                if is_close
+                else (window.bars[horizon - 1] if due_date is not None else None)
+            )
+        else:
+            due_bar = (
+                next((bar for bar in source.bars if bar.session_date == due_date), None)
+                if due_date is not None
+                else None
+            )
         label_available_at = due_bar.usable_at.isoformat() if due_bar is not None else None
+        spec = EVENT_SPECS.get(event_id)
+        if (
+            spec is not None
+            and spec.scope == "CARD"
+            and event_id.startswith(("ADVANCE_FIRST", "OUTLOOK_TARGET_FIRST"))
+        ):
+            outlook = decision.get("outlook") or {}
+            by_id = {scenario.scenario_id: scenario for scenario in qualified}
+            for case_data in outlook.get("cases", []):
+                case = OutlookCase.model_validate(case_data)
+                outcome = evaluate_outlook_event(spec, case, window)
+                scenario = by_id.get(case.scenario_id)
+                features = None
+                if scenario is not None:
+                    features = candidate_features(
+                        scenario,
+                        current,
+                        atr,
+                        rank=("PRIMARY", "ALTERNATE_1", "ALTERNATE_2").index(case.slot) + 1,
+                    )
+                    features.update(
+                        outlook_features(
+                            case,
+                            scenario,
+                            current,
+                            atr,
+                            wave_relations=decision.get("wave_relations", ()),
+                            window_state=(decision.get("window_comparison") or {}).get("state"),
+                        )
+                    )
+                rows.append(
+                    {
+                        "decision_id": decision["decision_id"],
+                        "symbol": decision["symbol"],
+                        "as_of": decision["as_of"],
+                        "event_id": event_id,
+                        "horizon": horizon,
+                        "due_date": str(due_date) if due_date is not None else None,
+                        "label_available_at": label_available_at,
+                        "candidate_key": case.scenario_id,
+                        "structure_key": case.structure_key,
+                        "slot": case.slot,
+                        "outlook_version": outlook.get("version"),
+                        "event_state": next(
+                            (item.state for item in case.events if item.event_id == event_id),
+                            "UNDEFINED",
+                        ),
+                        "reason": next(
+                            (item.reason for item in case.events if item.event_id == event_id),
+                            None,
+                        ),
+                        "status": outcome.status,
+                        "session": str(outcome.session) if outcome.session else None,
+                        "value": outcome.value,
+                        "triggers": list(outcome.evidence),
+                        "period_sessions": [list(item) for item in window.period_sessions],
+                        "source_hash": _window_source_hash(window, outcome),
+                        "features": features,
+                    }
+                )
+            continue
         for rank, scenario in targets:
             outcome = (
                 close_band(window, current, atr, horizon)
@@ -335,6 +484,11 @@ def _event_rows(protocol, decision, source, prepared, qualified, atr):
                     "status": outcome.status,
                     "session": str(outcome.session) if outcome.session else None,
                     "value": outcome.value,
+                    "triggers": list(outcome.evidence),
+                    "period_sessions": [list(item) for item in window.period_sessions],
+                    "source_hash": _window_source_hash(
+                        window, outcome, close_horizon=horizon if is_close else None
+                    ),
                     "features": candidate_features(scenario, current, atr, rank=rank)
                     if scenario
                     else None,
@@ -480,8 +634,12 @@ def evaluate_protocol(
     model_registry: Path | None = None,
     model: Path | None = None,
     model_approved_at: str | None = None,
+    issued_reports: Path | None = None,
 ) -> dict:
     protocol = _load_protocol(protocol_path)
+    receipts = live_reports(issued_reports) if issued_reports is not None else None
+    if receipts is not None and protocol.get("data_status") != "SEALED_FORWARD_HOLDOUT":
+        raise InputError("Live reports require a sealed forward holdout protocol")
     protocol_hash = hashlib.sha256(protocol_path.read_bytes()).hexdigest()
     package = Path(__file__).resolve().parents[1]
     source_sha256 = digest(
@@ -561,16 +719,44 @@ def evaluate_protocol(
                 )
                 previous_pivots = previous_decision = None
                 continue
+            receipt = receipts.get((symbol, timeframe, str(decision_day))) if receipts else None
+            if receipts is not None and receipt is None:
+                raise InputError(f"No live decision receipt for {symbol} on {decision_day}")
+            issue_source = store.load(receipt.source_snapshot_id) if receipt is not None else bundle
+            decision_cutoff = receipt.as_of if receipt is not None else decision_bar.usable_at
             request = AnalysisRequest(
                 symbol=symbol,
-                as_of=decision_bar.usable_at,
-                end=decision_bar.session_date,
-                mode="FROZEN_DATA_REPLAY",
+                as_of=decision_cutoff,
+                end=decision_bar.session_date if receipt is None else None,
+                mode="LIVE" if receipt is not None else "FROZEN_DATA_REPLAY",
                 timeframe=timeframe,
                 allow_gaps=protocol.get("allow_gaps", False),
             )
             try:
-                run = build_brief(request, bundle, settings, check_windows=advanced)
+                run = build_brief(
+                    request,
+                    issue_source,
+                    settings,
+                    include_weekly=receipt is None or receipt.weekly_state != "NOT_REQUESTED",
+                    check_windows=advanced
+                    if receipt is None
+                    else (
+                        receipt.window_comparison is not None
+                        and receipt.window_comparison.reason != "未启用换窗复核"
+                    ),
+                )
+                if receipt is not None and (
+                    run.result.result_digest != receipt.result_digest
+                    or run.brief.outlook != receipt.outlook
+                    or run.brief.window_comparison != receipt.window_comparison
+                    or run.brief.wave_relations != receipt.wave_relations
+                    or run.brief.weekly != receipt.weekly
+                    or receipt.feed != bundle.provenance.feed
+                    or receipt.adjustment != bundle.provenance.adjustment
+                ):
+                    raise InputError(
+                        f"Live decision differs from evaluation inputs for {symbol} on {decision_day}"
+                    )
                 prepared, result, weekly = run.prepared, run.result, run.weekly_result
                 analyzable = result.status not in {"INSUFFICIENT_DATA", "STALE_DATA"}
                 indicators = calculate(prepared.bars)
@@ -584,30 +770,39 @@ def evaluate_protocol(
                     market=bundle.instrument.market,
                     symbol=bundle.instrument.canonical_symbol,
                 )
+                active_models: tuple[dict, ...] = ()
                 if forced_model is not None and ModelRegistry._compatible(forced_model, **filters):
-                    active_model = forced_model
+                    active_models = (forced_model,)
                     active_approved_at = (
                         forced_approved_at.isoformat() if forced_approved_at else None
                     )
                     retrospective = (
-                        forced_approved_at is None or decision_bar.usable_at < forced_approved_at
+                        forced_approved_at is None or decision_cutoff < forced_approved_at
                     )
                 elif registry is not None:
-                    active = registry.active_at(decision_bar.usable_at, **filters)
-                    active_model = active["model"] if active else None
-                    active_approved_at = active["approved_at"] if active else None
+                    active = registry.active_models_at(decision_cutoff, **filters)
+                    active_models = tuple(item["model"] for item in active)
+                    active_approved_at = active[0]["approved_at"] if active else None
                     retrospective = False
                 else:
-                    active_model = None
                     active_approved_at = None
                     retrospective = False
                 forecasts = forecasts_for_brief(
                     result,
                     prepared,
                     indicators,
-                    active_model,
+                    models=active_models,
                     qualified=run.qualified,
                     weekly=weekly,
+                    outlook=run.brief.outlook,
+                    wave_relations=tuple(
+                        item.model_dump(mode="json") for item in run.brief.wave_relations
+                    ),
+                    window_state=(
+                        run.brief.window_comparison.state
+                        if run.brief.window_comparison is not None
+                        else None
+                    ),
                 )
                 pivots = _confirmed_pivots(
                     prepared.bars,
@@ -705,9 +900,18 @@ def evaluate_protocol(
                     "wave_relations": tuple(
                         item.model_dump(mode="json") for item in run.brief.wave_relations
                     ),
-                    "model_id": (
-                        active_model.get("model_id") if active_model is not None else None
+                    "outlook": (
+                        run.brief.outlook.model_dump(mode="json")
+                        if run.brief.outlook is not None
+                        else None
                     ),
+                    "window_comparison": (
+                        run.brief.window_comparison.model_dump(mode="json")
+                        if run.brief.window_comparison is not None
+                        else None
+                    ),
+                    "model_id": (active_models[0].get("model_id") if active_models else None),
+                    "model_ids": [item.get("model_id") for item in active_models],
                     "model_approved_at": active_approved_at,
                     "retrospective": retrospective,
                     "forecasts": [item.model_dump(mode="json") for item in forecasts],
@@ -715,7 +919,20 @@ def evaluate_protocol(
                         result, prepared, indicators, qualified=run.qualified, weekly=weekly
                     ),
                 }
+                if receipt is not None:
+                    decision.update(
+                        as_of=decision_cutoff.isoformat(),
+                        mode="LIVE",
+                        issued_brief_digest=receipt.brief_digest,
+                        result_digest=result.result_digest,
+                    )
                 if analyzable and result.status != "SEARCH_LIMITED":
+                    price_scale = 1.0
+                    if receipt is not None and receipt.adjustment == "provider_all":
+                        bridge = provider_price_scale(prepared, bundle, decision_day)
+                        if bridge is None:
+                            raise DataError("PRICE_BASIS_UNVERIFIED")
+                        price_scale = bridge
                     events.extend(
                         _event_rows(
                             protocol,
@@ -724,6 +941,7 @@ def evaluate_protocol(
                             prepared,
                             run.qualified,
                             float(indicators.atr[-1]),
+                            price_scale=price_scale,
                         )
                     )
                 decisions.append(decision)
@@ -768,7 +986,11 @@ def _write_artifacts(
     with (output_dir / "decisions.jsonl").open("w") as stream:
         for row in decisions:
             stream.write(canonical_json(row) + "\n")
-    pq.write_table(pa.Table.from_pylist(events), output_dir / "events.parquet")
+    columns = sorted({key for row in events for key in row})
+    pq.write_table(
+        pa.table({key: [row.get(key) for row in events] for key in columns}),
+        output_dir / "events.parquet",
+    )
     summary = _summary(decisions, events)
     atomic_write(output_dir / "summary.json", canonical_json(summary) + "\n")
     files = ["decisions.jsonl", "events.parquet", "summary.json"]

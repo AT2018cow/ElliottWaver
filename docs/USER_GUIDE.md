@@ -1,8 +1,8 @@
 # EliotBot 中文使用手册
 
-适用于 EliotBot 0.3.0。日用分析覆盖沪深个股与指数、美股个股与 ETF 的日线和周线。逐腿结构树和日周关联通过增强配置启用。 [升级步骤](#从已有安装升级)
+适用于 EliotBot 0.5.0。日用分析覆盖沪深个股与指数、美股个股与 ETF 的日线和周线。逐腿结构树和日周关联通过增强配置启用。 [升级步骤](#从已有安装升级)
 
-EliotBot 从股票和指数的 K 线中识别波浪候选，给出规则检查、确认价、失效价和目标区。日常用 `brief` 看收盘摘要，单周期深入分析用 `analyze`。命令在终端运行，HTML 报告可在浏览器中打开。
+EliotBot 从股票和指数的 K 线中识别波浪候选，给出规则检查、推进价、失效价和目标区。日常用 `brief` 直接在终端看数浪和短期推演，单周期深入分析用 `analyze`。需要图表时，可另行打开 HTML 摘要。
 
 目录：
 
@@ -29,25 +29,25 @@ EliotBot 从股票和指数的 K 线中识别波浪候选，给出规则检查�
 以下示例从源码目录运行。先安装对应市场的依赖，再运行 `brief` 读取可用的收盘数据。[安装步骤](#2-安装与环境检查)
 
 ```bash
-.venv/bin/eliot brief 600519.SH --open
-.venv/bin/eliot brief 000300.SH --timeframe 1w --open
+.venv/bin/eliot brief 600519.SH --format json
+.venv/bin/eliot brief 000300.SH --timeframe 1w --format json
 ```
 
-第一条命令查看贵州茅台的日线主分析和最近完整的周线背景。第二条命令用周线分析沪深 300。两条命令都从新浪取数，需要联网，无需密钥。终端打印摘要目录和快照 ID。打开目录中的 `index.html` 查看收盘摘要，点击「打开 K 线图」查看主周期的端点。可用的周线背景图在同目录下的 `weekly.html`。把报告目录一起下载，便可离线查看。
+第一条命令查看贵州茅台的日线主分析和最近完整的周线背景。第二条命令用周线分析沪深 300。两条命令都从新浪取数，需要联网，无需密钥。终端显示中文摘要及保存路径，文件只保存 JSON。需要看 K 线图时，可去掉 `--format json`，加 `--open` 打开默认生成的网页摘要。
 
-配置 Alpaca 后，可用 `.venv/bin/eliot brief AAPL --feed sip --open` 查看美股日线摘要。[美股配置与示例](#42-美股)
+配置 Alpaca 后，可用 `.venv/bin/eliot brief AAPL --feed sip --format json` 查看美股日线摘要。[美股配置与示例](#42-美股)
 
-每天先核对报告的行情日期和数据状态，再看主备浪型、规则依据及确认和失效条件。遇到 `UNCLEAR` 时保留待定。若终端环境无法打开浏览器，省去 `--open`，在浏览器手动打开报告路径。来源不可用时可指定已有快照复查原行情。[报告阅读顺序](#45-一页收盘摘要-brief) · [快照复查](#8-保存快照与离线分析)
+每天先核对行情日期和数据状态，再看主备浪型、目标区和改变判断的价位。摘要显示「判断尚不明确」时，先保留多种解释。来源不可用时可指定已有快照复查原行情。[报告阅读顺序](#45-一页收盘摘要-brief) · [快照复查](#8-保存快照与离线分析)
 
 没有网络时，先运行合成行情演示。将终端打印的完整「快照」ID 填入变量，再生成离线摘要。
 
 ```bash
 .venv/bin/eliot demo --symbol 600519 --timeframe 1d
 DEMO_SNAPSHOT_ID='替换为演示命令打印的完整快照ID'
-.venv/bin/eliot brief 600519 --offline --snapshot "$DEMO_SNAPSHOT_ID"
+.venv/bin/eliot brief 600519 --offline --snapshot "$DEMO_SNAPSHOT_ID" --format json
 ```
 
-演示使用合成行情，`brief` 会显示 `FROZEN_DATA_REPLAY` 及决策截止时刻。真实快照的离线用法见[保存快照与离线分析](#8-保存快照与离线分析)。
+演示使用合成行情，`brief` 会显示「使用已保存行情回放」及决策截止时刻。真实快照的离线用法见[保存快照与离线分析](#8-保存快照与离线分析)。
 
 ## 2. 安装与环境检查
 
@@ -70,15 +70,15 @@ python3 -m venv .venv
 .venv/bin/python -m pip install -e '.[cn,us]'
 ```
 
-也可以在已有虚拟环境中安装下节的 0.3.0 wheel。新版需要 `pydantic>=2.12,<3`。用 `eliot doctor` 查看包版本，分析报告的 `engine_version` 应包含 `ew-rules-v5`。默认模式会应用浪 5 精确触线修复。需要按新规则更新判断时，用原快照重跑分析即可。 [版本说明](../CHANGELOG.md#030--2026-11-21)
+也可以在已有虚拟环境中安装下节的 0.5.0 wheel。依赖要求为 `pydantic>=2.12,<3`。用 `eliot doctor` 查看包版本。用原快照重跑 `brief` 即可生成新版简报，历史简报仍可查询。 [版本说明](../CHANGELOG.md#050--2026-11-22)
 
 ### 从发布 Wheel 安装
 
-将发布文件 `eliotbot-0.3.0-py3-none-any.whl` 放到当前目录。安装依赖需能访问所用 Python 包源。首次运行请在有写权限的工作目录执行。
+将发布文件 `eliotbot-0.5.0-py3-none-any.whl` 放到当前目录。安装依赖需能访问所用 Python 包源。首次运行请在有写权限的工作目录执行。
 
 ```bash
 python3 -m venv .venv
-.venv/bin/python -m pip install './eliotbot-0.3.0-py3-none-any.whl[cn,us]'
+.venv/bin/python -m pip install './eliotbot-0.5.0-py3-none-any.whl[cn,us]'
 .venv/bin/eliot demo --symbol 600519.SH
 ```
 
@@ -303,10 +303,12 @@ A 股老指数/老股票原始数据可到 1990/1991 年；引擎日历从 **199
 
 打开摘要后按下面的顺序阅读。
 
-1. **核对数据日期、状态和模式。** 终端、Markdown 与 HTML 都显示决策截止时刻。显式指定快照、`--as-of` 或 `--end` 的报告标记为 `FROZEN_DATA_REPLAY`。`UNCLEAR` 表示当前没有足够清晰的候选。
-2. **核对选窗和主备判断。** 报告列出实际使用的行情范围、锚点来源和确认时间，单独展示主选起浪日。查看每张卡片的确认价、失效价、目标区和父子浪证据。摘要最多展示三张卡片，另外列出引擎 Top-K 之外的权重，以及 Top-K 已返回但被摘要省略的候选数和权重。
-3. **看周线和换窗结论。** 以日线为主时，默认用同一份日线源数据派生最近完整周。只有日、周线均为 `OK` 且方向明确时才给出 `ALIGNED`（同向）或 `CONFLICT`（分歧）。缺周线或证据不足时显示 `NOT_AVAILABLE` 或 `UNDETERMINED`。换窗用另一个自动起点复算，`CHANGED_BIAS` 表示方向随窗口改变。只有一个自动起点或指定了 `--anchor` 时，换窗显示 `NOT_APPLICABLE`。
-4. **检查概率状态。** 权重来自当前候选评分。默认 `forecast_status` 为 `UNCALIBRATED`，获批且适用的模型有支持档时才显示事件概率。价格走势概率和候选确认概率使用不同的事件定义。[概率研究与结果解读](#48-离线评估与概率研究)
+1. **先看当前判断。** 首屏显示主备浪型、当前浪和后续观察期限。日线观察发行后的 5 个完整交易日，周线观察 2 个完整交易周。目标可以立即观察，也可能要等推进信号。报告列明看最高价、最低价还是收盘价，以及等于边界时是否触发。触发价保留比较精度，标有「约」的目标区仅在显示时简化，小数边界可查 JSON。
+2. **再看何时重新数浪。** 「失效条件」满足后会否定当前候选或浪段。「需重新数浪」表示阶段退出，需要更新当前判断。证据不足、行情过期或日历不全时，摘要会说明短期观察为何不可用。日周方向、换起点复核和上一次的判断变化用中文显示。
+3. **需要时查看核对依据。** 这里有决策截止时间、分析范围、起点来源、子浪证据和评分。质量分衡量形态吻合程度，证据覆盖率是可用评分证据的比例，候选权重表示本次候选之间的相对支持度。概率模型的证据不足时，报告会说明概率尚未校准。 [概率研究与结果解读](#48-离线评估与概率研究)
+4. **核对原始字段。** 显式指定快照、`--as-of` 或 `--end` 的人读报告显示「使用已保存行情回放」，JSON 的模式为 `FROZEN_DATA_REPLAY`。事件 ID、状态码、未展示候选及完整搜索诊断可从 `brief.json` 和 `daily.json` 查到。只需要终端和 JSON 时，可以加 `--format json`。
+
+短期事件包括 `ADVANCE_FIRST_5D_V1`、`OUTLOOK_TARGET_FIRST_5D_V1` 及周线对应版本，周线另可核销 `CLOSE_BAND_2W_V1`。没有 `outlook` 字段的旧报告保持原事件清单。发行、离线回放和 `settle` 使用同一组冻结交易期、价格坐标和观测截止；周中发行只从下一个完整周开始计算，日线发行跳过发行时已经开盘的会话。
 
 `--no-weekly` 和 `--no-window-check` 分别关闭摘要的周线背景和换窗复核。主周期候选的终端摘要有规则状态计数，网页可展开「规则复核」，Markdown 列出各规则和实测值。规则状态沿用当次分析的 `PASS / FAIL / PENDING`，分别表示通过、违反和证据不足。结构化规则字段位于同目录的 `daily.json`。导出文件和目录见[找到并查看报告](#5-找到并查看报告)。
 
@@ -349,7 +351,7 @@ OUTCOME_SNAPSHOT_ID='替换为新下载行情的完整snapshot_id'
 目录参数会递归读取报告，也可以传一份报告的 `brief.json`。结算只读取缓存，省略 `--snapshot` 时使用每份报告自己的源快照。替代快照应与报告的标的、周期、feed 和复权口径相容，并覆盖所需到期日。周线报告也可使用由日线快照派生的周线行情。混合标的或口径先按报告分别结算。使用自定义缓存时，传同一份 `--config` 或传 `--cache-root` 指向存放快照的目录。
 
 - 查看 `records[].status` 和 `records[].latest.outcome`。进入 `SETTLED` 后可读实际标签。尚未覆盖必要行情时显示 `RIGHT_CENSORED`，应有交易会话缺数据时显示 `INCOMPLETE_DATA`。行情补齐后以新快照重跑。
-- 结算使用报告发行时的收盘价、ATR、候选边界和预定会话。周线收盘事件使用到期周最后一个预定交易会话的收盘价，触价事件要求完整周 OHLC。美股换用修订的复权快照时，无法确认价格换算比例会显示 `PRICE_BASIS_UNVERIFIED`。
+- 结算使用报告发行时的收盘价、ATR、候选边界和预定会话。短期触价事件使用截止时已可用的完整 K 线。周线触价要求冻结名单内的每场会话齐备，周线收盘只取排定末场的收盘。结算快照与发行的会话安排冲突时，短期事件显示 `SETTLEMENT_CALENDAR_MISMATCH` 并保留待核。美股换用修订的复权快照时，无法确认价格换算比例会显示 `PRICE_BASIS_UNVERIFIED`。
 - 每个 `brief_digest + event_id + scope` 只算一次。同一判断导出为多个格式时会去重。行情修订后保留 `initial`，更新 `latest` 和 `latest_revision`。路径无效、没有报告或有报告/快照处理失败时，退出码为非零。
 
 ### 4.7.2 支持矩阵
@@ -377,13 +379,15 @@ PROTOCOL=docs/protocols/roadmap-repair-2026-heldout-smoke.json
 .venv/bin/eliot support-matrix --model-summary reports/models/summary.json
 ```
 
-评估输出 `decisions.jsonl`、`events.parquet`、`summary.json` 和 `manifest.json`。周线样本可以从日线快照派生。先看 `summary.json` 的样本量、成熟比例和分组结果，需要核对单条判断时再看明细。三个主要事件的读法如下。
+评估输出 `decisions.jsonl`、`events.parquet`、`summary.json` 和 `manifest.json`。周线样本可以从日线快照派生。先看 `summary.json` 的样本量、成熟比例和分组结果，需要核对单条判断时再看明细。
 
 | 事件 | 衡量什么 |
 | --- | --- |
-| `CLOSE_BAND_5D_V1`、`CLOSE_BAND_20D_V1`、`CLOSE_BAND_5W_V1`、`CLOSE_BAND_20W_V1` | 第 5 或第 20 个交易日或交易周的收盘价，相对判断时收盘价 ± 1 个 ATR，高于上界为 `UP`，低于下界为 `DOWN`，其余为 `RANGE` |
+| `CLOSE_BAND_5D_V1` / `CLOSE_BAND_2W_V1` | 期限末收盘价相对判断时的收盘价 ± 1 个 ATR，高于上界为 `UP`，低于下界为 `DOWN`，其余为 `RANGE` |
 | `CONFIRM_FIRST_20D_V1` / `CONFIRM_FIRST_8W_V1` | 候选在 20 个交易日或 8 个交易周内，是否在失效前先满足确认条件 |
 | `TARGET_FIRST_20D_V1` / `TARGET_FIRST_8W_V1` | 候选在同一期限内，是否在失效前先到达主目标区 |
+| `ADVANCE_FIRST_5D_V1` / `ADVANCE_FIRST_2W_V1` | 候选在短期观察期内，是否在硬失效或阶段退出前满足推进条件 |
+| `OUTLOOK_TARGET_FIRST_5D_V1` / `OUTLOOK_TARGET_FIRST_2W_V1` | 候选在短期观察期内，是否在硬失效或阶段退出前到达可观察的主目标区 |
 
 事件的期限、价格坐标和候选条件在决策时冻结。触价事件若在同一根 K 线上同时达到目标和失效边界，会标记 `AMBIGUOUS_SAME_BAR`。评估可以使用后来取得的冻结快照，`DECISION_TIME` 表示按模型批准时间选模，研究结果仍是冻结数据回放。
 
@@ -407,7 +411,8 @@ PROTOCOL=docs/protocols/roadmap-repair-2026-heldout-smoke.json
 
 训练结束后先看各事件的 `status` 和 `reasons`。仓库当前没有批准的真实行情模型，日常摘要保持未校准。合格的模型由维护者通过 `eliotbot.forecast.ModelRegistry.register` 登记到缓存的 `models/` 子目录，须包含至少一个 `APPROVED` 事件，批准日须晚于留出期最后一天。训练目录中的模型文件应保留原路径，供注册表读取。
 
-- `brief` 在默认缓存的 `models/` 中按决策时间查找兼容的已批准模型，可用 `--model-registry DIR` 指定其他注册表。显式 `brief --model /path/to/model.json` 会在加载成功后将摘要标记为回顾性重算。三分类事件中任一分量落入未获支持的档位，整个事件显示 `UNSUPPORTED_BIN`。
+- `brief` 在默认缓存的 `models/` 中按决策时间查找兼容的已批准模型，并按事件和候选位置批量选择。不同事件可以由不同模型提供，同一事件的主选和备选也可分别注册；旧事件仍可回退到旧模型。可用 `--model-registry DIR` 指定其他注册表。显式 `brief --model /path/to/model.json` 会在加载成功后将摘要标记为回顾性重算。三分类事件中任一分量落入未获支持的档位，整个事件显示 `UNSUPPORTED_BIN`。
+- 短期事件的历史评分使用 `data_status: HISTORICAL_HOLDOUT`，输出 `study_mode: RETROSPECTIVE` 和 `operational_allowed: false`。训练的 `freeze` 记录实际完成时刻，`--frozen-at` 可指定模拟的历史切分时刻。旧版候选仍可做历史评分。 [短期事件的实验和验证命令](protocols/README.md#短期事件的历史与前向评分)
 - `evaluate_briefs.py --model-registry DIR` 使用决策时已批准且未撤回的模型。另可用 `--model /path/to/model.json` 重算兼容的历史决策，省略批准时间时全部标记为回顾性。如果确实有批准记录，可加带时区的 `--model-approved-at`，只把早于批准时间的决策标记为回顾性。批准日须晚于模型留出期末日。查看明细的 `model_id`、`model_approved_at`、`retrospective` 和汇总的 `model_usage`。
 
 用 30 只沪深个股和 7 个指数重算 2026 年留出后，个股和指数各四项日线事件仍为 `INSUFFICIENT_EVIDENCE`。指数 20 日目标先达的价格基线对照与概率校准均未过。[留出重算与历史压力测试](reviews/2026-11-20-cn-index-probability-recheck.md)

@@ -2,11 +2,11 @@
 
 面向沪深个股、沪深指数以及美股个股和 ETF 的艾略特波浪分析程序，按“数据获取 → 多尺度拐点 → 候选数浪 → 规则校验 → 评分与点位 → 图表报告”组织能力。
 
-**0.3.0 增加可选的多浪级日周分析，并修复浪 5 的精确触线判定。** 日常查看个股或指数的主备浪型、规则依据、判断条件和周线背景，用 `eliot brief`。需要候选细节、更多周期或长历史搜索时，用 `eliot analyze`。CLI 也支持历史查询、自选批量和到期结算。 [版本说明](CHANGELOG.md)
+**0.5.0 的中文终端摘要直接显示主备浪型、当前浪、短期目标区和需要重新数浪的价位。** 日线观察接下来的 5 个完整交易日，周线观察 2 个完整交易周。需要查看单周期候选细节、盘中周期或长历史时，用 `eliot analyze`。CLI 也支持历史查询、自选批量和到期结算。 [版本说明](CHANGELOG.md)
 
 已有环境可安装新版 wheel 或从源码更新，继续用原命令和行情快照分析。报告中的 `engine_version` 会显示本次计算采用的规则。 [升级步骤](docs/USER_GUIDE.md#从已有安装升级)
 
-发布验收以日线和完整周线为主。沪深指数使用 `sina-index` 无复权行情，例如 `000688.SH`、`399001.SZ`。美股样本覆盖上市个股和 ETF。两边的个股也有小时线和分钟线入口，美股盘中目前有离线回归。候选权重表示相对评分，事件概率显示为未校准。完整范围见[实现及验收状态](docs/IMPLEMENTATION_STATUS.md)。
+发布验收以日线和完整周线为主。沪深指数使用 `sina-index` 无复权行情，例如 `000688.SH`、`399001.SZ`。美股样本覆盖上市个股和 ETF。两边的个股也有小时线和分钟线入口，美股盘中目前有离线回归。候选权重表示相对评分。完整范围见[实现及验收状态](docs/IMPLEMENTATION_STATUS.md)。
 
 评分默认使用 `ew_score_v2`；配置 `scoring.profile: ew_score_v1` 可以保留原第五浪评分公式。评分版本参与配置摘要，结果中的 `engine_version` 末尾追加当前 profile，完整结果身份参与摘要。
 
@@ -47,13 +47,13 @@ python3 -m venv .venv
 沪深 A 股和指数使用公开的新浪行情，无需 API key。先从收盘摘要开始。
 
 ```bash
-.venv/bin/eliot brief 600519 --open
-.venv/bin/eliot brief 000300.SH --timeframe 1w --open
+.venv/bin/eliot brief 600519 --format json
+.venv/bin/eliot brief 000300.SH --timeframe 1w --format json
 ```
 
-从终端打印的目录打开 `index.html`，先看数据日期和状态，再读主备浪型以及确认、失效条件。默认以日线为主，附最近完整的周线背景。指定周线、使用周线快照，或在自动模式下请求超过五年的跨度时，以周线作为主分析周期。`--json` 输出结构化摘要，`--format json` 只保存结构化产物。
+在终端先核对行情日期和状态，再查看主备浪型、目标区、推进与失效条件。「核对依据」列出分析范围、子浪证据与规则通过情况。默认以日线为主，附最近完整的周线背景。指定周线、使用周线快照，或在自动模式下请求超过五年的跨度时，以周线作为主分析周期。`--format json` 保留终端文字且只保存 JSON 文件。要将终端输出改为结构化 JSON，再加 `--json`。
 
-展开候选卡片的「规则复核」可查看硬规则的状态、实测值和判定边界。
+需要图表或逐条查看实测值时，可用 `eliot brief 600519 --open` 打开默认网页摘要，展开候选的「规则复核」。
 
 需要逐腿结构和日周关联时，显式选择增强配置。样例配置的认证深度为 1，可用 `--subwave-depth 2` 再检查一层。 [增强模式用法](docs/USER_GUIDE.md#431-高级多浪级引擎实验)
 
@@ -72,6 +72,7 @@ python3 -m venv .venv
 美股先复制 `.env.example` 为 `.env`，在本地填写 `ALPACA_API_KEY`、`ALPACA_API_SECRET`，按账户选择 paper/live `ALPACA_API_ENDPOINT`：
 
 ```bash
+.venv/bin/eliot brief AAPL --feed sip --format json
 .venv/bin/eliot analyze AAPL --feed sip
 .venv/bin/eliot analyze MSFT --timeframe 1h --feed sip
 .venv/bin/eliot analyze AAPL --feed iex --timeframe 15m

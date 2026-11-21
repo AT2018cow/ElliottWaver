@@ -59,7 +59,8 @@ def test_provider_split_uses_verified_issuance_basis(bundle, tmp_path, weekly):
                 )
             }
         )
-    request = _request(bundle, -24)
+    # The weekly split fixture covers two full weeks without an exchange holiday.
+    request = _request(bundle, -5 if weekly else -24)
     run = build_brief(request, bundle, Settings(), include_weekly=False, check_windows=False)
     snapshot = SnapshotStore(tmp_path / "cache")
     snapshot.save(run.source)
@@ -89,9 +90,12 @@ def test_provider_split_uses_verified_issuance_basis(bundle, tmp_path, weekly):
     )
     rows = ledger.settle_brief(run.brief, path, split)
     close_rows = [row for row in rows if row["event_id"].startswith("CLOSE_BAND")]
-    assert len(close_rows) == 2
-    for row in close_rows:
-        assert row["latest"]["outcome"] in {"UP", "RANGE", "DOWN"}
+    assert len(close_rows) == (3 if weekly else 2)
+    settled = [row for row in close_rows if row["latest"]["outcome"] in {"UP", "RANGE", "DOWN"}]
+    assert settled
+    if weekly:
+        assert any(row["event_id"] == "CLOSE_BAND_2W_V1" for row in settled)
+    for row in settled:
         assert row["latest"]["outcome"] == row["initial"]["outcome"]
         assert row["latest"]["value"] == pytest.approx(row["initial"]["value"])
 
@@ -352,7 +356,7 @@ def test_settle_cli_deduplicates_reports_and_propagates_errors(bundle, tmp_path)
     ok = CliRunner().invoke(app, base)
     assert ok.exit_code == 0, ok.output
     rows = json.loads(ok.stdout)["records"]
-    assert len(rows) == 2 + 2 * len(run.brief.cards)
+    assert len(rows) == 2 + 4 * len(run.brief.cards)
     assert len(rows) == len({(row["brief_digest"], row["event_id"], row["scope"]) for row in rows})
 
     error = CliRunner().invoke(app, [*base, "--snapshot", "f" * 64])
@@ -411,7 +415,8 @@ def test_human_briefs_show_frozen_cutoff_valid_forecast_and_omissions(
     render_brief(run.brief)
     console = capsys.readouterr().out
     for representation in (brief_markdown(run.brief), brief_html(run.brief), console):
-        assert "FROZEN_DATA_REPLAY" in representation
+        assert "使用已保存行情回放" in representation
         assert run.brief.as_of.isoformat() in representation
-        assert "CLOSE_BAND_5D_V1" in representation
+        assert "收盘方向与波动区间" in representation
+        assert "CLOSE_BAND_5D_V1" not in representation
         assert "33.3%" in representation and "尚未校准" not in representation

@@ -200,7 +200,7 @@ def test_support_matrix_marks_model_status_and_reasons():
             },
         }
     )
-    assert len(matrix["rows"]) == 16
+    assert len(matrix["rows"]) == 26
     close = next(
         row
         for row in matrix["rows"]
@@ -245,4 +245,4 @@ def test_settle_and_support_matrix_cli(tmp_path):
     matrix = CliRunner().invoke(app, ["support-matrix", "--json"])
     assert matrix.exit_code == 0, matrix.output
     matrix_payload = json.loads(matrix.stdout)
-    assert len(matrix_payload["rows"]) == 16
+    assert len(matrix_payload["rows"]) == 26

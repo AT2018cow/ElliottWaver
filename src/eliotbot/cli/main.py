@@ -251,6 +251,7 @@ def _run_brief_core(
         decision_bundle = prepare_bundle(request, source)
         model_cutoff = min(cutoff, decision_bundle.bars[-1].usable_at)
     model_data = None
+    models_data: tuple[dict, ...] = ()
     approved_at = None
     model_issue = None
     filters = dict(
@@ -269,18 +270,23 @@ def _run_brief_core(
             if not ModelRegistry._compatible(model_data, **filters):
                 model_data = None
                 model_issue = "模型与当前市场、周期或配置不兼容"
+            elif model_data is not None:
+                models_data = (model_data,)
         else:
             registry_path = (
                 Path(model_registry)
                 if model_registry
                 else Path(settings.cache.directory) / "models"
             )
-            active = ModelRegistry(registry_path).active_at(model_cutoff, **filters)
-            if active:
-                model_data = active["model"]
-                approved_at = datetime.fromisoformat(active["approved_at"])
+            active_models = ModelRegistry(registry_path).active_models_at(model_cutoff, **filters)
+            if active_models:
+                models_data = tuple(item["model"] for item in active_models)
+                approved_at = max(
+                    datetime.fromisoformat(item["approved_at"]) for item in active_models
+                )
     except (OSError, ValueError, TypeError, KeyError, AttributeError):
         model_data = None
+        models_data = ()
         model_issue = "无法读取符合发布要求的概率模型"
     run = build_brief(
         request,
@@ -290,6 +296,7 @@ def _run_brief_core(
         include_weekly=weekly,
         check_windows=window_check,
         model=model_data,
+        models=models_data,
         model_approved_at=approved_at,
         retrospective=bool(model and model_data),
         model_issue=model_issue,
@@ -402,9 +409,7 @@ def run_brief(
         print(canonical_json(run.brief))
     else:
         render_brief(run.brief, run.result)
-        Console().print(f"摘要：{output}", markup=False)
-        Console().print(f"源快照：{run.brief.source_snapshot_id}")
-        Console().print(f"分析输入：{run.brief.input_snapshot_id}")
+        Console().print(f"报告目录 · {output}", markup=False)
     if open_browser and "html" in formats:
         webbrowser.open((output / "index.html").resolve().as_uri())
     exit_code = _brief_exit_code(run.brief.status, allow_stale=allow_stale)

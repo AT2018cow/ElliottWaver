@@ -2,6 +2,14 @@
 
 本目录保存短期走势与候选事件的评估协议。仓库中的 JSON 固定了样本、快照 ID、决策网格、数据截止、分段和发布门槛。手册说明如何阅读评估、训练和支持矩阵结果。[离线评估与概率研究](../USER_GUIDE.md#48-离线评估与概率研究)
 
+## `wave-engine-acceptance-v1*.json`
+
+多浪级高级引擎的结构验收协议。CN 与美股各自有 `classic_v4` 和 `hierarchical_v1` 两个版本，样本和截止网格相同，`events` 为空，仅用于结构/覆盖/性能对照。高级配置示例见仓库根目录 `config.advanced.example.yaml`。[首版验收](../reviews/2026-11-20-wave-engine-acceptance.md)
+
+## `wave-engine-variant-fixtures.json`
+
+WE-3 亚型正式入口的冻结合成快照清单，覆盖平台三变体、阻挡三角形、截短第五浪、收缩/引导/终结楔形和 WXY 双重三浪。快照由 `scripts/make_variant_fixtures.py` 重新生成；正式入口验收使用仓库根目录 `config.variant.example.yaml`（额外含 `8.0` 父级尺度、`beam_width=1024`、`max_bridge_intervals=21`）。`leading_diagonal` 记录显式 `anchor`，使父推动和楔形同时进入搜索域。逐亚型结果见[独立验收清单](../reviews/2026-11-20-wave-engine-independent-acceptance.md)，回归测试为 `tests/test_variant_fixtures_end_to_end.py`；楔形内部 3-3-3-3-3/5-3-5-3-5 由 `tests/test_hierarchical_engine.py` 覆盖。
+
 ## `cn-probability-release-2026.json`
 
 30 只沪深个股和 7 个指数的独立发布验证。分别训练个股和指数的日线事件模型，使用 2026 年留出期。发布门槛沿用前序协议。[范围、分段与复现](cn-probability-release-2026.md)

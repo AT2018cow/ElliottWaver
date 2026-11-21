@@ -12,18 +12,26 @@ from eliotbot.data.quality import missing_intervals
 from eliotbot.data.resample import weekly_bars
 from eliotbot.data.router import route_symbol
 from eliotbot.engine.degree import wave_degree
+from eliotbot.engine.hierarchical import build_structure, is_confirmed
 from eliotbot.engine.indicators import calculate
-from eliotbot.engine.matcher import Candidate, search
+from eliotbot.engine.matcher import Candidate, SearchBudget, deduplicate_candidates, search
 from eliotbot.engine.parents import attach_parent_context
 from eliotbot.engine.projector import project
 from eliotbot.engine.scorer import score, weight_scenarios
 from eliotbot.engine.span_selector import require_history, select_anchor_details
 from eliotbot.engine.subwaves import SubwaveCertification, certify_subwaves
-from eliotbot.engine.zigzag import extract
+from eliotbot.engine.templates import variant_allowed_in_parent
+from eliotbot.engine.zigzag import ZigZagResult, extract
 from eliotbot.errors import DataError, InputError
 from eliotbot.schemas.brief import BriefAnchor
 from eliotbot.schemas.market import AnalysisRequest, MarketDataBundle
-from eliotbot.schemas.wave import AnalysisResult, SearchDiagnostics, WaveLabel, WaveScenario
+from eliotbot.schemas.wave import (
+    AnalysisResult,
+    SearchDiagnostics,
+    SubwaveLegEvidence,
+    WaveLabel,
+    WaveScenario,
+)
 from eliotbot.util import digest
 
 TEMPLATE_LABELS = {
@@ -34,6 +42,12 @@ TEMPLATE_LABELS = {
     "DIAGONAL": "楔形",
     "WXY": "双锯齿WXY",
 }
+
+
+def engine_rules_version(settings: Settings) -> str:
+    if settings.analysis.engine_profile == "hierarchical_v1":
+        return f"{ENGINE_VERSION}/hierarchical-rules-v3"
+    return ENGINE_VERSION
 
 
 def prepare_bundle(request: AnalysisRequest, bundle: MarketDataBundle) -> MarketDataBundle:
@@ -129,6 +143,7 @@ class AnalysisContext:
     result: AnalysisResult
     qualified: tuple[WaveScenario, ...]
     anchors: tuple[BriefAnchor, ...]
+    zigzags: tuple[ZigZagResult, ...] = ()
 
 
 class AnalysisService:
@@ -154,10 +169,17 @@ class AnalysisService:
         return self.analyze_with_context(weekly_request, prepared), prepared
 
     def analyze_with_context(
-        self, request: AnalysisRequest, bundle: MarketDataBundle
+        self,
+        request: AnalysisRequest,
+        bundle: MarketDataBundle,
+        *,
+        shared_budget: SearchBudget | None = None,
     ) -> AnalysisContext:
         bars = bundle.bars
         config = self.settings
+        advanced = config.analysis.engine_profile == "hierarchical_v1"
+        if advanced and request.timeframe not in {"1d", "1w"}:
+            raise InputError("hierarchical_v1 supports 1d and 1w")
         require_history(bars)
         anchor_details, warnings = select_anchor_details(bundle, request, config.analysis)
         anchors = tuple(sorted({item.date for item in anchor_details}))
@@ -193,7 +215,16 @@ class AnalysisService:
             for scale in config.analysis.scales
         ]
         candidates, budget = (
-            search(bars, zigzags, anchors, config.search, exact_anchor=request.anchor is not None)
+            search(
+                bars,
+                zigzags,
+                anchors,
+                config.search,
+                exact_anchor=request.anchor is not None,
+                tick_size=bundle.instrument.tick_size,
+                advanced=advanced,
+                budget=shared_budget,
+            )
             if not gaps or request.allow_gaps
             else ([], None)
         )
@@ -201,21 +232,111 @@ class AnalysisService:
             warnings.append("EXPLICIT_ANCHOR_UNMATCHED: 指定锚点没有匹配合法的当前计数")
         parent_links = attach_parent_context(candidates, request.timeframe)
         scenarios = []
+        interval_cache = {}
         excluded: list[tuple[float, float, str, Candidate]] = []
+        structural_rejections = 0
+        depth = config.search.max_subwave_depth
         for candidate in candidates:
-            certification = (
-                certify_subwaves(
-                    candidate,
-                    zigzags,
-                    config.analysis.scales,
-                    config.search.max_subwave_depth,
-                    bars,
-                )
-                if config.search.max_subwave_depth > 0
-                else SubwaveCertification("UNAVAILABLE", None, (), 0)
-            )
-            subwave = certification.fit
             parent = parent_links[candidate.key]
+            scenario_variant = candidate.variant if advanced else None
+            structure = None
+            if advanced:
+                if candidate.template.name == "DIAGONAL" and parent.status == "VERIFIED":
+                    if parent.wave_label in {"1", "A"}:
+                        scenario_variant = "LEADING_DIAGONAL"
+                    elif parent.wave_label in {"5", "C"}:
+                        scenario_variant = "ENDING_DIAGONAL"
+                confirmed_ends = all(is_confirmed(p, request.as_of) for p in candidate.completed)
+                if scenario_variant in {"TRUNCATED_FIFTH", "DOUBLE_THREE"} and (
+                    candidate.developing or depth == 0 or not confirmed_ends
+                ):
+                    continue
+                if parent.status == "VERIFIED" and not variant_allowed_in_parent(
+                    scenario_variant, parent.parent_pattern, parent.wave_label
+                ):
+                    structural_rejections += 1
+                    continue
+                structure = build_structure(
+                    candidate,
+                    bars,
+                    zigzags,
+                    as_of=request.as_of,
+                    coordinate_id=bundle.provenance.price_coordinate_id,
+                    depth=depth,
+                    budget=budget,
+                    timeframe=request.timeframe,
+                    variant=scenario_variant,
+                    raw_bars=bundle.raw_bars,
+                    tick_size=bundle.instrument.tick_size,
+                    interval_cache=interval_cache,
+                )
+                if structure.status == "REJECTED":
+                    structural_rejections += 1
+                    continue
+                root = structure.nodes[0]
+                nodes = {node.node_id: node for node in structure.nodes}
+                verified_fifth = any(
+                    leg.wave_label == "5"
+                    and leg.status == "VERIFIED"
+                    and leg.child_node_id in nodes
+                    and nodes[leg.child_node_id].pattern_type in {"IMPULSE", "DIAGONAL"}
+                    for leg in root.child_links
+                )
+                if scenario_variant == "TRUNCATED_FIFTH" and not verified_fifth:
+                    continue
+                if scenario_variant == "DOUBLE_THREE" and structure.verified_depth < 1:
+                    continue
+                if scenario_variant == "RUNNING_FLAT" and structure.verified_depth < 1:
+                    continue
+                if (
+                    scenario_variant not in {"TRUNCATED_FIFTH", "CONTRACTING_DIAGONAL"}
+                    and structure.verified_depth < 1
+                ):
+                    scenario_variant = None
+                evidence = tuple(
+                    SubwaveLegEvidence(
+                        leg=leg.wave_label,
+                        status=(
+                            "VERIFIED"
+                            if leg.status == "VERIFIED"
+                            else "UNAVAILABLE"
+                            if leg.status == "PENDING"
+                            else "UNVERIFIED"
+                        ),
+                        pattern=nodes[leg.child_node_id].pattern_type
+                        if leg.child_node_id in nodes
+                        else None,
+                        point_count=len(nodes[leg.child_node_id].points)
+                        if leg.child_node_id in nodes
+                        else 0,
+                        depth=depth,
+                        reason=leg.reason_code or "子浪端点和硬规则通过",
+                    )
+                    for leg in root.child_links
+                )
+                verified_legs = sum(leg.status == "VERIFIED" for leg in evidence)
+                fit = (
+                    verified_legs / len(evidence)
+                    if any(leg.status != "UNAVAILABLE" for leg in evidence)
+                    else None
+                )
+                certification = SubwaveCertification(
+                    "VERIFIED"
+                    if structure.status == "VERIFIED"
+                    else "UNAVAILABLE"
+                    if fit is None
+                    else "UNVERIFIED",
+                    fit,
+                    evidence,
+                    structure.verified_depth,
+                )
+            else:
+                certification = (
+                    certify_subwaves(candidate, zigzags, config.analysis.scales, depth, bars)
+                    if depth > 0
+                    else SubwaveCertification("UNAVAILABLE", None, (), 0)
+                )
+            subwave = certification.fit
             breakdown = score(
                 candidate,
                 bars,
@@ -256,14 +377,17 @@ class AnalysisService:
                 timeframe=request.timeframe,
             )
             bias = -candidate.direction if candidate.stage == "COMPLETE" else candidate.direction
+            structure_status = structure.status if structure is not None else certification.status
             if config.search.max_subwave_depth == 0:
                 note = ("未启用子浪认证；当前为端点与价格规则候选",)
-            elif certification.status == "VERIFIED":
+            elif structure_status == "VERIFIED" or certification.status == "VERIFIED":
                 note = ("子浪规则认证通过",)
-            elif certification.status == "UNVERIFIED":
+            elif structure_status in {"UNVERIFIED", "PENDING", "SEARCH_LIMITED", "REJECTED"}:
                 note = ("子浪规则认证未完全通过，查看 subwave_evidence",)
             else:
                 note = ("子浪证据不足，当前为端点与价格规则候选",)
+            if advanced and structure is not None:
+                note += (f"HIERARCHICAL_STRUCTURE: {structure.status}",)
             if parent.status == "PROVISIONAL":
                 note += (f"PARENT_CONTEXT_PROVISIONAL: {parent.reason}",)
             if not zones:
@@ -287,7 +411,11 @@ class AnalysisService:
                     parent_pattern=parent.parent_pattern,
                     parent_degree=parent.parent_degree,
                     parent_wave_label=parent.wave_label,
-                    subwave_status=certification.status,
+                    subwave_status=(
+                        "VERIFIED"
+                        if structure is not None and structure.status == "VERIFIED"
+                        else certification.status
+                    ),
                     subwave_evidence=certification.evidence,
                     completed_waves=tuple(
                         WaveLabel(label=label, pivot=pivot)
@@ -303,6 +431,8 @@ class AnalysisService:
                     projected_path=path,
                     discovered_scales=candidate.scales,
                     warnings=note,
+                    structure=structure,
+                    variant=scenario_variant,
                 )
             )
         seen_excluded = set()
@@ -321,6 +451,21 @@ class AnalysisService:
             if message not in seen_excluded:
                 seen_excluded.add(message)
                 warnings.append(message)
+        if advanced and scenarios:
+            ranked = {scenario.scenario_id: scenario for scenario in scenarios}
+            retained = deduplicate_candidates(
+                [candidate for candidate in candidates if candidate.key in ranked],
+                tick_size=bundle.instrument.tick_size,
+                ranked=ranked,
+            )
+            scenarios = [
+                ranked[candidate.key].model_copy(update={"discovered_scales": candidate.scales})
+                for candidate in retained
+            ]
+        if structural_rejections:
+            warnings.append(
+                f"STRUCTURES_REJECTED: {structural_rejections} 个候选违反已核验子浪条件"
+            )
         qualified, _ = weight_scenarios(
             scenarios, config.scoring.temperature, max(1, len(scenarios))
         )
@@ -361,6 +506,10 @@ class AnalysisService:
             expansions=budget.expansions if budget else 0,
             pruned=budget.pruned if budget else 0,
             search_truncated=budget.truncated if budget else False,
+            cache_hits=budget.cache_hits if advanced and budget else 0,
+            truncation_reason=(
+                ",".join(sorted(budget.cutoffs)) if advanced and budget and budget.cutoffs else None
+            ),
             candidates_found=len(candidates),
             candidates_qualified=len(scenarios),
             anchors=anchors,
@@ -369,10 +518,14 @@ class AnalysisService:
                 for scale, zz in zip(config.analysis.scales, zigzags, strict=True)
             },
         )
+        engine_profile = (
+            "/hierarchical_v1" if config.analysis.engine_profile == "hierarchical_v1" else ""
+        )
         result = AnalysisResult(
             run_id=uuid4().hex,
             result_digest="",
-            engine_version=f"{ENGINE_VERSION}/{config.scoring.profile}",
+            schema_version="1.1" if advanced else "1.0",
+            engine_version=f"{engine_rules_version(config)}/{config.scoring.profile}{engine_profile}",
             config_hash=config.computation_hash,
             input_snapshot_id=bundle.snapshot_id,
             instrument=bundle.instrument,
@@ -399,5 +552,8 @@ class AnalysisService:
             )
         )
         return AnalysisContext(
-            result.model_copy(update={"result_digest": identity}), qualified, anchor_details
+            result.model_copy(update={"result_digest": identity}),
+            qualified,
+            anchor_details,
+            tuple(zigzags),
         )

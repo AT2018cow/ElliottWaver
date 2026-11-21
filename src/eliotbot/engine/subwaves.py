@@ -12,7 +12,11 @@ from itertools import combinations, pairwise, product
 
 from eliotbot.engine.matcher import Candidate
 from eliotbot.engine.rules import check_pattern
-from eliotbot.engine.templates import TEMPLATES, allowed_child_templates
+from eliotbot.engine.templates import (
+    TEMPLATES,
+    allowed_child_templates,
+    allowed_child_templates_advanced,
+)
 from eliotbot.engine.zigzag import ZigZagResult
 from eliotbot.schemas.market import Bar
 from eliotbot.schemas.wave import Pattern, PivotPoint, RuleResult, SubwaveLegEvidence, SubwaveStatus
@@ -209,16 +213,26 @@ def certify_subwaves(
     bars: Sequence[Bar],
     *,
     classic_triangles: bool = True,
+    advanced: bool = False,
+    variant: str | None = None,
 ) -> SubwaveCertification:
     """Certify thinner-scale structure, with the classic triangle rule by default.
 
     The loose option preserves per-leg selection for the controlled experiment.
+    ``advanced`` uses the wider WXY/diagonal child permissions of the
+    hierarchical profile; ``variant`` selects the leading or ending diagonal
+    internal subdivision.
     """
+    # Deduplicated candidates merge the scales that produced identical endpoints.
+    # The child search must start below the pivots' own scale, not below the
+    # smallest scale that happened to reproduce the same candidate.
+    point_scales = [point.scale for point in candidate.points if point.scale is not None]
+    base_scale = min(point_scales) if point_scales else min(candidate.scales)
     finer = sorted(
         (
             (scale, zigzag)
             for scale, zigzag in zip(scales, zigzags, strict=True)
-            if scale < min(candidate.scales)
+            if scale < base_scale
         ),
         key=lambda item: item[0],
         reverse=True,
@@ -239,11 +253,12 @@ def certify_subwaves(
         points = current.points
 
         def allowed_at(index: int) -> tuple[Pattern, ...]:
-            return tuple(
-                name
-                for name in allowed_child_templates(current.template.name, index)
-                if name in _CERTIFIABLE
+            allowed = (
+                allowed_child_templates_advanced(current.template.name, index, variant=variant)
+                if advanced
+                else allowed_child_templates(current.template.name, index)
             )
+            return tuple(name for name in allowed if name in _CERTIFIABLE)
 
         def deepen(leg: _LegCertification) -> _LegCertification:
             if leg.evidence.status != "VERIFIED" or leg.template is None or leg.scale is None:

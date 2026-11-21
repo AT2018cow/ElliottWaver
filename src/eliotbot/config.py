@@ -19,6 +19,7 @@ class Section(BaseModel):
 
 class AnalysisConfig(Section):
     timeframe: Timeframe = "1d"
+    engine_profile: Literal["classic_v4", "hierarchical_v1"] = "classic_v4"
     top_k: int = Field(3, ge=1, le=20)
     history_years: int = Field(5, ge=1, le=20)
     min_anchor_bars: int = Field(60, ge=6)
@@ -107,10 +108,14 @@ class Settings(BaseSettings):
 
     @property
     def computation_hash(self) -> str:
+        analysis = self.analysis.model_dump()
+        # The classic profile must keep the exact 0.2.1 configuration identity.
+        if self.analysis.engine_profile == "classic_v4":
+            analysis.pop("engine_profile", None)
         return digest(
             {
                 "schema_version": self.schema_version,
-                "analysis": self.analysis,
+                "analysis": analysis,
                 "search": self.search,
                 "scoring": self.scoring,
             }

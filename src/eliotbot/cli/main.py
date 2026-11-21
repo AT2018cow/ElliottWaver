@@ -14,7 +14,7 @@ from pydantic import ValidationError
 from rich.console import Console
 from rich.table import Table
 
-from eliotbot import ENGINE_VERSION, __version__
+from eliotbot import __version__
 from eliotbot.brief import attach_previous, build_brief
 from eliotbot.cli.console_render import render_brief, render_result
 from eliotbot.config import (
@@ -33,7 +33,7 @@ from eliotbot.evaluation.replay import replay
 from eliotbot.forecast import ModelRegistry, load_model
 from eliotbot.history import HistoryStore, base_lineage_key
 from eliotbot.schemas.market import AnalysisRequest
-from eliotbot.service import AnalysisService, prepare_bundle
+from eliotbot.service import AnalysisService, engine_rules_version, prepare_bundle
 from eliotbot.settlement import SettlementStore, support_matrix
 from eliotbot.timeframes import TIMEFRAMES, normalize_timeframe
 from eliotbot.util import atomic_write, canonical_json, digest
@@ -254,7 +254,7 @@ def _run_brief_core(
     approved_at = None
     model_issue = None
     filters = dict(
-        engine_version=ENGINE_VERSION,
+        engine_version=engine_rules_version(settings),
         config_hash=settings.computation_hash,
         timeframe=chosen,
         asset_type=source.instrument.asset_type,
@@ -921,8 +921,6 @@ def run_replay(
         os.replace(name, destination)
         import hashlib
 
-        from eliotbot import ENGINE_VERSION
-
         atomic_write(
             Path(str(destination) + ".manifest.json"),
             canonical_json(
@@ -930,7 +928,7 @@ def run_replay(
                     "schema_version": "1.0",
                     "mode": "FROZEN_DATA_REPLAY",
                     "source_snapshot_id": bundle.snapshot_id,
-                    "engine_version": ENGINE_VERSION,
+                    "engine_version": engine_rules_version(settings),
                     "config_hash": settings.computation_hash,
                     "start": start,
                     "end": end,

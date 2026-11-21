@@ -1,6 +1,6 @@
 # EliotBot 中文使用手册
 
-适用版本为 0.2.0 CLI。此版本的日用验收覆盖沪深个股与指数、美股个股与 ETF 的日线和周线。
+适用于 EliotBot 0.3.0。日用分析覆盖沪深个股与指数、美股个股与 ETF 的日线和周线。逐腿结构树和日周关联通过增强配置启用。 [升级步骤](#从已有安装升级)
 
 EliotBot 从股票和指数的 K 线中识别波浪候选，给出规则检查、确认价、失效价和目标区。日常用 `brief` 看收盘摘要，单周期深入分析用 `analyze`。命令在终端运行，HTML 报告可在浏览器中打开。
 
@@ -10,6 +10,7 @@ EliotBot 从股票和指数的 K 线中识别波浪候选，给出规则检查�
 - [2. 安装与环境检查](#2-安装与环境检查)
 - [3. 股票代码与 K 线周期](#3-股票代码与-k-线周期)
 - [4. 分析 A 股与美股](#4-分析-a-股与美股)
+  - [高级多浪级引擎](#431-高级多浪级引擎实验)
   - [收盘摘要与历史查询](#45-一页收盘摘要-brief)
   - [自选批量、到期结算和支持矩阵](#47-自选批量)
   - [离线评估与概率校准](#48-离线评估与概率研究)
@@ -61,13 +62,23 @@ python3 -m venv .venv
 .venv/bin/eliot doctor --market US
 ```
 
+### 从已有安装升级
+
+`brief`、`analyze`、`history` 和自选批量可以沿用原命令、配置和行情快照。已有 `.venv` 时，从更新后的源码目录运行以下命令，安装当前源码和对应依赖。
+
+```bash
+.venv/bin/python -m pip install -e '.[cn,us]'
+```
+
+也可以在已有虚拟环境中安装下节的 0.3.0 wheel。新版需要 `pydantic>=2.12,<3`。用 `eliot doctor` 查看包版本，分析报告的 `engine_version` 应包含 `ew-rules-v5`。默认模式会应用浪 5 精确触线修复。需要按新规则更新判断时，用原快照重跑分析即可。 [版本说明](../CHANGELOG.md#030--2026-11-21)
+
 ### 从发布 Wheel 安装
 
-将发布文件 `eliotbot-0.2.0-py3-none-any.whl` 放到当前目录。安装依赖需能访问所用 Python 包源。首次运行请在有写权限的工作目录执行。
+将发布文件 `eliotbot-0.3.0-py3-none-any.whl` 放到当前目录。安装依赖需能访问所用 Python 包源。首次运行请在有写权限的工作目录执行。
 
 ```bash
 python3 -m venv .venv
-.venv/bin/python -m pip install './eliotbot-0.2.0-py3-none-any.whl[cn,us]'
+.venv/bin/python -m pip install './eliotbot-0.3.0-py3-none-any.whl[cn,us]'
 .venv/bin/eliot demo --symbol 600519.SH
 ```
 
@@ -220,6 +231,44 @@ live 端点为 `https://api.alpaca.markets`。配置文件从当前工作目录�
 ```
 
 长期数浪还需要按需提高 `analysis.max_analysis_bars`（默认 600，最大 5000），否则锚点搜索只覆盖最近约 600 根 K 线。指数分钟线尚未启用；请求 `5m` 等周期会返回 `INDEX_INTRADAY_UNSUPPORTED`。
+
+### 4.3.1 高级多浪级引擎（实验）
+
+日用默认采用 `classic_v4`。需要逐腿结构树或日周关联时，可直接传入 `--config config.advanced.example.yaml`。样例在源码包根目录，使用 wheel 时可把样例复制到当前工作目录。增强模式支持日线和周线。自定义时复制样例配置并修改所需参数。
+
+```yaml
+analysis:
+  engine_profile: hierarchical_v1
+  scales: [1.0, 1.4, 2.4, 3.8]
+search:
+  max_subwave_depth: 1
+```
+
+`scales` 必须包含比父级更细的尺度，否则父腿只能显示 `PENDING/INSUFFICIENT_FINER_PIVOTS`。`max_subwave_depth` 为 0 时保留端点，1 验证第一层子浪，2 继续验证第二层。一次分析可用 `--subwave-depth` 覆盖样例的默认深度 1。深度 2 需要更多可确认的内部拐点。若摘要显示 `SEARCH_LIMITED`，可去掉 `--subwave-depth 2`，先按样例的深度 1 复查。
+
+联网分析可直接运行以下命令。
+
+```bash
+.venv/bin/eliot brief 600519.SH --config config.advanced.example.yaml --open
+.venv/bin/eliot brief 600519.SH --config config.advanced.example.yaml --subwave-depth 2 --open
+```
+
+离线时将 `SNAPSHOT_ID` 设为该标的的日线快照 ID。日线摘要可以从这份快照生成完整周线背景，单周期 `analyze` 可直接选择周线。 [保存快照与离线分析](#8-保存快照与离线分析)
+
+```bash
+.venv/bin/eliot brief 000016.SH --offline --snapshot "$SNAPSHOT_ID" --config config.advanced.example.yaml --json
+.venv/bin/eliot analyze 000016.SH --timeframe 1w --offline --snapshot "$SNAPSHOT_ID" --config config.advanced.example.yaml --json
+```
+
+高级结果：
+
+- `schema_version` 为 `1.1`（分析）或 `1.2`（摘要），引擎标识含 `hierarchical-rules-v3`。
+- 每个候选附有 `structure`，记录根节点、逐腿 `child_links`、节点规则及已验证深度。摘要 HTML 可展开子浪和日周关联，Markdown 与终端也输出结构证据。
+- 日线摘要的 `wave_relations` 记录日线候选与周线父腿的 `EXACT_LEG`、`CONTAINED`、`INCOMPATIBLE` 或 `UNDETERMINED` 关系。
+- 平台三变体、阻挡三角形、截短第五浪、收缩/引导/终结楔形和 WXY 双重三浪在端点与内部结构证据齐备时带 `variant`；引导/终结楔形内部按 3-3-3-3-3 认证，引导同时接受 5-3-5-3-5；未知父级位置不会强行给出引导/终结楔形结论。
+- 自选高级用法从 `config.advanced.example.yaml` 开始。亚型的端到端正反例见 [修复复验](reviews/2026-11-20-wave-engine-repair.md)。
+
+`VERIFIED` 表示整个结构达到请求的验证深度。历史日周关系也按该深度核验。仍缺证据时，可从报告查看已通过的层和待补的腿。确定违反硬规则的结构在排名前排除，搜索耗尽显示 `SEARCH_LIMITED`。历史摘要记录子浪证据的变化，条件触发值沿用发行时价格坐标，并保留冻结输入的 K 线 ID。旧 `classic_v4` 报告仍可按原 JSON 校验和核销。 [复验记录](reviews/2026-11-21-wave-engine-followup-repair.md)
 
 ### 4.4 长历史与大级别搜索
 
@@ -519,6 +568,8 @@ HTML 包含 K 线、成交量、MACD 三个面板。可以通过图上方的下�
 | 子浪状态 | `VERIFIED` 表示所有父腿都已确认并通过位置和子模板硬规则。`UNVERIFIED` 表示认证未完成。`UNAVAILABLE` 表示缺少适用规则或足够的细尺度拐点。 |
 
 当前枚举普通推动浪、ABC 锯齿、三角形、平台、楔形和双锯齿 WXY；新模板先按端点级硬规则筛选，再用可选子浪认证检查内部结构。复杂组合调整仍未覆盖。`pattern_direction` 是整个模板方向，`next_leg_bias` 是下一段方向，二者在完成态可能不同。
+
+推动浪与楔形按各浪自身起点计算浪 1、3、5 的百分比长度。浪 3 短于浪 1 时，进行中的浪 5 按同一口径显示失效价。`ew-rules-v5` 在计算和展示时共用同一个精确触线价格。上涨看最高价、下跌看最低价，触线有效，严格越界才失效。完成三角形的 E 浪须形成净回撤。顺势三角形允许 B 浪越过 A 浪起点。 [规则与复验](reviews/2026-11-20-elliott-rule-conformance.md#修复复验) · [分价边界复验](reviews/2026-11-21-wave-engine-followup-repair.md)
 
 ### 6.3 条件、目标与证据
 

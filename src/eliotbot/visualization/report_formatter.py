@@ -11,6 +11,7 @@ from eliotbot.errors import ExportError
 from eliotbot.schemas.market import MarketDataBundle
 from eliotbot.schemas.wave import AnalysisResult
 from eliotbot.util import atomic_write, canonical_json, digest
+from eliotbot.visualization.brief_formatter import structure_evidence
 from eliotbot.visualization.chart_builder import (
     PLOTLY_RENDER_VERSION,
     build_plotly,
@@ -116,6 +117,13 @@ def markdown_report(result: AnalysisResult) -> str:
         lines += ["", "### 硬规则", ""]
         for rule in scenario.rules:
             lines.append(f"- {rule.rule_id}：{rule.status}，{rule.reason}。")
+        if scenario.structure is not None:
+            lines += [
+                "",
+                "### 子浪证据",
+                "",
+                *(f"- {line}" for line in structure_evidence(scenario.structure)),
+            ]
         lines += ["", *[f"- {warning}" for warning in scenario.warnings]]
     lines += [
         "",

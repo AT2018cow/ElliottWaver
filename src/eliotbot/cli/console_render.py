@@ -3,7 +3,12 @@ from rich.table import Table
 
 from eliotbot.schemas.brief import Brief, forecast_message
 from eliotbot.schemas.wave import AnalysisResult
-from eliotbot.visualization.brief_formatter import omission_text
+from eliotbot.visualization.brief_formatter import (
+    omission_text,
+    relation_evidence,
+    structure_evidence,
+    transition_evidence,
+)
 
 
 def render_result(result: AnalysisResult) -> None:
@@ -39,6 +44,10 @@ def render_result(result: AnalysisResult) -> None:
             f"{zone.low:.2f}–{zone.high:.2f}" if zone else "暂无合法目标",
         )
     console.print(table)
+    for scenario in result.scenarios:
+        if scenario.structure is not None:
+            for line in structure_evidence(scenario.structure):
+                console.print(line, markup=False)
     for warning in result.warnings:
         console.print(warning, style="yellow", markup=False)
     if not result.scenarios:
@@ -87,6 +96,9 @@ def render_brief(brief: Brief, result: AnalysisResult | None = None) -> None:
     console.print(table)
     scenarios = {item.scenario_id: item for item in result.scenarios} if result else {}
     for card in brief.cards:
+        if card.structure is not None:
+            for line in structure_evidence(card.structure):
+                console.print(line, markup=False)
         scenario = scenarios.get(card.scenario_id)
         if scenario is None:
             continue
@@ -99,6 +111,11 @@ def render_brief(brief: Brief, result: AnalysisResult | None = None) -> None:
             f"违反 {counts['FAIL']} · 证据不足 {counts['PENDING']}",
             markup=False,
         )
+    relations = relation_evidence(brief)
+    for line in (*relations[:12], *transition_evidence(brief)):
+        console.print(line, markup=False)
+    if len(relations) > 12:
+        console.print(f"另有 {len(relations) - 12} 条日周关联，见报告或 JSON。", markup=False)
     if not brief.cards:
         console.print("当前没有达到质量与证据门槛的候选。")
     console.print(omission_text(brief), style="dim", markup=False)

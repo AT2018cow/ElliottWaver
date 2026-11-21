@@ -1,0 +1,79 @@
+{
+  "protocol_version": "1",
+  "protocol_id": "wave-engine-acceptance-v1-classic",
+  "cache_root": ".cache/eliotbot",
+  "samples": [
+    {
+      "symbol": "000016.SH",
+      "asset_type": "INDEX",
+      "snapshot_id": "abfd7531e5f8e49a3cec1f27100d21cccc67c2d53c07c68e684fd0ac39c16a4f",
+      "source_timeframe": "1d"
+    },
+    {
+      "symbol": "399006.SZ",
+      "asset_type": "INDEX",
+      "snapshot_id": "c4f08c1272b6a297f70f3e717a4702c3383266ac1c415041ac3a069639521928",
+      "source_timeframe": "1d"
+    },
+    {
+      "symbol": "300750.SZ",
+      "asset_type": "EQUITY",
+      "snapshot_id": "25e8ab0aa16c69cd4a32b168bb36f05ed68075cf1fb4262555d918c9e3fa6cf9",
+      "source_timeframe": "1d"
+    },
+    {
+      "symbol": "600036.SH",
+      "asset_type": "EQUITY",
+      "snapshot_id": "b2243746e0528404e410da64bb9d44fb261761a393853f97aebc240a6eb79e81",
+      "source_timeframe": "1d"
+    },
+    {
+      "symbol": "600002.SH",
+      "asset_type": "EQUITY",
+      "source_timeframe": "1w",
+      "snapshot_id": "08a21f6470b1a8ccd4169f9d0aa269d5623912706e7376a2c0838736f93dcdc7"
+    },
+    {
+      "symbol": "600001.SH",
+      "asset_type": "EQUITY",
+      "source_timeframe": "1d",
+      "snapshot_id": "54dd6ca5af208768bd5f71b75378c8ec623e0f8c5b64cd05d3785cdcd2e51774"
+    },
+    {
+      "symbol": "600000.SH",
+      "asset_type": "EQUITY",
+      "source_timeframe": "1d",
+      "snapshot_id": "42ed5d45a1f12b957743fd727e5686695358b55538f7f3a7be3ff7cdbbe1e544"
+    }
+  ],
+  "grid": {
+    "start": "2024-01-01",
+    "end": "2024-06-30",
+    "cadence": "LAST_SESSION_OF_WEEK",
+    "outcome_as_of": "2024-06-30"
+  },
+  "splits": {
+    "train": {
+      "start": "2023-01-01",
+      "end": "2023-12-31"
+    },
+    "calibration": {
+      "start": "2024-01-01",
+      "end": "2024-03-31"
+    },
+    "test": {
+      "start": "2024-04-01",
+      "end": "2024-06-30"
+    }
+  },
+  "events": [],
+  "settings": {
+    "analysis": {
+      "engine_profile": "classic_v4",
+      "max_analysis_bars": 600
+    },
+    "search": {
+      "max_subwave_depth": 0
+    }
+  }
+}

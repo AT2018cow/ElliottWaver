@@ -6,12 +6,15 @@ import math
 import re
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
+from zoneinfo import ZoneInfo
 
 from eliotbot.data.adjustment import provider_price_scale
 from eliotbot.engine.indicators import calculate
+from eliotbot.engine.matcher import SearchBudget
+from eliotbot.engine.timeframe_link import link_timeframes
 from eliotbot.errors import DataError
 from eliotbot.evaluation.events import condition_hit
-from eliotbot.evaluation.outcomes import outcome_window, period_dates, scheduled_dates
+from eliotbot.evaluation.outcomes import outcome_window, period_dates, scheduled_dates, target_hit
 from eliotbot.forecast import forecasts_for_brief
 from eliotbot.schemas.brief import (
     Brief,
@@ -23,10 +26,11 @@ from eliotbot.schemas.brief import (
     BriefPrevious,
     BriefWindow,
     BriefWindowComparison,
+    WindowParticipant,
     forecast_message,
 )
 from eliotbot.schemas.market import AnalysisRequest, MarketDataBundle
-from eliotbot.schemas.wave import AnalysisResult, WaveScenario
+from eliotbot.schemas.wave import AnalysisResult, LevelCondition, WaveScenario
 from eliotbot.service import AnalysisService, prepare_bundle
 from eliotbot.util import digest
 
@@ -43,6 +47,7 @@ class BriefRun:
     weekly_prepared: MarketDataBundle | None = None
     alternate_result: AnalysisResult | None = None
     alternate_prepared: MarketDataBundle | None = None
+    qualified: tuple[WaveScenario, ...] = ()
 
 
 def _structure_key(
@@ -57,16 +62,17 @@ def _structure_key(
             else wave.pivot.extreme_bar_id
         )
         endpoints.append((wave.label, wave.pivot.kind, raw_id))
-    return digest(
-        [
-            symbol,
-            timeframe,
-            scenario.pattern_type,
-            scenario.stage,
-            scenario.pattern_direction,
-            endpoints,
-        ]
-    )[:24]
+    identity = [
+        symbol,
+        timeframe,
+        scenario.pattern_type,
+        scenario.stage,
+        scenario.pattern_direction,
+        endpoints,
+    ]
+    if scenario.variant is not None:
+        identity.append(scenario.variant)
+    return digest(identity)[:24]
 
 
 def _difference(primary: WaveScenario, alternate: WaveScenario) -> str:
@@ -110,6 +116,7 @@ def _card(
         difference=difference,
         name=scenario.name,
         pattern_type=scenario.pattern_type,
+        variant=scenario.variant,
         pattern_direction=scenario.pattern_direction,
         next_leg_bias=scenario.next_leg_bias,
         stage=scenario.stage,
@@ -125,6 +132,7 @@ def _card(
         conditions=scenario.conditions,
         target_zones=scenario.target_zones,
         warnings=scenario.warnings,
+        structure=scenario.structure,
     )
 
 
@@ -352,6 +360,118 @@ def _window_comparison(
     )
 
 
+def _advanced_windows(request, prepared, context, service, budget):
+    result = context.result
+    main_start = min(result.diagnostics.anchors)
+    primary = result.scenarios[0] if result.scenarios else None
+    main_pivot = primary.completed_waves[0].pivot if primary and primary.completed_waves else None
+    opposite = (
+        {"LOW": "MACRO_HIGH", "HIGH": "MACRO_LOW"}.get(main_pivot.kind) if main_pivot else None
+    )
+    eligible = [anchor for anchor in context.anchors if anchor.date > main_start]
+    reverse = [anchor.date for anchor in eligible if anchor.origin == opposite]
+    starts = [max(reverse)] if reverse else []
+    remaining = [anchor.date for anchor in eligible if anchor.date not in starts]
+    if remaining:
+        starts.append(min(remaining))
+    primary_key = (
+        _structure_key(primary, prepared, result.instrument.canonical_symbol, result.timeframe)
+        if primary is not None
+        else None
+    )
+    participants = [
+        WindowParticipant(
+            start=main_start,
+            scenario_id=primary.scenario_id if primary else None,
+            structure_key=primary_key,
+            next_leg_bias=primary.next_leg_bias if primary else "UNKNOWN",
+            status=result.status,
+            reason="主窗口",
+        )
+    ]
+    comparisons = []
+    seen_starts = {main_start}
+    for start in starts:
+        alt_req = request.model_copy(update={"start": start})
+        try:
+            other = service.analyze_with_context(alt_req, prepared, shared_budget=budget).result
+        except DataError as exc:
+            participants.append(
+                WindowParticipant(start=start, status="INSUFFICIENT_DATA", reason=str(exc))
+            )
+            comparisons.append(
+                (BriefWindowComparison(state="INCONCLUSIVE", reason=str(exc)), None, None)
+            )
+            continue
+        actual_start = min(other.diagnostics.anchors)
+        if actual_start in seen_starts:
+            continue
+        seen_starts.add(actual_start)
+        candidate = other.scenarios[0] if other.scenarios else None
+        key = (
+            _structure_key(
+                candidate, prepared, result.instrument.canonical_symbol, result.timeframe
+            )
+            if candidate is not None
+            else None
+        )
+        if candidate is None or primary is None or result.status != "OK" or other.status != "OK":
+            state, reason = "INCONCLUSIVE", "至少一套窗口的结构或搜索证据不足"
+        elif primary.next_leg_bias != candidate.next_leg_bias:
+            state, reason = "CHANGED_BIAS", "备选窗口的下一段方向与主窗口相反"
+        elif key != primary_key:
+            state, reason = "CHANGED_COUNT_SAME_BIAS", "备选窗口改变了首选结构"
+        else:
+            state, reason = "SAME_COUNT", "两个窗口得到相同结构"
+        participants.append(
+            WindowParticipant(
+                start=actual_start,
+                scenario_id=candidate.scenario_id if candidate else None,
+                structure_key=key,
+                next_leg_bias=candidate.next_leg_bias if candidate else "UNKNOWN",
+                status=other.status,
+                reason=reason,
+            )
+        )
+        comparisons.append(
+            (
+                BriefWindowComparison(
+                    state=state,
+                    reason=reason,
+                    primary_scenario_id=primary.scenario_id if primary else None,
+                    alternate_scenario_id=candidate.scenario_id if candidate else None,
+                    alternate_start=actual_start,
+                    alternate_bar_count=sum(
+                        bar.session_date >= actual_start for bar in prepared.bars
+                    ),
+                ),
+                other,
+                prepared,
+            )
+        )
+    if not comparisons:
+        return (
+            BriefWindowComparison(state="NOT_APPLICABLE", reason="没有其他可比较的确认锚点"),
+            None,
+            None,
+        )
+    priority = {"CHANGED_BIAS": 3, "INCONCLUSIVE": 2, "CHANGED_COUNT_SAME_BIAS": 1, "SAME_COUNT": 0}
+    selected, alternate_result, alternate = max(
+        comparisons, key=lambda item: priority[item[0].state]
+    )
+    return (
+        selected.model_copy(
+            update={
+                "participants": tuple(participants),
+                "total_expansions": budget.expansions,
+                "search_limits": tuple(sorted(budget.cutoffs)),
+            }
+        ),
+        alternate_result,
+        alternate,
+    )
+
+
 def build_brief(
     request: AnalysisRequest,
     source: MarketDataBundle,
@@ -366,8 +486,10 @@ def build_brief(
     model_issue: str | None = None,
 ) -> BriefRun:
     service = AnalysisService(settings)
+    advanced = settings.analysis.engine_profile == "hierarchical_v1"
+    day_budget = SearchBudget(settings.search.max_expansions) if advanced else None
     prepared = prepare_bundle(request, source)
-    context = service.analyze_with_context(request, prepared)
+    context = service.analyze_with_context(request, prepared, shared_budget=day_budget)
     result = context.result
     issues = list(_issues(result))
     if model_issue:
@@ -375,13 +497,14 @@ def build_brief(
 
     weekly_result = None
     weekly_prepared = None
+    weekly_context = None
     weekly = None
     weekly_state = "NOT_REQUESTED"
     if include_weekly and request.timeframe == "1d" and source.timeframe == "1d":
         try:
-            background, weekly_prepared = service.weekly_background(request, source)
-            weekly_result = background.result
-            weekly = _period(weekly_result, weekly_prepared, background.anchors)
+            weekly_context, weekly_prepared = service.weekly_background(request, source)
+            weekly_result = weekly_context.result
+            weekly = _period(weekly_result, weekly_prepared, weekly_context.anchors)
             weekly_state = (
                 "AVAILABLE"
                 if weekly_result.status in {"OK", "UNCLEAR", "SEARCH_LIMITED"}
@@ -415,28 +538,22 @@ def build_brief(
     else:
         forecast_status = "UNCALIBRATED"
     cross_timeframe = _cross_timeframe(result, weekly_result)
+    wave_relations = ()
+    if advanced and weekly_context is not None and weekly_prepared is not None:
+        wave_relations = link_timeframes(
+            context,
+            prepared,
+            weekly_context,
+            weekly_prepared,
+            as_of=request.as_of,
+            depth=settings.search.max_subwave_depth,
+            budget=SearchBudget(settings.search.max_expansions),
+        )
 
     alternate_result = None
     alternate_prepared = None
-    if check_windows and request.anchor is None and len(set(result.diagnostics.anchors)) >= 2:
-        alternate_start = max(result.diagnostics.anchors)
-        alternate_request = request.model_copy(update={"start": alternate_start, "anchor": None})
-        try:
-            alternate_prepared = prepare_bundle(alternate_request, source)
-            alternate_result = service.analyze_prepared(alternate_request, alternate_prepared)
-            window_comparison = _window_comparison(
-                request,
-                result,
-                prepared,
-                alternate_result,
-                alternate_prepared,
-                "换窗运行失败",
-            )
-        except DataError as exc:
-            window_comparison = BriefWindowComparison(
-                state="INCONCLUSIVE", reason=f"换窗运行失败：{exc}"
-            )
-    else:
+    anchors = sorted(set(result.diagnostics.anchors))
+    if not check_windows or request.anchor is not None or len(anchors) < 2:
         if not check_windows:
             reason = "未启用换窗复核"
         elif request.anchor is not None:
@@ -444,8 +561,26 @@ def build_brief(
         else:
             reason = "只有一个自动锚点"
         window_comparison = BriefWindowComparison(state="NOT_APPLICABLE", reason=reason)
+    elif not advanced:
+        alternate_start = max(anchors)
+        alternate_request = request.model_copy(update={"start": alternate_start, "anchor": None})
+        try:
+            alternate_prepared = prepare_bundle(alternate_request, source)
+            alternate_result = service.analyze_prepared(alternate_request, alternate_prepared)
+            window_comparison = _window_comparison(
+                request, result, prepared, alternate_result, alternate_prepared, "换窗运行失败"
+            )
+        except DataError as exc:
+            window_comparison = BriefWindowComparison(
+                state="INCONCLUSIVE", reason=f"换窗运行失败：{exc}"
+            )
+    else:
+        window_comparison, alternate_result, alternate_prepared = _advanced_windows(
+            request, prepared, context, service, day_budget
+        )
 
     brief = Brief(
+        schema_version="1.2" if advanced else "1.1",
         brief_digest="",
         source_snapshot_id=source.snapshot_id,
         symbol=result.instrument.canonical_symbol,
@@ -472,6 +607,7 @@ def build_brief(
         weekly_state=weekly_state,
         weekly=weekly,
         cross_timeframe=cross_timeframe,
+        wave_relations=wave_relations,
         window_comparison=window_comparison,
         forecasts=forecasts,
         forecast_status=forecast_status,
@@ -494,6 +630,7 @@ def build_brief(
         weekly_prepared=weekly_prepared,
         alternate_result=alternate_result,
         alternate_prepared=alternate_prepared,
+        qualified=context.qualified,
     )
 
 
@@ -601,6 +738,356 @@ def _config_change(previous: Brief, current: Brief) -> tuple[str, str] | None:
     return None
 
 
+@dataclass(frozen=True)
+class DecisionComparison:
+    change: str
+    reason: str
+    structure_change: str | None = None
+    structure_reason: str | None = None
+    input_change: str = "NONE"
+    data_revision: str = "NONE"
+    revision_count: int = 0
+    factor_revision_count: int = 0
+    triggered_conditions: tuple[LevelCondition, ...] = ()
+    events: tuple[dict, ...] = ()
+
+
+def _structure_transition(
+    previous: Brief,
+    current: Brief,
+    previous_result: AnalysisResult | None,
+    current_result: AnalysisResult | None,
+    previous_source: MarketDataBundle | None,
+    *,
+    legacy_view: bool,
+) -> tuple[str, str, tuple[dict, ...]]:
+    current_cards = current.cards
+    previous_cards = previous.cards
+    if not current_cards and not previous_cards:
+        return "SAME_COUNT", "两次都没有合格候选", ()
+    if not previous_cards:
+        return (
+            "COUNT_CHANGED",
+            "上次没有候选，本次出现候选",
+            ({"type": "structure", "previous": None, "current": current_cards[0].structure_key},),
+        )
+    if not current_cards:
+        return (
+            "COUNT_CHANGED",
+            "上次有候选，本次没有候选",
+            ({"type": "structure", "previous": previous_cards[0].structure_key, "current": None},),
+        )
+    current_primary = current_cards[0]
+    previous_primary = previous_cards[0]
+    old = previous_result.scenarios[0] if previous_result and previous_result.scenarios else None
+    new = current_result.scenarios[0] if current_result and current_result.scenarios else None
+    event = {
+        "type": "structure",
+        "previous": previous_primary.structure_key,
+        "current": current_primary.structure_key,
+        "previous_stage": previous_primary.stage,
+        "current_stage": current_primary.stage,
+    }
+    if current_primary.structure_key == previous_primary.structure_key:
+        tip_moved = (
+            old is not None
+            and new is not None
+            and new.stage != "COMPLETE"
+            and (
+                old.developing_tip.extreme_at != new.developing_tip.extreme_at
+                or (
+                    previous.adjustment != "basis_date_qfq"
+                    and old.developing_tip.price != new.developing_tip.price
+                )
+            )
+        )
+        previous_tree = previous_primary.structure
+        current_tree = current_primary.structure
+        previous_proof = (
+            (previous_tree.status, previous_tree.verified_depth) if previous_tree else (None, None)
+        )
+        current_proof = (
+            (current_tree.status, current_tree.verified_depth) if current_tree else (None, None)
+        )
+        status_changed = current_primary.subwave_status != previous_primary.subwave_status
+        if not legacy_view and (status_changed or current_proof != previous_proof):
+            event.update(
+                {
+                    "first_difference": "subwave_status" if status_changed else "structure_proof",
+                    "previous_status": previous_primary.subwave_status,
+                    "current_status": current_primary.subwave_status,
+                    "previous_structure_status": previous_proof[0],
+                    "current_structure_status": current_proof[0],
+                    "previous_verified_depth": previous_proof[1],
+                    "current_verified_depth": current_proof[1],
+                }
+            )
+            return "EVIDENCE_CHANGED", "主选结构相同但子浪证据状态变化", (event,)
+        if tip_moved:
+            event.update(
+                {
+                    "first_difference": "developing_tip",
+                    "previous_tip": old.developing_tip.extreme_at.isoformat()
+                    if old is not None
+                    else None,
+                    "current_tip": new.developing_tip.extreme_at.isoformat()
+                    if new is not None
+                    else None,
+                }
+            )
+            return "TIP_MOVED", "已确认端点相同，暂定端点移动", (event,)
+        return "SAME_COUNT", "主选结构键与上次相同", (event,)
+    if current_primary.structure_key in {card.structure_key for card in previous_cards[1:]}:
+        event.update({"first_difference": "alternate_promoted"})
+        return "ALTERNATE_PROMOTED", "上次的备选成为本次主选", (event,)
+    if (
+        old is not None
+        and previous_source is not None
+        and new is not None
+        and current_primary.pattern_type == previous_primary.pattern_type
+        and current_primary.pattern_direction == previous_primary.pattern_direction
+        and current_primary.stage != previous_primary.stage
+        and len(old.completed_waves) < len(new.completed_waves)
+        and all(
+            left.label == right.label
+            and left.pivot.kind == right.pivot.kind
+            and left.pivot.extreme_at == right.pivot.extreme_at
+            for left, right in zip(old.completed_waves, new.completed_waves, strict=False)
+        )
+    ):
+        event.update(
+            {
+                "first_difference": "stage",
+                "previous_stage": previous_primary.stage,
+                "current_stage": current_primary.stage,
+            }
+        )
+        return "STAGE_ADVANCED", "同一模板的阶段发生变化", (event,)
+    event.update({"first_difference": "structure_key"})
+    return "COUNT_CHANGED", "主选结构发生变化", (event,)
+
+
+def _triggered_conditions(
+    previous: Brief,
+    current: Brief,
+    previous_source: MarketDataBundle | None,
+    current_source: MarketDataBundle | None,
+    *,
+    scope_comparable: bool,
+    revision_comparable: bool,
+) -> tuple[tuple[LevelCondition, ...], tuple[dict, ...], str | None]:
+    if (
+        not previous.cards
+        or previous_source is None
+        or current_source is None
+        or not scope_comparable
+        or not revision_comparable
+        or current.timeframe not in {"1d", "1w"}
+    ):
+        return (), (), None
+    from eliotbot.data.periods import as_weekly
+
+    future_source = (
+        as_weekly(current_source)
+        if current.timeframe == "1w" and current_source.timeframe == "1d"
+        else current_source
+    )
+    scale = 1.0
+    if (
+        previous.adjustment == "provider_all"
+        and previous_source.provenance.price_coordinate_id
+        != current_source.provenance.price_coordinate_id
+    ):
+        scale = provider_price_scale(previous_source, current_source, previous.market_asof)
+    dates = period_dates(future_source.sessions, weekly=future_source.timeframe == "1w")
+    horizon = sum(previous.market_asof < day <= current.market_asof for day in dates)
+    if scale is None:
+        return (), (), "PRICE_BASIS_UNVERIFIED: 发行时价格坐标无法核实"
+    if not horizon:
+        return (), (), None
+    window = outcome_window(
+        future_source,
+        previous.market_asof,
+        horizon,
+        outcome_as_of=current.market_asof,
+        issuance_factors=tuple(
+            point
+            for point in previous_source.factors
+            if point.effective_date <= previous.market_asof
+        ),
+        price_scale=scale,
+    )
+    source_bars = {bar.session_date: bar for bar in future_source.bars}
+    triggered: list[LevelCondition] = []
+    events: list[dict] = []
+    card = previous.cards[0]
+    zone = ZoneInfo(previous_source.instrument.timezone)
+    issue = None
+    if any(
+        condition.coordinate_id != previous.price_coordinate_id for condition in card.conditions
+    ):
+        return (), (), "PRICE_BASIS_UNVERIFIED: 条件价格坐标与原摘要不一致"
+    for condition in card.conditions:
+        active = max(previous.as_of, condition.active_from)
+        if active > current.as_of:
+            continue
+        missing = False
+        for day, bar in zip(window.dates, window.bars, strict=True):
+            if day < active.astimezone(zone).date():
+                continue
+            source_bar = source_bars.get(day)
+            if bar is None or source_bar is None or bar.usable_at > current.as_of:
+                missing = True
+                continue
+            trigger_at = bar.end_at if condition.side == "CLOSE" else bar.start_at
+            if trigger_at < active or not condition_hit(condition, bar):
+                continue
+            status = "OBSERVED_AFTER_GAP" if missing else "TRIGGERED"
+            if not missing:
+                triggered.append(condition)
+            else:
+                issue = "INCOMPLETE_DATA: 缺口之后只记录已观测的触达"
+            events.append(
+                {
+                    "type": "condition",
+                    "status": status,
+                    "kind": condition.kind,
+                    "side": condition.side,
+                    "op": condition.op,
+                    "price": condition.price,
+                    "observed": getattr(bar, condition.side.lower()),
+                    "coordinate_id": condition.coordinate_id,
+                    "session": day.isoformat(),
+                    "bar_id": source_bar.bar_id,
+                }
+            )
+            if not missing and condition.kind == "INVALIDATION" and card.target_zones:
+                first_target = card.target_zones[0]
+                previous_hit = any(
+                    earlier is not None
+                    and active <= earlier.start_at
+                    and target_hit(first_target, card.next_leg_bias, earlier)
+                    for earlier_day, earlier in zip(window.dates, window.bars, strict=True)
+                    if earlier_day < day
+                )
+                if not previous_hit and target_hit(first_target, card.next_leg_bias, bar):
+                    events.append(
+                        {
+                            "type": "outcome",
+                            "status": "AMBIGUOUS_SAME_BAR",
+                            "session": day.isoformat(),
+                            "bar_id": source_bar.bar_id,
+                        }
+                    )
+            break
+        if missing:
+            issue = "INCOMPLETE_DATA: 条件窗口有未核实的交易会话"
+    by_bar = {}
+    for event in events:
+        if event["type"] == "condition" and event["status"] == "TRIGGERED":
+            by_bar.setdefault(event["bar_id"], {})[event["kind"]] = event["session"]
+    for bar_id, kinds in by_bar.items():
+        if {"CONFIRMATION", "INVALIDATION"} <= kinds.keys() and not any(
+            event["type"] == "outcome" and event["bar_id"] == bar_id for event in events
+        ):
+            events.append(
+                {
+                    "type": "outcome",
+                    "status": "AMBIGUOUS_SAME_BAR",
+                    "session": kinds["INVALIDATION"],
+                    "bar_id": bar_id,
+                }
+            )
+    return tuple(triggered), tuple(events), issue
+
+
+def compare_decisions(
+    previous: Brief | None,
+    current: Brief,
+    *,
+    previous_result: AnalysisResult | None = None,
+    current_result: AnalysisResult | None = None,
+    previous_source: MarketDataBundle | None = None,
+    current_source: MarketDataBundle | None = None,
+) -> DecisionComparison:
+    """Compare two published decisions without reading or rewriting either report."""
+    if previous is None:
+        return DecisionComparison(change="FIRST_RECORD", reason="没有更早的同类摘要")
+    legacy_view = current.schema_version != "1.2"
+    structure_change, structure_reason, structure_events = _structure_transition(
+        previous, current, previous_result, current_result, previous_source, legacy_view=legacy_view
+    )
+    revision_state, revisions, factor_revisions, revision_reason = _source_revision(
+        previous_source,
+        current_source,
+        decision=previous.market_asof,
+        cutoff=previous.as_of,
+    )
+    scope_change = _brief_scope_change(previous, current)
+    config_change = _config_change(previous, current)
+    input_change = "NONE"
+    if scope_change is not None:
+        change, scope_reason = scope_change
+        reason = f"{scope_reason}；结构：{structure_reason}"
+        input_change = "SCOPE"
+    elif revision_state == "NOT_COMPARABLE":
+        change = "NOT_COMPARABLE"
+        reason = f"{revision_reason}；结构：{structure_reason}"
+        input_change = "NOT_COMPARABLE"
+    elif config_change is not None:
+        change, config_reason = config_change
+        reason = config_reason
+        if revision_state == "REVISED":
+            reason += f"；{revision_reason}"
+        reason += f"；结构：{structure_reason}"
+        input_change = "CONFIG_CHANGED"
+    elif revision_state == "REVISED":
+        change = "DATA_REVISED"
+        reason = f"{revision_reason}；结构：{structure_reason}"
+        input_change = "DATA_REVISED"
+    else:
+        change = structure_change
+        reason = structure_reason
+    triggered, condition_events, trigger_issue = _triggered_conditions(
+        previous,
+        current,
+        previous_source,
+        current_source,
+        scope_comparable=scope_change is None,
+        revision_comparable=revision_state != "NOT_COMPARABLE",
+    )
+    if trigger_issue:
+        reason += f"。{trigger_issue}"
+    if (
+        not legacy_view
+        and triggered
+        and any(condition.kind == "INVALIDATION" for condition in triggered)
+        and change not in {"NOT_COMPARABLE", "CONFIG_CHANGED", "DATA_REVISED"}
+    ):
+        change = "HARD_INVALIDATED"
+        reason = "上次主选的失效条件已经触发；" + reason
+    elif (
+        not legacy_view
+        and current.status == "SEARCH_LIMITED"
+        and previous.status != "SEARCH_LIMITED"
+        and change not in {"NOT_COMPARABLE", "CONFIG_CHANGED", "DATA_REVISED"}
+    ):
+        change = "SEARCH_LIMITED"
+        reason = "本次搜索被预算截断；" + reason
+    return DecisionComparison(
+        change=change,
+        reason=reason,
+        structure_change=structure_change,
+        structure_reason=structure_reason,
+        input_change=input_change,
+        data_revision=revision_state,
+        revision_count=revisions,
+        factor_revision_count=factor_revisions,
+        triggered_conditions=triggered,
+        events=(*structure_events, *condition_events),
+    )
+
+
 def attach_previous(
     run: BriefRun,
     previous: Brief | None,
@@ -610,154 +1097,31 @@ def attach_previous(
     current_source: MarketDataBundle | None = None,
     previous_result: AnalysisResult | None = None,
 ) -> BriefRun:
+    comparison = compare_decisions(
+        previous,
+        run.brief,
+        previous_result=previous_result,
+        current_result=run.result,
+        previous_source=previous_source,
+        current_source=current_source,
+    )
     if previous is None:
-        previous_info = BriefPrevious(
-            change="FIRST_RECORD",
-            reason="没有更早的同类摘要",
-        )
+        previous_info = BriefPrevious(change=comparison.change, reason=comparison.reason)
     else:
-        current_cards = run.brief.cards
-        previous_cards = previous.cards
-        if not current_cards and not previous_cards:
-            structure_change, structure_reason = "SAME_COUNT", "两次都没有合格候选"
-        elif not previous_cards:
-            structure_change, structure_reason = "COUNT_CHANGED", "上次没有候选，本次出现候选"
-        elif not current_cards:
-            structure_change, structure_reason = "COUNT_CHANGED", "上次有候选，本次没有候选"
-        else:
-            current_primary = current_cards[0]
-            previous_primary = previous_cards[0]
-            old = (
-                previous_result.scenarios[0]
-                if previous_result and previous_result.scenarios
-                else None
-            )
-            new = run.result.scenarios[0]
-            if current_primary.structure_key == previous_primary.structure_key:
-                tip_moved = (
-                    old is not None
-                    and new.stage != "COMPLETE"
-                    and (
-                        old.developing_tip.extreme_at != new.developing_tip.extreme_at
-                        or (
-                            previous is not None
-                            and previous.adjustment != "basis_date_qfq"
-                            and old.developing_tip.price != new.developing_tip.price
-                        )
-                    )
-                )
-                structure_change, structure_reason = (
-                    ("TIP_MOVED", "已确认端点相同，暂定端点移动")
-                    if tip_moved
-                    else ("SAME_COUNT", "主选结构键与上次相同")
-                )
-            elif current_primary.structure_key in {
-                card.structure_key for card in previous_cards[1:]
-            }:
-                structure_change, structure_reason = (
-                    "ALTERNATE_PROMOTED",
-                    "上次的备选成为本次主选",
-                )
-            elif (
-                old is not None
-                and previous_source is not None
-                and current_primary.pattern_type == previous_primary.pattern_type
-                and current_primary.pattern_direction == previous_primary.pattern_direction
-                and current_primary.stage != previous_primary.stage
-                and len(old.completed_waves) < len(new.completed_waves)
-                and all(
-                    left.label == right.label
-                    and left.pivot.kind == right.pivot.kind
-                    and left.pivot.extreme_at == right.pivot.extreme_at
-                    for left, right in zip(old.completed_waves, new.completed_waves, strict=False)
-                )
-            ):
-                structure_change, structure_reason = (
-                    "STAGE_ADVANCED",
-                    "同一模板的阶段发生变化",
-                )
-            else:
-                structure_change, structure_reason = "COUNT_CHANGED", "主选结构发生变化"
-        revision_state, revisions, factor_revisions, revision_reason = _source_revision(
-            previous_source, current_source, decision=previous.market_asof, cutoff=previous.as_of
-        )
-        scope_change = _brief_scope_change(previous, run.brief)
-        config_change = _config_change(previous, run.brief)
-        if scope_change is not None:
-            change, scope_reason = scope_change
-            reason = f"{scope_reason}；结构：{structure_reason}"
-        elif revision_state == "NOT_COMPARABLE":
-            change = "NOT_COMPARABLE"
-            reason = f"{revision_reason}；结构：{structure_reason}"
-        elif config_change is not None:
-            change, config_reason = config_change
-            reason = config_reason
-            if revision_state == "REVISED":
-                reason += f"；{revision_reason}"
-            reason += f"；结构：{structure_reason}"
-        elif revision_state == "REVISED":
-            change = "DATA_REVISED"
-            reason = f"{revision_reason}；结构：{structure_reason}"
-        else:
-            change = structure_change
-            reason = structure_reason
-        triggered = ()
-        if (
-            previous_cards
-            and previous_source is not None
-            and current_source is not None
-            and scope_change is None
-            and revision_state != "NOT_COMPARABLE"
-            and run.brief.timeframe in {"1d", "1w"}
-        ):
-            from eliotbot.data.periods import as_weekly
-
-            future_source = (
-                as_weekly(current_source)
-                if run.brief.timeframe == "1w" and current_source.timeframe == "1d"
-                else current_source
-            )
-            scale = 1.0
-            if (
-                previous.adjustment == "provider_all"
-                and previous_source.provenance.price_coordinate_id
-                != current_source.provenance.price_coordinate_id
-            ):
-                scale = provider_price_scale(previous_source, current_source, previous.market_asof)
-            dates = period_dates(future_source.sessions, weekly=future_source.timeframe == "1w")
-            horizon = sum(previous.market_asof < day <= run.brief.market_asof for day in dates)
-            if scale is not None and horizon:
-                window = outcome_window(
-                    future_source,
-                    previous.market_asof,
-                    horizon,
-                    outcome_as_of=run.brief.market_asof,
-                    issuance_factors=tuple(
-                        p
-                        for p in previous_source.factors
-                        if p.effective_date <= previous.market_asof
-                    ),
-                    price_scale=scale,
-                )
-                triggered = tuple(
-                    cond
-                    for cond in previous_cards[0].conditions
-                    if any(bar is not None and condition_hit(cond, bar) for bar in window.bars)
-                )
-            elif scale is None:
-                reason += "。发行时价格坐标无法核实"
         previous_info = BriefPrevious(
-            change=change,
-            reason=reason,
+            change=comparison.change,
+            reason=comparison.reason,
             previous_digest=previous.brief_digest,
             previous_market_asof=previous.market_asof,
             previous_as_of=previous.as_of,
             previous_path=previous_path,
-            structure_change=structure_change,
-            data_revision=revision_state,
-            revision_count=revisions,
-            factor_revision_count=factor_revisions,
-            triggered_conditions=triggered,
+            structure_change=comparison.structure_change,
+            data_revision=comparison.data_revision,
+            revision_count=comparison.revision_count,
+            factor_revision_count=comparison.factor_revision_count,
+            triggered_conditions=comparison.triggered_conditions,
+            events=comparison.events if run.brief.schema_version == "1.2" else (),
+            input_change=comparison.input_change if run.brief.schema_version == "1.2" else None,
         )
     brief = run.brief.model_copy(update={"previous": previous_info})
     brief_digest = digest(brief.model_dump(mode="json", exclude={"brief_digest", "generated_at"}))
@@ -771,4 +1135,5 @@ def attach_previous(
         weekly_prepared=run.weekly_prepared,
         alternate_result=run.alternate_result,
         alternate_prepared=run.alternate_prepared,
+        qualified=run.qualified,
     )

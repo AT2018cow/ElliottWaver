@@ -1,0 +1,35 @@
+{
+  "protocol_version": "1",
+  "protocol_id": "wave-engine-acceptance-v1-us-classic",
+  "cache_root": ".cache/us-acceptance",
+  "samples": [
+    {
+      "symbol": "AAPL",
+      "asset_type": "EQUITY",
+      "source_timeframe": "1d",
+      "snapshot_id": "cff55390639d9397a6d5417974193d7cc1ae6b7ddc53a869bce59faee6d3b1d3"
+    },
+    {
+      "symbol": "SPY",
+      "asset_type": "EQUITY",
+      "source_timeframe": "1d",
+      "snapshot_id": "27ac145f8599cf679dbe830acdcda6f54fd60471a290f361a94700d023919659"
+    }
+  ],
+  "grid": {
+    "start": "2026-01-01",
+    "end": "2026-06-30",
+    "cadence": "LAST_SESSION_OF_WEEK",
+    "outcome_as_of": "2026-06-30"
+  },
+  "events": [],
+  "settings": {
+    "analysis": {
+      "engine_profile": "classic_v4",
+      "max_analysis_bars": 600
+    },
+    "search": {
+      "max_subwave_depth": 0
+    }
+  }
+}

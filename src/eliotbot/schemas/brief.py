@@ -13,6 +13,8 @@ from eliotbot.schemas.wave import (
     Pattern,
     PriceZone,
     SubwaveStatus,
+    WaveRelation,
+    WaveStructure,
 )
 from eliotbot.timeframes import Timeframe
 
@@ -42,6 +44,7 @@ class BriefCard(Contract):
     difference: str
     name: str
     pattern_type: Pattern
+    variant: str | None = Field(None, exclude_if=lambda value: value is None)
     pattern_direction: Literal["UP", "DOWN"]
     next_leg_bias: Literal["UP", "DOWN", "UNKNOWN"]
     stage: str
@@ -57,6 +60,7 @@ class BriefCard(Contract):
     conditions: tuple[LevelCondition, ...] = ()
     target_zones: tuple[PriceZone, ...] = ()
     warnings: tuple[str, ...] = ()
+    structure: WaveStructure | None = Field(None, exclude_if=lambda value: value is None)
 
 
 class BriefIssue(Contract):
@@ -119,6 +123,9 @@ class BriefPrevious(Contract):
         "STAGE_ADVANCED",
         "COUNT_CHANGED",
         "TIP_MOVED",
+        "HARD_INVALIDATED",
+        "EVIDENCE_CHANGED",
+        "SEARCH_LIMITED",
         "CONFIG_CHANGED",
         "DATA_REVISED",
         "NOT_COMPARABLE",
@@ -133,6 +140,17 @@ class BriefPrevious(Contract):
     revision_count: int = Field(0, ge=0)
     factor_revision_count: int = Field(0, ge=0)
     triggered_conditions: tuple[LevelCondition, ...] = ()
+    events: tuple[dict, ...] = Field((), exclude_if=lambda value: not value)
+    input_change: str | None = Field(None, exclude_if=lambda value: value is None)
+
+
+class WindowParticipant(Contract):
+    start: date
+    scenario_id: str | None = None
+    structure_key: str | None = None
+    next_leg_bias: Literal["UP", "DOWN", "UNKNOWN"] = "UNKNOWN"
+    status: str
+    reason: str
 
 
 class BriefWindowComparison(Contract):
@@ -147,11 +165,14 @@ class BriefWindowComparison(Contract):
     alternate_scenario_id: str | None = None
     alternate_start: date | None = None
     alternate_bar_count: int | None = Field(None, ge=1)
+    participants: tuple[WindowParticipant, ...] = Field((), exclude_if=lambda value: not value)
+    total_expansions: int | None = Field(None, ge=0, exclude_if=lambda value: value is None)
+    search_limits: tuple[str, ...] = Field((), exclude_if=lambda value: not value)
     reason: str
 
 
 class Brief(Contract):
-    schema_version: Literal["1.0", "1.1"] = "1.1"
+    schema_version: Literal["1.0", "1.1", "1.2"] = "1.1"
     brief_digest: str
     source_snapshot_id: str
     symbol: str
@@ -187,6 +208,7 @@ class Brief(Contract):
     retrospective: bool = False
     decision_atr: float | None = Field(None, ge=0)
     outcome_dates: tuple[date, ...] = ()
+    wave_relations: tuple[WaveRelation, ...] = Field((), exclude_if=lambda value: not value)
     forecast_note: str = "价格概率尚未校准；当前只提供条件情景与候选权重。"
 
 

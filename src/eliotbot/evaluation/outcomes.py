@@ -9,7 +9,7 @@ from eliotbot.data.resample import weekly_bars
 from eliotbot.errors import DataError
 from eliotbot.evaluation.events import condition_hit
 from eliotbot.schemas.market import Bar, FactorPoint, MarketDataBundle
-from eliotbot.schemas.wave import WaveScenario
+from eliotbot.schemas.wave import PriceZone, WaveScenario
 
 
 @dataclass(frozen=True)
@@ -151,6 +151,14 @@ def close_band(window: OutcomeWindow, decision_close: float, atr: float, horizon
     return Outcome(status, bar.session_date, bar.close)
 
 
+def target_hit(target: PriceZone, bias: str, bar: Bar) -> bool:
+    return (
+        (bar.high >= target.low and bar.low <= target.high)
+        or (bias == "UP" and bar.low > target.high)
+        or (bias == "DOWN" and bar.high < target.low)
+    )
+
+
 def first_touch(
     scenario: WaveScenario, window: OutcomeWindow, horizon: int, *, confirmation: bool
 ) -> Outcome:
@@ -165,12 +173,7 @@ def first_touch(
         if confirmation:
             hit = any(condition_hit(condition, bar) for condition in confirmations)
         else:
-            target = scenario.target_zones[0]
-            hit = (
-                (bar.high >= target.low and bar.low <= target.high)
-                or (scenario.next_leg_bias == "UP" and bar.low > target.high)
-                or (scenario.next_leg_bias == "DOWN" and bar.high < target.low)
-            )
+            hit = target_hit(scenario.target_zones[0], scenario.next_leg_bias, bar)
         if hit and invalidated:
             return Outcome("AMBIGUOUS_SAME_BAR", day)
         if hit:

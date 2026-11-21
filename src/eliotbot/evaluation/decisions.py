@@ -13,7 +13,7 @@ from pathlib import Path
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from eliotbot import ENGINE_VERSION
+from eliotbot.brief import BriefRun, build_brief, compare_decisions
 from eliotbot.config import Settings
 from eliotbot.data.periods import as_weekly
 from eliotbot.data.snapshots import SnapshotStore
@@ -35,8 +35,7 @@ from eliotbot.forecast import (
     validate_approval_time,
 )
 from eliotbot.schemas.market import AnalysisRequest, MarketDataBundle
-from eliotbot.schemas.wave import WaveScenario
-from eliotbot.service import AnalysisService, prepare_bundle
+from eliotbot.service import engine_rules_version
 from eliotbot.util import atomic_write, canonical_json, digest
 
 SUPPORTED_EVENTS = {
@@ -138,30 +137,6 @@ def _decision_bars(bundle: MarketDataBundle, grid: dict, timeframe: str):
     )
     by_date = {bar.session_date: bar for bar in bundle.bars}
     return [(day, by_date.get(day)) for day in dates if start <= day <= end]
-
-
-def _structure_key(
-    scenario: WaveScenario, bundle: MarketDataBundle, symbol: str, timeframe: str
-) -> str:
-    endpoints = []
-    for wave in scenario.completed_waves:
-        index = wave.pivot.index
-        raw_id = (
-            bundle.raw_bars[index].bar_id
-            if 0 <= index < len(bundle.raw_bars)
-            else wave.pivot.extreme_bar_id
-        )
-        endpoints.append((wave.label, wave.pivot.kind, raw_id))
-    return digest(
-        [
-            symbol,
-            timeframe,
-            scenario.pattern_type,
-            scenario.stage,
-            scenario.pattern_direction,
-            endpoints,
-        ]
-    )[:24]
 
 
 def _confirmation_index(bars, pivot) -> int | None:
@@ -293,6 +268,26 @@ def _structure_stats(decisions: list[dict]) -> dict:
         "comparable_primary_pairs": len(comparable),
         "primary_switch_rate": switches / len(comparable) if comparable else None,
         "search_truncated": sum(bool(row.get("search_truncated")) for row in decisions),
+        "hierarchical": {
+            "decisions": sum(1 for row in analyzable if row.get("first_structure_status")),
+            "verified_primary": sum(
+                row.get("first_structure_status") == "VERIFIED" for row in analyzable
+            ),
+            "statuses": dict(
+                Counter(
+                    row.get("first_structure_status")
+                    for row in analyzable
+                    if row.get("first_structure_status")
+                )
+            ),
+            "verified_depth": _distribution(
+                [
+                    int(row["first_structure_verified_depth"])
+                    for row in analyzable
+                    if row.get("first_structure_verified_depth") is not None
+                ]
+            ),
+        },
     }
 
 
@@ -501,7 +496,7 @@ def evaluate_protocol(
     cache_root = Path(protocol.get("cache_root", ".cache/eliotbot"))
     settings = Settings(**protocol.get("settings", {}))
     store = SnapshotStore(cache_root)
-    service = AnalysisService(settings)
+    advanced = settings.analysis.engine_profile == "hierarchical_v1"
     forced_model = load_model(Path(model), operational=True) if model else None
     registry = ModelRegistry(Path(model_registry)) if model_registry else None
     if model_approved_at and forced_model is None:
@@ -536,6 +531,7 @@ def evaluate_protocol(
         timeframe = source_timeframe
         previous_pivots: list[dict] | None = None
         previous_decision: dict | None = None
+        previous_run: BriefRun | None = None
         for decision_day, decision_bar in _decision_bars(bundle, protocol["grid"], timeframe):
             decision_id = digest([protocol_identity, symbol, decision_day, timeframe, snapshot_id])[
                 :24
@@ -546,6 +542,7 @@ def evaluate_protocol(
                 "asset_type": bundle.instrument.asset_type,
                 "market": bundle.instrument.market,
                 "timeframe": timeframe,
+                "mode": "FROZEN_DATA_REPLAY",
                 "feed": bundle.provenance.feed,
                 "adjustment": bundle.provenance.adjustment,
                 "decision_date": str(decision_day),
@@ -573,19 +570,12 @@ def evaluate_protocol(
                 allow_gaps=protocol.get("allow_gaps", False),
             )
             try:
-                prepared = prepare_bundle(request, bundle)
-                context = service.analyze_with_context(request, prepared)
-                result = context.result
-                weekly = None
-                if timeframe == "1d":
-                    try:
-                        weekly = service.weekly_background(request, bundle)[0].result
-                    except DataError:
-                        pass
+                run = build_brief(request, bundle, settings, check_windows=advanced)
+                prepared, result, weekly = run.prepared, run.result, run.weekly_result
                 analyzable = result.status not in {"INSUFFICIENT_DATA", "STALE_DATA"}
                 indicators = calculate(prepared.bars)
                 filters = dict(
-                    engine_version=ENGINE_VERSION,
+                    engine_version=engine_rules_version(settings),
                     config_hash=settings.computation_hash,
                     timeframe=timeframe,
                     asset_type=bundle.instrument.asset_type,
@@ -616,7 +606,7 @@ def evaluate_protocol(
                     prepared,
                     indicators,
                     active_model,
-                    qualified=context.qualified,
+                    qualified=run.qualified,
                     weekly=weekly,
                 )
                 pivots = _confirmed_pivots(
@@ -638,11 +628,7 @@ def evaluate_protocol(
                         pivot for pivot in pivots if pivot["pivot_key"] not in previous_keys
                     ]
                 scenario = result.scenarios[0] if result.scenarios else None
-                first_key = (
-                    _structure_key(scenario, prepared, symbol, timeframe)
-                    if scenario is not None
-                    else None
-                )
+                first_key = run.brief.cards[0].structure_key if run.brief.cards else None
                 primary_switch = None
                 if (
                     previous_decision is not None
@@ -652,14 +638,54 @@ def evaluate_protocol(
                     and first_key
                 ):
                     primary_switch = previous_decision["first_structure_key"] != first_key
+                comparison = (
+                    compare_decisions(
+                        previous_run.brief,
+                        run.brief,
+                        previous_result=previous_run.result,
+                        current_result=result,
+                        previous_source=previous_run.source,
+                        current_source=run.source,
+                    )
+                    if previous_run is not None
+                    else None
+                )
                 decision = {
                     **identity,
                     "input_snapshot_id": prepared.snapshot_id,
                     "status": result.status,
                     "analyzable": analyzable,
+                    "engine_version": result.engine_version,
+                    "engine_profile": settings.analysis.engine_profile,
                     "first_structure_key": first_key,
                     "first_pattern": scenario.pattern_type if scenario is not None else None,
                     "first_stage": scenario.stage if scenario is not None else None,
+                    "first_pattern_direction": (
+                        scenario.pattern_direction if scenario is not None else None
+                    ),
+                    "first_subwave_status": (
+                        scenario.subwave_status if scenario is not None else None
+                    ),
+                    "first_conditions": (
+                        [item.model_dump(mode="json") for item in scenario.conditions]
+                        if scenario is not None
+                        else []
+                    ),
+                    "config_hash": result.config_hash,
+                    "first_structure_status": (
+                        scenario.structure.status
+                        if scenario is not None and scenario.structure is not None
+                        else None
+                    ),
+                    "first_structure_verified_depth": (
+                        scenario.structure.verified_depth
+                        if scenario is not None and scenario.structure is not None
+                        else None
+                    ),
+                    "structure_verified_count": sum(
+                        item.structure is not None and item.structure.status == "VERIFIED"
+                        for item in result.scenarios
+                    ),
                     "candidate_keys": [item.scenario_id for item in result.scenarios],
                     "anchors": [str(day) for day in result.diagnostics.anchors],
                     "price_coordinate_id": result.price_coordinate_id,
@@ -669,6 +695,16 @@ def evaluate_protocol(
                     "pivot_rewrite_count": pivot_rewrite_count,
                     "pivot_new_count": pivot_new_count,
                     "primary_switch": primary_switch,
+                    "previous_change": comparison.change if comparison else None,
+                    "previous_reason": comparison.reason if comparison else None,
+                    "previous_events": comparison.events if comparison else (),
+                    "previous_input_change": comparison.input_change if comparison else None,
+                    "previous_structure_change": comparison.structure_change
+                    if comparison
+                    else None,
+                    "wave_relations": tuple(
+                        item.model_dump(mode="json") for item in run.brief.wave_relations
+                    ),
                     "model_id": (
                         active_model.get("model_id") if active_model is not None else None
                     ),
@@ -676,7 +712,7 @@ def evaluate_protocol(
                     "retrospective": retrospective,
                     "forecasts": [item.model_dump(mode="json") for item in forecasts],
                     "features": decision_features(
-                        result, prepared, indicators, qualified=context.qualified, weekly=weekly
+                        result, prepared, indicators, qualified=run.qualified, weekly=weekly
                     ),
                 }
                 if analyzable and result.status != "SEARCH_LIMITED":
@@ -686,13 +722,14 @@ def evaluate_protocol(
                             decision,
                             bundle,
                             prepared,
-                            context.qualified,
+                            run.qualified,
                             float(indicators.atr[-1]),
                         )
                     )
                 decisions.append(decision)
                 previous_pivots = pivots
                 previous_decision = decision
+                previous_run = run
             except DataError as exc:
                 decisions.append(
                     {
@@ -741,7 +778,8 @@ def _write_artifacts(
         "protocol": protocol,
         "protocol_sha256": protocol_hash,
         "source_sha256": source_sha256,
-        "engine_version": ENGINE_VERSION,
+        "engine_version": engine_rules_version(settings),
+        "engine_profile": settings.analysis.engine_profile,
         "config_hash": settings.computation_hash,
         "model_usage": summary["model_usage"],
         "samples": protocol["samples"],
@@ -793,7 +831,7 @@ def merge_evaluations(protocol_path: Path, input_dirs: list[Path], output_dir: P
         if (
             {k: v for k, v in protocol.items() if k != "samples"}
             != {k: v for k, v in partial.items() if k != "samples"}
-            or manifest["engine_version"] != ENGINE_VERSION
+            or manifest["engine_version"] != engine_rules_version(settings)
             or manifest["config_hash"] != settings.computation_hash
         ):
             raise InputError(f"Incompatible evaluation protocol: {directory}")

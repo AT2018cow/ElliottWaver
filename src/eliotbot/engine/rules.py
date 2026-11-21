@@ -1,10 +1,66 @@
 """Hard constraints over both pivot endpoints and every intervening wick."""
 
 from collections.abc import Sequence
+from fractions import Fraction
 from itertools import pairwise
+from math import isclose
 
 from eliotbot.schemas.market import Bar
 from eliotbot.schemas.wave import PivotPoint, RuleResult
+
+
+def _wave_return(start: float, end: float, direction: int) -> float:
+    return direction * (end - start) / start
+
+
+def wave5_length_cap(prices: Sequence[float], direction: int) -> float | None:
+    """Return the price at which wave 5 has the same percentage length as wave 3."""
+    p0, p1, p2, p3, p4 = prices[:5]
+    first = _wave_return(p0, p1, direction)
+    third = _wave_return(p2, p3, direction)
+    if third >= first or isclose(third, first, rel_tol=1e-12):
+        return None
+    # The observed quote and the calculated cap must round only once to
+    # binary float, so an exact decimal touch does not turn into a breach.
+    return float(Fraction(str(p4)) * Fraction(str(p3)) / Fraction(str(p2)))
+
+
+def _price_epsilon(prices: Sequence[float]) -> float:
+    return max(1e-10, max(abs(price) for price in prices) * 1e-10)
+
+
+def classify_variant(
+    pattern: str, points: Sequence[PivotPoint], bars: Sequence[Bar], direction: int, tick: float
+) -> str | None:
+    """Classify the endpoint-level subtype that is decidable without a parent."""
+    if len(points) < 4:
+        return None
+    q = [direction * point.price for point in points]
+    if pattern == "FLAT" and len(q) >= 4:
+        eps = _price_epsilon(q)
+        a = abs(q[1] - q[0])
+        if a <= eps:
+            return None
+        crossed_origin = q[2] < q[0] - eps
+        if q[3] > q[1] + eps:
+            return "EXPANDED_FLAT" if crossed_origin else "REGULAR_FLAT"
+        if crossed_origin and q[3] < q[1] - eps:
+            overshoot = q[0] - q[2]
+            if overshoot >= max(tick, 0.10 * a) - eps:
+                return "RUNNING_FLAT"
+    if pattern == "TRIANGLE" and len(q) >= 6:
+        eps = _price_epsilon(q)
+        if q[3] < q[1] - eps and abs(q[4] - q[2]) <= tick + eps:
+            return "BARRIER_TRIANGLE"
+    if pattern == "DIAGONAL" and len(q) >= 6:
+        first = abs(q[1] - q[0])
+        third = abs(q[3] - q[2])
+        fifth = abs(q[5] - q[4])
+        if third < first and fifth < third:
+            return "CONTRACTING_DIAGONAL"
+        if third > first and fifth > third:
+            return "EXPANDING_DIAGONAL"
+    return None
 
 
 def _rail_widths(
@@ -25,6 +81,8 @@ def check_pattern(
     direction: int,
     *,
     developing: bool,
+    variant: str | None = None,
+    tick_size: float = 0.01,
 ) -> tuple[RuleResult, ...]:
     if pattern not in {
         "IMPULSE",
@@ -35,8 +93,9 @@ def check_pattern(
         "WXY",
     } or direction not in {-1, 1}:
         raise ValueError("unsupported rule profile")
-    q = [direction * p.price for p in points]
-    eps = max(1e-10, max(abs(x) for x in q) * 1e-10)
+    prices = [point.price for point in points]
+    q = [direction * price for price in prices]
+    eps = _price_epsilon(q)
     results: list[RuleResult] = []
 
     def rule(name: str, valid: bool | None, reason: str, observed=None, boundary=None):
@@ -73,10 +132,10 @@ def check_pattern(
             else low >= q[j] - eps and high <= q[j - 1] + eps
         )
         rule(f"SEGMENT_EXTREMA_{j}", extrema_valid, "合并未隐藏更极端的内部影线")
-    if len(points) >= 3 and pattern == "WXY":
+    if len(points) >= 3 and pattern == "WXY" and variant != "DOUBLE_THREE":
         low, _ = extremes(2)
         rule("X_ORIGIN", low > q[0] + eps, "双锯齿X不可触及W起点", low, q[0])
-    elif len(points) >= 3 and pattern not in {"FLAT", "TRIANGLE"}:
+    elif len(points) >= 3 and pattern not in {"FLAT", "TRIANGLE", "WXY"}:
         low, _ = extremes(2)
         rule("W2_OR_B_ORIGIN", low > q[0] + eps, "浪2或锯齿B不可触及起点", low, q[0])
     if pattern == "ZIGZAG_ABC":
@@ -103,15 +162,26 @@ def check_pattern(
             )
         if len(points) == 4:
             near = q[3] >= q[1] - 0.25 * a - eps
-            rule(
-                "C_NEAR_A",
-                None if developing and not near else near,
-                "平台C回到A终点附近或以上",
-                q[3],
-                q[1] - 0.25 * a,
-            )
+            if variant == "RUNNING_FLAT":
+                rule(
+                    "C_NEAR_A",
+                    True,
+                    "顺势平台允许C落在A终点之前",
+                    q[3],
+                    q[1] - 0.25 * a,
+                )
+            else:
+                rule(
+                    "C_NEAR_A",
+                    None if developing and not near else near,
+                    "平台C回到A终点附近或以上",
+                    q[3],
+                    q[1] - 0.25 * a,
+                )
         return tuple(results)
     if pattern == "WXY":
+        if variant == "DOUBLE_THREE":
+            return tuple(results)
         if len(points) >= 3:
             a = abs(q[1] - q[0])
             x = abs(q[1] - q[2])
@@ -142,6 +212,10 @@ def check_pattern(
             initial, final = _rail_widths(points, q, end_index)
             contracting = q[3] < q[1] - eps and q[4] > q[2] + eps
             expanding = q[3] > q[1] + eps and q[4] < q[2] - eps
+            if variant == "BARRIER_TRIANGLE":
+                contracting = q[3] < q[1] - eps and abs(q[4] - q[2]) <= tick_size + eps
+                expanding = False
+                shape = "阻挡三角形B-D近似水平且两条边界收敛"
             valid_rails = min(initial, final) > eps and (
                 (contracting and final < initial - eps) or (expanding and final > initial + eps)
             )
@@ -158,6 +232,15 @@ def check_pattern(
             else:
                 valid = False
             rule("TRIANGLE_SHAPE", valid, shape, final, initial)
+        end = q[5] if len(points) == 6 else None
+        retraces = end is not None and end > q[0] + eps
+        rule(
+            "TRIANGLE_NET_RETRACEMENT",
+            None if developing and not retraces else retraces,
+            "三角形结束时E须越过A起点，形成对前一浪的净回撤",
+            end,
+            q[0],
+        )
         return tuple(results)
     diagonal = pattern == "DIAGONAL"
     if len(points) >= 4:
@@ -198,24 +281,37 @@ def check_pattern(
         else:
             rule("DIAGONAL_SHAPE", None, shape)
     if len(points) >= 6:
-        l1, l3, l5 = q[1] - q[0], q[3] - q[2], q[5] - q[4]
+        r1 = _wave_return(prices[0], prices[1], direction)
+        r3 = _wave_return(prices[2], prices[3], direction)
+        r5 = _wave_return(prices[4], prices[5], direction)
+        price_cap = wave5_length_cap(prices, direction)
+        cap = None if price_cap is None else direction * price_cap
         pending = developing and q[5] <= q[3] + eps
+        truncated = (
+            variant == "TRUNCATED_FIFTH" and len(points) >= 6 and q[4] + eps < q[5] <= q[3] + eps
+        )
         rule(
             "W5_PROGRESS",
-            None if pending else q[5] > q[3] + eps,
-            "完整非截短浪5须越过浪3终点",
+            True if truncated else (None if pending else q[5] > q[3] + eps),
+            "截短第五浪允许浪5未越过浪3终点" if truncated else "完整非截短浪5须越过浪3终点",
             q[5],
             q[3],
         )
-        rule("W3_NOT_SHORTEST", l3 + eps >= min(l1, l5), "浪3不能短于浪1和浪5", l3, min(l1, l5))
-        if developing and l3 < l1 - eps:
+        rule(
+            "W3_NOT_SHORTEST",
+            cap is None or q[5] <= cap,
+            "浪3不能短于浪1和浪5，浪长按各自起点的百分比（%）计算",
+            100 * r3,
+            100 * min(r1, r5),
+        )
+        if developing and cap is not None:
             _, high = extremes(5)
             rule(
                 "W5_LENGTH_CAP",
-                high <= q[4] + l3 + eps,
-                "浪3短于浪1时浪5不得超过浪3长度",
+                high <= cap,
+                "浪3百分比短于浪1时，浪5百分比不得超过浪3",
                 high,
-                q[4] + l3,
+                cap,
             )
     else:
         rule("W3_NOT_SHORTEST", None, "浪5未形成，不能按其未来长度否定当前计数")

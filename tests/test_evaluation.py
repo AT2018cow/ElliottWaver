@@ -1,8 +1,10 @@
 import json
+from dataclasses import replace
 
 import pyarrow.parquet as pq
 import pytest
 
+from eliotbot.brief import _select_cards, attach_previous, build_brief
 from eliotbot.config import Settings
 from eliotbot.data.demo import demo_bundle
 from eliotbot.data.snapshots import SnapshotStore
@@ -17,6 +19,7 @@ from eliotbot.evaluation.decisions import (
 )
 from eliotbot.forecast import ModelRegistry
 from eliotbot.schemas.market import AnalysisRequest
+from eliotbot.schemas.wave import LevelCondition
 from eliotbot.service import prepare_bundle
 
 
@@ -97,6 +100,89 @@ def test_evaluate_protocol_writes_decisions_events_and_summary(bundle, tmp_path)
     assert merged["analyzable"] == summary["analyzable"]
     manifest = json.loads((tmp_path / "merged" / "manifest.json").read_text())
     assert len(manifest["merged_from"]) == 2
+
+
+@pytest.mark.parametrize("profile", ["classic_v4", "hierarchical_v1"])
+def test_replay_uses_published_comparison_mode_and_primary_key(
+    bundle, tmp_path, monkeypatch, profile
+):
+    previous_bar, next_bar = bundle.bars[-22:-20]
+    store = SnapshotStore(tmp_path / "cache")
+    snapshot = store.save(bundle)
+    protocol_path = tmp_path / "protocol.json"
+    protocol_path.write_text(
+        json.dumps(
+            {
+                "protocol_version": "1",
+                "cache_root": str(tmp_path / "cache"),
+                "samples": [
+                    {
+                        "symbol": "AAPL",
+                        "asset_type": "EQUITY",
+                        "source_timeframe": "1d",
+                        "snapshot_id": snapshot,
+                    }
+                ],
+                "grid": {
+                    "start": str(previous_bar.session_date),
+                    "end": str(next_bar.session_date),
+                    "cadence": "EVERY_SESSION",
+                },
+                "settings": {"analysis": {"engine_profile": profile}},
+                "events": [],
+            }
+        )
+    )
+    built = []
+
+    def control_count(request, source, settings, **kwargs):
+        run = build_brief(request, source, settings, include_weekly=False, check_windows=False)
+        if not built:
+            condition = LevelCondition(
+                kind="INVALIDATION",
+                side="LOW",
+                op="<=",
+                price=next_bar.low,
+                active_from=previous_bar.usable_at,
+                reason="fixture",
+                coordinate_id=run.brief.price_coordinate_id,
+            )
+            scenario = run.result.scenarios[0].model_copy(
+                update={"variant": None, "conditions": (condition,)}
+            )
+        else:
+            scenario = built[0].result.scenarios[0]
+            if profile == "hierarchical_v1":
+                scenario = scenario.model_copy(update={"variant": "TRUNCATED_FIFTH"})
+        result = run.result.model_copy(update={"scenarios": (scenario,)})
+        brief = run.brief.model_copy(update={"cards": _select_cards(result, run.prepared)})
+        built.append(replace(run, brief=brief, result=result))
+        return built[-1]
+
+    monkeypatch.setattr("eliotbot.evaluation.decisions.build_brief", control_count)
+    output = tmp_path / "evaluation"
+    evaluate_protocol(protocol_path, output)
+    first, second = [
+        json.loads(line) for line in (output / "decisions.jsonl").read_text().splitlines()
+    ]
+    previous, current = built
+    published = attach_previous(
+        current,
+        previous.brief,
+        previous_result=previous.result,
+        previous_source=previous.source,
+        current_source=current.source,
+    ).brief.previous
+    assert second["previous_change"] == published.change
+    assert [first["first_structure_key"], second["first_structure_key"]] == [
+        run.brief.cards[0].structure_key for run in built
+    ]
+    if profile == "classic_v4":
+        assert published.change == "SAME_COUNT" and published.triggered_conditions
+        assert second["primary_switch"] is False
+    else:
+        assert published.structure_change == "COUNT_CHANGED"
+        assert second["primary_switch"] is True
 
 
 def test_structure_stats_counts_switches_rewrites_and_delays():

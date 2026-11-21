@@ -14,7 +14,7 @@ from pathlib import Path
 from eliotbot.brief import BriefRun
 from eliotbot.errors import DataError, ExportError
 from eliotbot.schemas.brief import Brief, BriefPeriod, forecast_message
-from eliotbot.schemas.wave import AnalysisResult, WaveScenario
+from eliotbot.schemas.wave import AnalysisResult, WaveScenario, WaveStructure
 from eliotbot.util import atomic_write, canonical_json, digest
 from eliotbot.visualization.chart_builder import PLOTLY_RENDER_VERSION, render_html
 
@@ -73,6 +73,7 @@ def rule_evidence(scenario: WaveScenario) -> tuple[str, ...]:
     price_rules = {
         "C_NEAR_A",
         "C_PROGRESS",
+        "TRIANGLE_NET_RETRACEMENT",
         "W2_OR_B_ORIGIN",
         "W3_PROGRESS",
         "W4_NO_FULL_RETRACE",
@@ -93,6 +94,68 @@ def rule_evidence(scenario: WaveScenario) -> tuple[str, ...]:
             text += f" · 判定边界 {sign * rule.boundary:.4f}"
         lines.append(text)
     return tuple(lines)
+
+
+def structure_evidence(structure: WaveStructure) -> tuple[str, ...]:
+    nodes = {node.node_id: node for node in structure.nodes}
+    root = nodes.get(structure.root_id)
+    if root is None:
+        return ("结构证据的根节点不可用",)
+    lines = [
+        f"结构 {root.variant or root.pattern_type} · {structure.status} · "
+        f"已验证深度 {structure.verified_depth}/{structure.requested_depth}"
+    ]
+
+    def visit(node, path: str) -> None:
+        for leg in node.child_links:
+            label = f"{path}{leg.wave_label}"
+            child = nodes.get(leg.child_node_id)
+            if child is None:
+                evidence = leg.reason_code or "等待证据"
+                if leg.failed_rule_ids:
+                    evidence += f" · {', '.join(leg.failed_rule_ids)}"
+            else:
+                prices = " → ".join(f"{point.pivot.price:.4f}" for point in child.points)
+                evidence = f"{child.variant or child.pattern_type} · {prices} · {child.status}"
+            lines.append(f"浪 {label} · {leg.status} · {evidence}")
+            if child is not None and path.count(".") + 1 < structure.requested_depth:
+                visit(child, f"{label}.")
+
+    visit(root, "")
+    return tuple(lines)
+
+
+def relation_evidence(brief: Brief) -> tuple[str, ...]:
+    return tuple(
+        f"周线 {item.weekly_scenario_id or '—'} · 浪 {item.parent_wave_label or '—'} · "
+        f"日线 {item.daily_scenario_id or '历史区间'} · {item.status} · {item.reason}"
+        for item in brief.wave_relations
+    )
+
+
+def transition_evidence(brief: Brief) -> tuple[str, ...]:
+    if brief.previous is None:
+        return ()
+    return tuple(
+        f"{event['session']} · {event.get('kind', '同根先后')} · {event['status']} · "
+        f"K 线 {event['bar_id']}"
+        for event in brief.previous.events
+        if event.get("type") in {"condition", "outcome"}
+    )
+
+
+def _other_structures(brief: Brief, result: AnalysisResult | None) -> tuple[str, ...]:
+    cards = {card.scenario_id for card in brief.cards}
+    return (
+        tuple(
+            line
+            for scenario in result.scenarios
+            if scenario.scenario_id not in cards and scenario.structure
+            for line in structure_evidence(scenario.structure)
+        )
+        if result is not None
+        else ()
+    )
 
 
 def brief_markdown(brief: Brief, result: AnalysisResult | None = None) -> str:
@@ -183,6 +246,12 @@ def brief_markdown(brief: Brief, result: AnalysisResult | None = None) -> str:
     if not brief.cards:
         lines += ["", "当前没有达到质量与证据门槛的候选。"]
     lines += ["", omission_text(brief)]
+    if brief.wave_relations:
+        lines += ["", "## 日周父子浪", "", *(f"- {line}" for line in relation_evidence(brief))]
+    if transitions := transition_evidence(brief):
+        lines += ["", "## 条件回放证据", "", *(f"- {line}" for line in transitions)]
+    if other := _other_structures(brief, result):
+        lines += ["", "## 其他候选的结构证据", "", *(f"- {line}" for line in other)]
     for index, card in enumerate(brief.cards, 1):
         lines += [
             "",
@@ -203,6 +272,8 @@ def brief_markdown(brief: Brief, result: AnalysisResult | None = None) -> str:
             )
         if not card.conditions and not card.target_zones:
             lines.append("- 当前没有可用的确认、失效或目标条件。")
+        if card.structure is not None:
+            lines.extend(f"- {line}" for line in structure_evidence(card.structure))
         for warning in card.warnings:
             lines.append(f"- {warning}")
         if card.scenario_id in scenarios:
@@ -277,6 +348,8 @@ def brief_html(brief: Brief, result: AnalysisResult | None = None) -> str:
                 for line in rule_evidence(scenarios[card.scenario_id])
             )
             review = f"<details><summary>规则复核</summary><ul>{entries}</ul></details>"
+        if card.structure is not None:
+            review += _evidence_details("展开子浪证据", structure_evidence(card.structure))
         cards.append(
             f"<section class='card'><h2>{html.escape(card.role)} · "
             f"{html.escape(card.name)}</h2>"
@@ -399,13 +472,23 @@ th,td{{border:1px solid #d8e2ea;padding:8px;text-align:left}}
 首选结构起点 {brief.window.primary_pattern_start or "—"}</p>
 {f"<ul>{anchors}</ul>" if anchors else ""}
 {cross}{window}{previous}{retrospective}{forecasts}{weekly}
+{_evidence_details("日周父子浪", relation_evidence(brief))}
+{_evidence_details("条件回放证据", transition_evidence(brief))}
 {"".join(cards)}
+{_evidence_details("其他候选的结构证据", _other_structures(brief, result))}
 <p>{html.escape(omission_text(brief))}</p>
 <h2>数据与搜索提示</h2><ul>{issues}</ul>
 <p class="muted">源快照 <code>{html.escape(brief.source_snapshot_id)}</code> ·
 分析输入 <code>{html.escape(brief.input_snapshot_id)}</code> ·
 引擎 <code>{html.escape(brief.engine_version)}</code></p>
 </main></html>"""
+
+
+def _evidence_details(title: str, lines: tuple[str, ...]) -> str:
+    if not lines:
+        return ""
+    items = "".join(f"<li>{html.escape(line)}</li>" for line in lines)
+    return f"<details><summary>{html.escape(title)}</summary><ul>{items}</ul></details>"
 
 
 def read_brief_report(
@@ -417,7 +500,7 @@ def read_brief_report(
         required = {"brief.json", "daily.json"}
         allowed = required | {"weekly.json", "report.md", "index.html", "daily.html", "weekly.html"}
         if (
-            manifest["schema_version"] not in {"1.0", "1.1"}
+            manifest["schema_version"] not in {"1.0", "1.1", "1.2"}
             or not required <= set(files) <= allowed
             or {p.name for p in directory.iterdir()} != set(files) | {"manifest.json"}
         ):
@@ -488,7 +571,11 @@ def publish_brief(
         run.brief.brief_digest,
         formats,
         renderer,
-        "brief-render-v3" if formats else "brief-render-v2",
+        "brief-render-v4"
+        if formats and run.brief.schema_version == "1.2"
+        else "brief-render-v3"
+        if formats
+        else "brief-render-v2",
     ]
     if renderer == "plotly" and "html" in formats:
         render_identity.append(PLOTLY_RENDER_VERSION)
@@ -529,7 +616,7 @@ def publish_brief(
             staging / "manifest.json",
             canonical_json(
                 {
-                    "schema_version": "1.1",
+                    "schema_version": "1.2" if run.brief.schema_version == "1.2" else "1.1",
                     "renderer": renderer,
                     "brief_digest": run.brief.brief_digest,
                     "source_snapshot_id": run.brief.source_snapshot_id,

@@ -1,6 +1,6 @@
-# EliotBot 0.2.0 实现与验收状态
+# EliotBot 0.3.0 实现与验收状态
 
-更新于 2026-11-19。安装、日常操作和研究流程见[中文使用手册](USER_GUIDE.md)。目标规格见[详细实现方案](IMPLEMENTATION_PLAN.md)和[收盘分析与概率评估实施设计](WAVE_ANALYSIS_DESIGN.md)。
+更新于 2026-11-21。安装、日常操作和研究流程见[中文使用手册](USER_GUIDE.md)。目标规格见[详细实现方案](IMPLEMENTATION_PLAN.md)和[收盘分析与概率评估实施设计](WAVE_ANALYSIS_DESIGN.md)。
 
 ## 已交付范围
 
@@ -23,6 +23,7 @@
 | 历史与自选 | `eliot history` 查询已发布摘要，原摘要记录上次判断及变化，区分 `CONFIG_CHANGED`、`DATA_REVISED` 和 `NOT_COMPARABLE`。`eliot watchlist` 批量生成 JSON 摘要，支持有限重试、有界并发、模型注册表回退和单标的失败隔离。 |
 | 结算与支持矩阵 | `eliot settle` 使用本地快照，按 `(brief_digest,event_id,scope)` 去重并增量结算，行情修订追加版本，保留最初观察。`eliot support-matrix` 列出资产类型、周期和事件，传入训练汇总后显示该汇总中的支持状态和原因。 |
 | 离线评估 | `scripts/evaluate_briefs.py` 输出日线/周线 decisions/events/summary/manifest；支持收盘区间、确认先达、目标先达事件；summary 按标的、资产类型、周期、浪型和期限分解，并包含已确认拐点改写数、极值至确认 K 线数、相邻主选切换率、预测覆盖、确认延迟和搜索截断；`scripts/merge_evaluations.py` 可合并单样本分批结果 |
+| 多浪级引擎 | `engine_profile=hierarchical_v1` 显式启用 `hierarchical-rules-v3`。递归子浪选择按实际可证明的深度排序，历史日周关系也遵循请求深度。摘要包含日周关联与历史触发证据，评估使用正式摘要的首选结构键和比较模式。 [修复复验](reviews/2026-11-21-wave-engine-followup-repair.md) |
 | 概率研究 | 30 只沪深个股和 7 个指数的 2026 留出检验中，8 项日线事件均未获批。修正训练入口后，指数 20 日目标先达的价格基线对照与校准均未过。2023–2025 开发期已完成滚动校准、目标几何和失效审计；C 按 A 参照入选，但相对含目标几何的价格基线无增量，波浪结构增益未建立。没有新增独立前向留出，状态为研究完成、待新留出，未注册模型。[留出重算](reviews/2026-11-20-cn-index-probability-recheck.md) · [开发期验收](reviews/2026-11-19-cn-index-target-accuracy.md) · [前向验收](protocols/cn-index-target-forward.md) |
 | 端点复核 | `scripts/review_wave_cases.py` 用校验后的日线逐段复核盲标端点，输出规则证据。56 个案例中 18 个至少通过一个端点模板，38 个保留待定。[日用版验收](reviews/2026-11-19-release-preparation.md) |
 | 标注研究 | `scripts/label_wave_cases.py export/import/score/direction/predict` 支持从已发布 brief/daily 自动生成分层盲标 case（含无候选、`EXCLUDED_STRUCTURE`/拒绝候选和歧义分层）、标的涨跌标签、标签导入、按 case 均权独立判读认可概率、双阳性/双阴性、原始一致率、Cohen κ、split 分组；`scripts/train_label_models.py` 训练每模板独立二项模型并接入 E 式留出校准和 50/10/10/κ≥0.60 门槛 |
@@ -31,7 +32,7 @@
 ## 验证结果
 
 ```text
-python -m pytest tests -q              348 passed
+python -m pytest tests -q              446 passed
 ruff check src tests scripts           PASS
 ruff format --check src tests scripts  PASS
 pip check                             No broken requirements found
@@ -41,7 +42,7 @@ pip check                             No broken requirements found
 
 0.2.0 发布复验使用新浪的 `600519.SH` 和 Alpaca SIP 的 `AAPL` 生成实时摘要。冻结回归覆盖沪深个股及指数、美股个股及 ETF、SIP 和 IEX，核对 `brief` 与 `analyze` 的业务结果和报告校验值。[美股验收记录](reviews/2026-11-20-us-equity-acceptance.md)
 
-测试包含手算 ATR/EMA、拆股因子方向、非交易日因子、同价不同日期保留、拐点确认前不可用、逐前缀不变性、镜像规则、第五浪 155/156 边界、影线合并违规、缺特征不增权、父级包含/精确腿/进行中父腿、5-3-5 子浪认证、区间外拐点不影响深度 2、分页与权限错误、快照篡改、导出中断、CLI 离线一致、事件同根歧义、时区等价、集合竞价、指数路由/无复权 provider/日线→周线/快照往返/分钟线拒绝及各主周期。美股另覆盖资产代码错配、分页尾页、raw/all 对齐、DST、假期、提前收盘、完整周、内部缺日、SIP/IEX 分缓存、离线入口和回放。
+测试包含手算 ATR/EMA、拆股因子方向、非交易日因子、同价不同日期保留、拐点确认前不可用、逐前缀不变性、涨跌两向的浪 5 百分比失效位和三角形 E 浪净回撤、影线合并违规、缺特征不增权、父级包含/精确腿/进行中父腿、5-3-5 子浪认证、区间外拐点不影响深度 2、分页与权限错误、快照篡改、导出中断、CLI 离线一致、事件同根歧义、时区等价、集合竞价、指数路由/无复权 provider/日线→周线/快照往返/分钟线拒绝及各主周期。美股另覆盖资产代码错配、分页尾页、raw/all 对齐、DST、假期、提前收盘、完整周、内部缺日、SIP/IEX 分缓存、离线入口和回放。
 
 真实行情验证使用 **2026-11-16 已完成行情**。下列统计来自 v3 的[个股多周期](validation_20261118_ext5_v3.json)、[沪深京指数](validation_20261118_cn_index_v3.json)和[长历史](validation_20261118_long_history_v3.json)记录。当前 v6 的三角形结构认证、复权修复和同批小回放见[修复与决策](reviews/2026-11-18-cn-triangle-classic-v6.md)。原始快照和大图保存在本地 `.cache/live-smoke/`、`.cache/eliotbot/` 和 `reports/`。
 
@@ -89,7 +90,7 @@ pip check                             No broken requirements found
 
 完成态目标扩展、第五浪评分修正与 `EXCLUDED_STRUCTURE` 可见性变更不包含按证券代码分支的逻辑。DeepSeek 初版的九组证据保留在 [validation_20261117_ext5.json](validation_20261117_ext5.json)。其中部分样本的业务内容未变，但由于引擎版本参与摘要，所有样本都生成了新的结果 ID；业务内容一致不能等同于结果身份一致。
 
-第五浪扩展的历史证据见 [validation_20261117_ext5_fixed.json](validation_20261117_ext5_fixed.json) 和 [复验记录](reviews/2026-11-17-deepseek-ext5-fixed.md)。评分默认 `ew_score_v2`，可用 `ew_score_v1` 选择旧公式。当前引擎代码标识为 `ew-rules-v3/zigzag-v1/score-v2/subwave-v6/projection-v4/report-v4/search-v2/0.1.0`。结果中的 `engine_version` 追加当前 profile，版本参与结果和报告身份。
+第五浪扩展的历史证据见 [validation_20261117_ext5_fixed.json](validation_20261117_ext5_fixed.json) 和 [复验记录](reviews/2026-11-17-deepseek-ext5-fixed.md)。评分默认 `ew_score_v2`，可用 `ew_score_v1` 选择旧公式。共享引擎代码标识为 `ew-rules-v5/zigzag-v1/score-v2/subwave-v6/projection-v5/report-v4/search-v2/0.1.0`。增强引擎在此基础上加入 `hierarchical-rules-v3`，版本参与结果和报告身份。 [规则修复复验](reviews/2026-11-20-elliott-rule-conformance.md#修复复验) · [精确边界和多浪级复验](reviews/2026-11-21-wave-engine-followup-repair.md)
 
 ### 真实路径发现并修正的边界
 

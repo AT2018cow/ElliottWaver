@@ -4,6 +4,7 @@ from collections.abc import Sequence
 from datetime import datetime
 
 from eliotbot.engine.matcher import Candidate
+from eliotbot.engine.rules import wave5_length_cap
 from eliotbot.schemas.market import Bar
 from eliotbot.schemas.wave import LevelCondition, PriceZone, ProjectedPoint
 
@@ -81,10 +82,11 @@ def project(
                         "跌向镜像的浪4边界结束当前浪5阶段",
                         inclusive=False,
                     )
-                l3 = abs(p[3] - p[2])
-                if l3 < l1:
-                    cap = p[4] + s * l3
-                    condition("INVALIDATION", cap, s > 0, "超过此长度将使浪3最短", inclusive=False)
+                cap = wave5_length_cap(p, s)
+                if cap is not None:
+                    condition(
+                        "INVALIDATION", cap, s > 0, "越界后按百分比计算浪3最短", inclusive=False
+                    )
             targets = [(origin + s * r * l1, "fibonacci_extension") for r in (0.618, 1.0)]
             targets += [(origin + r * (p[3] - p[0]), "fibonacci_extension") for r in (0.382, 0.618)]
             duration = max(1, points[3].index - points[2].index)

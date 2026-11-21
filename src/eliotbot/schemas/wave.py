@@ -102,10 +102,70 @@ class SubwaveLegEvidence(Contract):
     reason: str
 
 
+StructureStatus = Literal["VERIFIED", "PENDING", "SEARCH_LIMITED", "REJECTED", "UNRESOLVED"]
+
+
+class StructurePoint(Contract):
+    point_id: str
+    pivot: PivotPoint
+    bar_id: str
+    price_coordinate_id: str
+
+
+class StructureLeg(Contract):
+    wave_label: str
+    left_id: str
+    right_id: str
+    allowed_templates: tuple[Pattern, ...] = ()
+    child_node_id: str | None = None
+    status: StructureStatus = "UNRESOLVED"
+    reason_code: str | None = None
+    failed_rule_ids: tuple[str, ...] = ()
+
+
+class StructureNode(Contract):
+    node_id: str
+    pattern_type: Pattern
+    variant: str | None = None
+    timeframe: Timeframe
+    direction: Literal["UP", "DOWN"]
+    stage: str
+    points: tuple[StructurePoint, ...]
+    rules: tuple[RuleResult, ...] = ()
+    child_links: tuple[StructureLeg, ...] = ()
+    status: StructureStatus = "UNRESOLVED"
+    requested_depth: int = Field(0, ge=0, le=2)
+    verified_depth: int = Field(0, ge=0, le=2)
+    reasons: tuple[str, ...] = ()
+
+
+class WaveStructure(Contract):
+    version: Literal["hierarchical_v1"] = "hierarchical_v1"
+    root_id: str
+    status: StructureStatus = "UNRESOLVED"
+    requested_depth: int = Field(0, ge=0, le=2)
+    verified_depth: int = Field(0, ge=0, le=2)
+    nodes: tuple[StructureNode, ...]
+    reasons: tuple[str, ...] = ()
+
+
+class WaveRelation(Contract):
+    weekly_scenario_id: str | None = None
+    daily_scenario_id: str | None = None
+    parent_wave_label: str | None = None
+    relation: Literal["EXACT_LEG", "CONTAINED", "UNDETERMINED", "INCOMPATIBLE"] = "UNDETERMINED"
+    status: Literal["VERIFIED", "PROVISIONAL", "UNDETERMINED", "INCOMPATIBLE"] = "UNDETERMINED"
+    weekly_point_ids: tuple[str, ...] = ()
+    daily_point_ids: tuple[str, ...] = ()
+    structure: WaveStructure | None = Field(None, exclude_if=lambda value: value is None)
+    reason: str = ""
+
+
 class WaveScenario(Contract):
     scenario_id: str
     name: str
     pattern_type: Pattern
+    variant: str | None = Field(None, exclude_if=lambda value: value is None)
     pattern_direction: Literal["UP", "DOWN"]
     next_leg_bias: Literal["UP", "DOWN", "UNKNOWN"]
     stage: str
@@ -129,6 +189,7 @@ class WaveScenario(Contract):
     projected_path: tuple[ProjectedPoint, ...] = ()
     discovered_scales: tuple[float, ...] = ()
     warnings: tuple[str, ...] = ()
+    structure: WaveStructure | None = Field(None, exclude_if=lambda value: value is None)
 
 
 class SearchDiagnostics(Contract):
@@ -137,12 +198,14 @@ class SearchDiagnostics(Contract):
     candidates_found: int = 0
     candidates_qualified: int = 0
     search_truncated: bool = False
+    cache_hits: int = Field(0, ge=0, exclude_if=lambda value: value == 0)
+    truncation_reason: str | None = Field(None, exclude_if=lambda value: value is None)
     anchors: tuple[date, ...] = ()
     pivot_counts: dict[str, int] = Field(default_factory=dict)
 
 
 class AnalysisResult(Contract):
-    schema_version: Literal["1.0"] = "1.0"
+    schema_version: Literal["1.0", "1.1"] = "1.0"
     run_id: str
     result_digest: str
     engine_version: str

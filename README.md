@@ -135,3 +135,7 @@ SNAPSHOT_ID='替换为完整snapshot_id'
 - [个股多周期验证摘要 v3](docs/validation_20261118_ext5_v3.json)：输入/结果身份、覆盖区间、规则和前缀一致性。
 - [沪深京指数验证摘要 v3](docs/validation_20261118_cn_index_v3.json)：指数日线/周线与个股回归的快照、状态和前缀一致性。
 - [长历史验证摘要 v3](docs/validation_20261118_long_history_v3.json)：1991–2026 A 股长历史、父级上下文、子浪规则认证和浪级验证。
+
+## 许可证
+
+本项目采用 [GNU General Public License v3.0](LICENSE)（GPL-3.0-only）。你可以自由使用、修改和分发；分发修改版时需按 GPL 提供相应源码并保留许可声明。第三方行情数据、依赖和商标仍受各自条款约束。

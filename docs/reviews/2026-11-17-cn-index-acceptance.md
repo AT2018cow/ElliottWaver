@@ -6,8 +6,8 @@
 
 **验收通过，未发现本轮新增的阻断性功能回归。** 验收开始时工作区干净，没有待审的未提交业务代码；与用户描述对应的改动已经提交为：
 
-- 受验收提交：`b63c505879dad77aae378da5f1abc9af9d5b4a39`，`Add CN index support for daily and weekly analysis`。
-- 对比基线：其父提交 `949223edf105a495de8d789922923f8c2fb34cf9`。
+- 受验收提交：2026-11-17 的“Add CN index support for daily and weekly analysis”提交。
+- 对比基线：其父提交，2026-11-17 的“Show scoring profile in result identity”提交。
 - 受验收源码指纹：`459452b53e334f6483ac22ced267bfaa2ae7c33839da56083c8ed59b299ed159`。
 
 本轮主要新增**中国指数**接入；沪深个股接口此前已经存在。检查覆盖指数/个股身份区分、真实下载进程、原始点位与复权隔离、缓存、周线聚合、截止时间、快照、回放及报告。不把有限样本验收解释为全市场覆盖或预测效果验证。

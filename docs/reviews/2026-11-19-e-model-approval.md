@@ -115,7 +115,7 @@ log loss 的改善区间同样未通过：8 个事件相对动量/价格基线�
 - 8 个事件全部为 `INSUFFICIENT_EVIDENCE`，没有事件满足设计发布门槛。
 - `ModelRegistry.register` 拒绝该模型：`MODEL_INVALID: no APPROVED event`。
 - 默认注册表 `.cache/eliotbot/models` 未创建；`brief` 不加载任何模型时保持 `UNCALIBRATED`。
-- 显式 `--model <MODEL_PATH>` 时，`brief` 显示 `forecast_status=INSUFFICIENT_EVIDENCE`，每个事件 `probabilities=null`，并显示失败原因。
+- 显式 `--model reports/models-expanded/model.json` 时，`brief` 显示 `forecast_status=INSUFFICIENT_EVIDENCE`，每个事件 `probabilities=null`，并显示失败原因。
 - `watchlist --model ... --workers 2 --retries 1` 对 `600519.SH`、`000300.SH` 均返回 `OK`，报告中的事件状态为 `INSUFFICIENT_EVIDENCE`，不输出概率。
 
 这符合设计中的“未获支持的项目交付验证结论，收盘摘要继续可用”。不把候选权重或未校准输出写成成功概率。

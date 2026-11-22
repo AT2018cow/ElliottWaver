@@ -1,4 +1,4 @@
-"""Independently verify ext5 analysis and acceptance fixes against commit 9c6db8f.
+"""Independently verify ext5 analysis and acceptance fixes against the root commit.
 
 Run from the repository root. This is an offline acceptance probe, not a normal
 pytest test: exit code 1 means at least one acceptance condition failed.
@@ -99,8 +99,16 @@ def fifth_fit(ratio1: float, ratio3: float) -> float:
     return max(alternatives)
 
 
+def root_commit() -> str:
+    """Return the repository root commit without hard-coding a rewritten hash."""
+    return subprocess.check_output(
+        ["git", "rev-list", "--max-parents=0", "HEAD"], text=True
+    ).strip()
+
+
 def run(output: Path, validation: Path) -> int:
     checks = []
+    baseline = root_commit()
 
     def check(name: str, passed: bool, details: object) -> None:
         checks.append({"check": name, "status": "PASS" if passed else "FAIL", "details": details})
@@ -364,9 +372,9 @@ def run(output: Path, validation: Path) -> int:
     # v2 is statistically better, or that it implements the original v1 table.
     baseline_namespace = {"__name__": "ext5_baseline_scorer"}
     baseline_source = subprocess.check_output(
-        ["git", "show", "9c6db8f:src/eliotbot/engine/scorer.py"]
+        ["git", "show", f"{baseline}:src/eliotbot/engine/scorer.py"]
     ).decode()
-    exec(compile(baseline_source, "9c6db8f:scorer.py", "exec"), baseline_namespace)
+    exec(compile(baseline_source, f"{baseline}:scorer.py", "exec"), baseline_namespace)
     policy_bars, policy_candidate = fixture([100, 120, 112, 146, 137.976, 170.336], 1)
     policy_indicators = calculate(policy_bars)
     old_score = baseline_namespace["score"](
@@ -397,7 +405,7 @@ def run(output: Path, validation: Path) -> int:
         "legacy_profile_quality": legacy_score.quality_score,
         "classification": "Explicit v1/v2 profiles; v1 preserves baseline scoring",
     }
-    names = subprocess.check_output(["git", "diff", "--name-only", "9c6db8f"]).decode().splitlines()
+    names = subprocess.check_output(["git", "diff", "--name-only", baseline]).decode().splitlines()
     names = [
         name
         for name in names
@@ -406,9 +414,7 @@ def run(output: Path, validation: Path) -> int:
     names.append("docs/validation_20261117_ext5.json")
     names.append(str(validation))
     summary = {
-        "baseline_commit": subprocess.check_output(["git", "rev-parse", "9c6db8f"])
-        .decode()
-        .strip(),
+        "baseline_commit": baseline,
         "reviewed_at": datetime.now(UTC),
         "engine_version": ENGINE_VERSION,
         "probe_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),

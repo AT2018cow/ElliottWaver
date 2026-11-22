@@ -1,6 +1,6 @@
 # 引擎验收问题修复与复验
 
-日期 2026-11-18。修复范围为 `9e00a89` 独立验收中复现的六项问题。原始结论和反例见 [初次验收](2026-11-18-engine-acceptance.md)。
+日期 2026-11-18。修复范围为 2026-11-18 的“Complete long-history, large-degree, template and subwave support”提交在独立验收中复现的六项问题。原始结论和反例见 [初次验收](2026-11-18-engine-acceptance.md)。
 
 ## 修复结果
 

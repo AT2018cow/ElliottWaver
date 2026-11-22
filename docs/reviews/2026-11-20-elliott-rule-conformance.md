@@ -1,6 +1,6 @@
 # v0.2.0 艾略特波浪规则核查
 
-基线为 `v0.2.0`（`4310037`）。以 Frost 与 Prechter 的《Elliott Wave Principle》在 Elliott Wave International 公布的规则为本次对照口径，逐项核对六个模板的端点条件、子浪与父浪证据。沪深个股、指数和美股共用这些引擎规则。本次验收依据是波浪结构与规则判定。 [书目](https://www.elliottwave.com/books/elliott-wave-principle/)
+基线为 `v0.2.0`。以 Frost 与 Prechter 的《Elliott Wave Principle》在 Elliott Wave International 公布的规则为本次对照口径，逐项核对六个模板的端点条件、子浪与父浪证据。沪深个股、指数和美股共用这些引擎规则。本次验收依据是波浪结构与规则判定。 [书目](https://www.elliottwave.com/books/elliott-wave-principle/)
 
 **v0.2.0 结论。** 可以用来筛选候选浪型。该版本有一项已复现的三角形硬规则漏检，浪 3 非最短的计算口径也和本次参考资料不同，因此经典规则一致性验收未通过。两项差异已在 `ew-rules-v4` 修复，见[修复复验](#修复复验)。
 

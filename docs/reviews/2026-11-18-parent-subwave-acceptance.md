@@ -1,6 +1,6 @@
 # 父级上下文与子浪认证独立验收
 
-日期：2026-11-18。受验收提交：`0f566766d26dbb43a771cf38804143477226ad93`，对比基线：`867fe59`。开始时工作区干净。本轮只增加验收脚本、证据和记录，未修改引擎。
+日期：2026-11-18。受验收提交：`2026-11-18 的“Add parent context and rule-based subwave certification”`，对比基线：`2026-11-18 的“Fix engine geometry, subwave, and replay acceptance issues”`。开始时工作区干净。本轮只增加验收脚本、证据和记录，未修改引擎。
 
 源码指纹：`6176f3f790cf8560a6657a3033dacafce0e16576e0440de3ba9514c0e39673f4`。计算方法是对排序后的 `src/**/*.py` 文件哈希映射计算仓库标准摘要。
 

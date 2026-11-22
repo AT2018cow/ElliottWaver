@@ -1,8 +1,8 @@
 # EliotBot 美股日用版实施与验收计划
 
-实施基线为 `v0.1.0`（`60a4800`）。首版交付是用 Alpaca 的已完成美股日线和完整周线，对上市股票及 ETF 生成可复核的艾略特波浪分析。日线默认附周线背景，报告展示起点、主备浪型、确认、硬失效、阶段退出和目标区。验收以数据身份、时点与规则是否正确为准。事件概率按现有独立研究流程处理。
+实施基线为 `v0.1.0`。首版交付是用 Alpaca 的已完成美股日线和完整周线，对上市股票及 ETF 生成可复核的艾略特波浪分析。日线默认附周线背景，报告展示起点、主备浪型、确认、硬失效、阶段退出和目标区。验收以数据身份、时点与规则是否正确为准。事件概率按现有独立研究流程处理。
 
-> **实施状态（2026-11-20）**：实现提交 `5ae45a5`。US-01 至 US-04 已完成代码、冻结响应和离线入口验收；US-05 已完成 AAPL、BRK.B、SPY 的真实 SIP 小样本和 AAPL 的 IEX 样本联调。真实快照、命令、手算核对和范围限制见[美股日用版验收](reviews/2026-11-20-us-equity-acceptance.md)。
+> **实施状态（2026-11-20）**：实现提交 `2026-11-20 的“Add US equity daily data and report acceptance”`。US-01 至 US-04 已完成代码、冻结响应和离线入口验收；US-05 已完成 AAPL、BRK.B、SPY 的真实 SIP 小样本和 AAPL 的 IEX 样本联调。真实快照、命令、手算核对和范围限制见[美股日用版验收](reviews/2026-11-20-us-equity-acceptance.md)。
 
 ## 范围与完成顺序
 
@@ -23,7 +23,7 @@
 - `data/alpaca_provider.py` 已调用 Alpaca Market Data v2，显式传 `feed`、`adjustment`、`asof`、`start/end`，读取全部分页并拒绝重复 token。现有 `tests/test_alpaca_contract.py` 覆盖 raw/all 和 RTH 聚合。真实账户联调仍缺证据。
 - **已复现**资产身份错配。用假响应令 `GET /v2/assets/AAPL` 返回 `symbol=MSFT` 及 MSFT 行情，当前 `AlpacaProvider.fetch` 生成 `canonical_symbol=AAPL`、`provider_symbol=MSFT`、`identity_verified=True` 的 bundle。US-01 首先修复此路径。
 - `data/workflow.py`、`service.py` 和 `cli/main.py` 已共用取数、分析和摘要入口。`watchlist` 用 `--config` 选择美股 feed。现有工程能力不作为本轮真实美股验收的证明。
-- 可参考 `<LOCAL_SOURCE>` 的目标会话与 SIP 访问截止检查，以及同目录 `market_calendar.py` 的提前收盘边界。EliotBot 继续复用 `exchange_calendars` 和现有 provider、快照及交易日工具。
+- 可参考同类美股扫描器对目标会话与 SIP 访问截止的检查，以及提前收盘边界。EliotBot 继续复用 `exchange_calendars` 和现有 provider、快照及交易日工具。
 
 ## US-01　核对资产身份和 Alpaca 响应
 

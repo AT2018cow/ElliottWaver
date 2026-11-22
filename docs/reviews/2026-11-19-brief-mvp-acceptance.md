@@ -57,7 +57,7 @@ reports/CN/600519.SH/brief/2026-03-31/<brief_digest>/
 .venv/bin/ruff format --check src tests scripts
 .venv/bin/eliot brief 600519.SH --offline \
   --snapshot 8378a32d2ce12a8419cb853ad4c6558aa4644f11aae7302c3319d14530d87f8d \
-  --output-dir <OUTPUT_DIR> --format html,md
+  --output-dir reports/brief-check --format html,md
 ```
 
 ## 边界

@@ -130,7 +130,7 @@ SNAPSHOT_ID='替换为完整snapshot_id'
 
 - [原始系统设计](DESIGN.md)：产品目标、核心思路和交互设想。
 - [中文使用手册](docs/USER_GUIDE.md)：安装、实际操作、结果解读、配置及排错。
-- [详细实现方案](docs/IMPLEMENTATION_PLAN.md)：参考代码依据、设计修订、数据契约、算法细节、开发任务和验收标准。
+- [详细实现方案](docs/IMPLEMENTATION_PLAN.md)：外部实现参考、设计修订、数据契约、算法细节、开发任务和验收标准。
 - [实现及验收状态](docs/IMPLEMENTATION_STATUS.md)：当前完成范围、验收证据、已知边界和复现方式。
 - [个股多周期验证摘要 v3](docs/validation_20261118_ext5_v3.json)：输入/结果身份、覆盖区间、规则和前缀一致性。
 - [沪深京指数验证摘要 v3](docs/validation_20261118_cn_index_v3.json)：指数日线/周线与个股回归的快照、状态和前缀一致性。

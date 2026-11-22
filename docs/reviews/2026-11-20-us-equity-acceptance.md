@@ -1,6 +1,6 @@
 # 美股日用版实施与验收记录
 
-基线为 `v0.1.0`（`60a4800`），实现与测试提交为 `5ae45a5`。本轮按[美股日用版实施与验收计划](../US_EQUITY_IMPLEMENTATION_PLAN.md)推进 US-01 至 US-05，范围是 Alpaca 已完成美股日线、完整周线和规则摘要，覆盖上市股票与 ETF。当前环境已配置 Alpaca 凭证；本文记录真实 SIP/IEX 样本、离线证据和仍存在的范围限制。
+基线为 `v0.1.0`，实现与测试提交为 `2026-11-20 的“Add US equity daily data and report acceptance”`。本轮按[美股日用版实施与验收计划](../US_EQUITY_IMPLEMENTATION_PLAN.md)推进 US-01 至 US-05，范围是 Alpaca 已完成美股日线、完整周线和规则摘要，覆盖上市股票与 ETF。当前环境已配置 Alpaca 凭证；本文记录真实 SIP/IEX 样本、离线证据和仍存在的范围限制。
 
 ## 结论
 
@@ -142,7 +142,7 @@ SIP 与 IEX 的 AAPL 快照不同：SIP 收盘 352.45、成交量 34,378,520；I
 
 - US-01 至 US-04：离线/冻结响应验收通过。
 - US-05：真实 SIP 小样本（AAPL、BRK.B、SPY）和 AAPL IEX 样本验收通过；范围见上。
-- 整体美股日用版发布状态为**首批小样本真实验收通过**；实现与测试提交 `5ae45a5`，验收记录与证据提交 `3113156`。
+- 整体美股日用版发布状态为**首批小样本真实验收通过**；实现与测试提交 `2026-11-20 的“Add US equity daily data and report acceptance”`，验收记录与证据提交 `2026-11-20 的“Record US equity acceptance and real settlement evidence”`。
 
 机器可读证据见[验收证据](2026-11-20-us-equity-acceptance-evidence.json)。
 

@@ -1,5 +1,5 @@
 {
-  "acceptance_commit": "3113156",
+  "acceptance_commit": "2026-11-20 的“Record US equity acceptance and real settlement evidence”",
   "artifacts": {
     "README.md": "e1467a67f6fae0e24aa6b4c48c1146ca33befc907a0fece12245a3ee43dbc927",
     "analyze-aapl.err": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
@@ -197,8 +197,8 @@
     "spy-weekly-snapshot.txt": "d8e001b32bb4efc6b61d450a7cc564118a9a185bdb75e17c40c8804f5a2566b7"
   },
   "baseline": {
-    "commit": "60a4800",
-    "implementation_commit": "5ae45a5",
+    "commit": "v0.1.0",
+    "implementation_commit": "2026-11-20 的“Add US equity daily data and report acceptance”",
     "version": "0.1.0"
   },
   "date": "2026-11-20",
@@ -349,7 +349,7 @@
       "timeframe": "1d"
     }
   },
-  "implementation_commit": "5ae45a5",
+  "implementation_commit": "2026-11-20 的“Add US equity daily data and report acceptance”",
   "real_data": {
     "aapl_iex": {
       "adjustment": "provider_all",

@@ -1,6 +1,6 @@
 # 父级位置与子浪认证修复
 
-P3-R01 和 P3-R02 已通过复验。修复以 `0f56676` 为基线，验证源码指纹为 `bdd9820ba2c3d478c3b699841f16af4f319b274679ff41de6fbe36f734b169a5`，引擎版本中的子浪标识升级到 `subwave-v4`。[初次验收](2026-11-18-parent-subwave-acceptance.md)
+P3-R01 和 P3-R02 已通过复验。修复以 `2026-11-18 的“Add parent context and rule-based subwave certification”` 为基线，验证源码指纹为 `bdd9820ba2c3d478c3b699841f16af4f319b274679ff41de6fbe36f734b169a5`，引擎版本中的子浪标识升级到 `subwave-v4`。[初次验收](2026-11-18-parent-subwave-acceptance.md)
 
 | 问题 | 修复后的行为 | 复验结果 |
 | --- | --- | --- |

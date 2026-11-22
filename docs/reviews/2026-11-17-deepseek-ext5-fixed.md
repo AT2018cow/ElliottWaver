@@ -1,6 +1,6 @@
 # DeepSeek ext5 验收问题修复与复验
 
-日期：2026-11-17。基线为首次提交 `9c6db8f8b588636f014421f0882e5d05b162f419`；包含 DeepSeek 的第五浪与目标扩展，以及此次直接修复。
+日期：2026-11-17。基线为仓库初始提交（2026-11-17，“Implement multi-timeframe Elliott wave CLI”）；包含 DeepSeek 的第五浪与目标扩展，以及此次直接修复。
 
 ## 结论
 

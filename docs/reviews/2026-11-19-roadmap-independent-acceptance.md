@@ -1,6 +1,6 @@
 # 路线图 A–G 独立验收
 
-验收对象为 `ccf6a56` 之后尚未提交的 DeepSeek 改动，包括未跟踪的源码、脚本、协议和测试。审查时 `src/`、`scripts/` 共 71 个 Python 文件，按路径排序对「路径、NUL、文件 SHA-256 二进制值」顺次计算的源码指纹为 `4576b5e683e52f9b55e53306915a6d4032b93b2f28dad04c8a5de49c9fe8d452`。[路线图](../ROADMAP.md) · [实施设计](../WAVE_ANALYSIS_DESIGN.md)
+验收对象为 `2026-11-18 的“Specify the wave analysis implementation and feature acceptance criteria”` 之后尚未提交的 DeepSeek 改动，包括未跟踪的源码、脚本、协议和测试。审查时 `src/`、`scripts/` 共 71 个 Python 文件，按路径排序对「路径、NUL、文件 SHA-256 二进制值」顺次计算的源码指纹为 `4576b5e683e52f9b55e53306915a6d4032b93b2f28dad04c8a5de49c9fe8d452`。[路线图](../ROADMAP.md) · [实施设计](../WAVE_ANALYSIS_DESIGN.md)
 
 **收盘摘要基本可用，A–G 整体验收未通过。** 四份冻结真实快照的日线、周线报告均与正式引擎一致，现有三角形结构和复权反例通过。D/E 的评估、训练和选模以及 G 的核销存在能改变结论的问题。默认报告目前显示 `UNCALIBRATED`。已有八事件研究可以保留为本轮探索记录，修正评估口径后应重新生成结果。真实人工标签达到门槛的证据仍未提供。
 

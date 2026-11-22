@@ -2,7 +2,7 @@
 
 本次新增的三角形许可规则暂不通过验收。越界索引处理通过，上轮 P3-R01 和 P3-R02 均复验通过。
 
-工作区基于 `0f56676`。相对于上一轮已验证的源码指纹 `3ea00154e04b3272f98251a88dc6b53f885e5d1c249c6d9fb264960ad78be86a`，新增行为来自 `engine/templates.py`。本次源码指纹为 `bdd9820ba2c3d478c3b699841f16af4f319b274679ff41de6fbe36f734b169a5`。前后对比在独立临时目录恢复上一轮模板表并验证指纹。
+工作区基于 `2026-11-18 的“Add parent context and rule-based subwave certification”`。相对于上一轮已验证的源码指纹 `3ea00154e04b3272f98251a88dc6b53f885e5d1c249c6d9fb264960ad78be86a`，新增行为来自 `engine/templates.py`。本次源码指纹为 `bdd9820ba2c3d478c3b699841f16af4f319b274679ff41de6fbe36f734b169a5`。前后对比在独立临时目录恢复上一轮模板表并验证指纹。
 
 ## T-R01 · P2 平台可使三角形误获满额子浪分
 

@@ -1,6 +1,6 @@
 # 长历史与引擎扩展独立验收
 
-日期 2026-11-18。受验收提交 `9e00a892dfef5f7790dabef29f526e37cda2f377`，对比基线 `256a34180c8bcb1d3f93f0c7cd74f9ad2880f292`。开始时工作区干净。本轮仅新增验收材料。
+日期 2026-11-18。受验收提交 `2026-11-18 的“Complete long-history, large-degree, template and subwave support”`，对比基线 `2026-11-17 的“Validate CN index integration and correct evidence documentation”`。开始时工作区干净。本轮仅新增验收材料。
 
 本文保留初次验收的失败记录。当前状态见 [修复与复验](2026-11-18-engine-fix.md)。
 

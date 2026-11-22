@@ -64,7 +64,7 @@ window_comparison: CHANGED_COUNT_SAME_BIAS
 .venv/bin/ruff format --check src tests scripts
 .venv/bin/eliot brief 600519.SH --offline \
   --snapshot 8378a32d2ce12a8419cb853ad4c6558aa4644f11aae7302c3319d14530d87f8d \
-  --output-dir <OUTPUT_DIR> --format html,md
+  --output-dir reports/brief-b --format html,md
 ```
 
 ## 边界

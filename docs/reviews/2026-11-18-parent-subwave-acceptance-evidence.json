@@ -1,5 +1,5 @@
 {
-  "reviewed_commit": "0f566766d26dbb43a771cf38804143477226ad93",
+  "reviewed_commit": "2026-11-18 的“Add parent context and rule-based subwave certification”",
   "source_sha256": "6176f3f790cf8560a6657a3033dacafce0e16576e0440de3ba9514c0e39673f4",
   "probe_sha256": "d8e38e9c38aae0f8822db1eccd7b5a2df56d1247e4ab694db646ae12c9660d94",
   "engine_version": "ew-rules-v3/zigzag-v1/score-v2/subwave-v3/projection-v4/report-v4/search-v2/0.1.0",

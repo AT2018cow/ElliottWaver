@@ -52,9 +52,9 @@ CLI：2026-03-27 默认配置 → 2026-03-30 + --subwave-depth 1，
 
 ```bash
 printf '600519.SH\n000300.SH\n600519.SH\n' > watchlist.txt
-.venv/bin/eliot watchlist watchlist.txt --output-dir <OUTPUT_DIR> \
+.venv/bin/eliot watchlist watchlist.txt --output-dir reports/watchlist \
   --workers 2 --retries 1 --retry-delay 0 \
-  --model-registry <REGISTRY_DIR> --json
+  --model-registry reports/model-registry/registry --json
 ```
 
 - `--retries 0..5`：每个标的有限重试；网络/源错误可重试，数据不足的 `SystemExit(3)` 不重试。

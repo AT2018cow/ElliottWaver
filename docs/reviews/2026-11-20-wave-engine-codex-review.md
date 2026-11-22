@@ -2,7 +2,7 @@
 
 **结论为未通过。** `hierarchical_v1` 已接入分析入口，但认证规则、日周父腿定位和回放存在可复现的错误。增强规则也进入了默认的 `classic_v4`。当前日用基线应使用已构建并验收的 `0.2.1` 安装包。
 
-对照 [实施计划](../WAVE_ENGINE_IMPLEMENTATION_PLAN.md) 与 `dist/v0.2.1/eliotbot-0.2.1.tar.gz`。被验收的是 `4310037` 之上的未提交工作区，`src/eliotbot/` 指纹 `636747d26d1867c61cea622089f7f0edf66f261733ef058d6ac7015242c53a1b`。端点和 OHLC 用例独立检查。实施方的 [自验清单](2026-11-20-wave-engine-independent-acceptance.md) 保留原记录。
+对照 [实施计划](../WAVE_ENGINE_IMPLEMENTATION_PLAN.md) 与 `dist/v0.2.1/eliotbot-0.2.1.tar.gz`。被验收的是 `v0.2.0` 之上的未提交工作区，`src/eliotbot/` 指纹 `636747d26d1867c61cea622089f7f0edf66f261733ef058d6ac7015242c53a1b`。端点和 OHLC 用例独立检查。实施方的 [自验清单](2026-11-20-wave-engine-independent-acceptance.md) 保留原记录。
 
 | 工作 | 实际通过 | 仍需修复 |
 | --- | --- | --- |

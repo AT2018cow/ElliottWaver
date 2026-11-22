@@ -138,4 +138,6 @@ SNAPSHOT_ID='替换为完整snapshot_id'
 
 ## 许可证
 
+Copyright (C) 2026 AT2018cow.
+
 本项目采用 [GNU General Public License v3.0](LICENSE)（GPL-3.0-only）。你可以自由使用、修改和分发；分发修改版时需按 GPL 提供相应源码并保留许可声明。第三方行情数据、依赖和商标仍受各自条款约束。

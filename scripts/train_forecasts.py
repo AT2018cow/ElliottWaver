@@ -14,8 +14,8 @@ from pathlib import Path
 import numpy as np
 import pyarrow.parquet as pq
 
-from eliotbot.config import Settings
-from eliotbot.evaluation.calibration import (
+from elliottwaver.config import Settings
+from elliottwaver.evaluation.calibration import (
     binary_logit_affine,
     block_bootstrap_paired_improvement,
     bootstrap_reliability,
@@ -27,8 +27,12 @@ from eliotbot.evaluation.calibration import (
     standardize,
     temperature_scale,
 )
-from eliotbot.evaluation.decisions import _load_protocol, read_evaluation_manifest, split_windows
-from eliotbot.evaluation.features import (
+from elliottwaver.evaluation.decisions import (
+    _load_protocol,
+    read_evaluation_manifest,
+    split_windows,
+)
+from elliottwaver.evaluation.features import (
     FEATURE_VERSION,
     OUTLOOK_PRICE_FEATURES,
     PATTERNS,
@@ -37,9 +41,9 @@ from eliotbot.evaluation.features import (
     event_feature_order,
     feature_vector,
 )
-from eliotbot.evaluation.forward import holdout_plan, live_reports
-from eliotbot.service import engine_rules_version
-from eliotbot.util import atomic_write, canonical_json, digest
+from elliottwaver.evaluation.forward import holdout_plan, live_reports
+from elliottwaver.service import engine_rules_version
+from elliottwaver.util import atomic_write, canonical_json, digest
 
 CLOSE_EVENTS = {
     "CLOSE_BAND_5D_V1",

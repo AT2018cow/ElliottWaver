@@ -1,8 +1,8 @@
-# EliotBot 中文使用手册
+# ElliottWaver 中文使用手册
 
-适用于 EliotBot 0.5.1。日用分析覆盖沪深个股与指数、美股个股与 ETF 的日线和周线。逐腿结构树和日周关联通过增强配置启用。 [升级步骤](#从已有安装升级)
+适用于 ElliottWaver 0.6.0。日用分析覆盖沪深个股与指数、美股个股与 ETF 的日线和周线。逐腿结构树和日周关联通过增强配置启用。 [升级步骤](#从已有安装升级)
 
-EliotBot 从股票和指数的 K 线中识别波浪候选，给出规则检查、推进价、失效价和目标区。日常用 `brief` 直接在终端看数浪和短期推演，单周期深入分析用 `analyze`。需要图表时，可另行打开 HTML 摘要。
+ElliottWaver 从股票和指数的 K 线中识别波浪候选，给出规则检查、推进价、失效价和目标区。日常用 `brief` 直接在终端看数浪和短期推演，单周期深入分析用 `analyze`。需要图表时，可另行打开 HTML 摘要。
 
 目录：
 
@@ -29,22 +29,22 @@ EliotBot 从股票和指数的 K 线中识别波浪候选，给出规则检查�
 以下示例从源码目录运行。先安装对应市场的依赖，再运行 `brief` 读取可用的收盘数据。[安装步骤](#2-安装与环境检查)
 
 ```bash
-.venv/bin/eliot brief 600519.SH --format json
-.venv/bin/eliot brief 000300.SH --timeframe 1w --format json
+.venv/bin/elliottwaver brief 600519.SH --format json
+.venv/bin/elliottwaver brief 000300.SH --timeframe 1w --format json
 ```
 
 第一条命令查看贵州茅台的日线主分析和最近完整的周线背景。第二条命令用周线分析沪深 300。两条命令都从新浪取数，需要联网，无需密钥。终端显示中文摘要及保存路径，文件只保存 JSON。需要看 K 线图时，可去掉 `--format json`，加 `--open` 打开默认生成的网页摘要。
 
-配置 Alpaca 后，可用 `.venv/bin/eliot brief AAPL --feed sip --format json` 查看美股日线摘要。[美股配置与示例](#42-美股)
+配置 Alpaca 后，可用 `.venv/bin/elliottwaver brief AAPL --feed sip --format json` 查看美股日线摘要。[美股配置与示例](#42-美股)
 
 每天先核对行情日期和数据状态，再看主备浪型、目标区和改变判断的价位。摘要显示「判断尚不明确」时，先保留多种解释。来源不可用时可指定已有快照复查原行情。[报告阅读顺序](#45-一页收盘摘要-brief) · [快照复查](#8-保存快照与离线分析)
 
 没有网络时，先运行合成行情演示。将终端打印的完整「快照」ID 填入变量，再生成离线摘要。
 
 ```bash
-.venv/bin/eliot demo --symbol 600519 --timeframe 1d
+.venv/bin/elliottwaver demo --symbol 600519 --timeframe 1d
 DEMO_SNAPSHOT_ID='替换为演示命令打印的完整快照ID'
-.venv/bin/eliot brief 600519 --offline --snapshot "$DEMO_SNAPSHOT_ID" --format json
+.venv/bin/elliottwaver brief 600519 --offline --snapshot "$DEMO_SNAPSHOT_ID" --format json
 ```
 
 演示使用合成行情，`brief` 会显示「使用已保存行情回放」及决策截止时刻。真实快照的离线用法见[保存快照与离线分析](#8-保存快照与离线分析)。
@@ -58,30 +58,34 @@ DEMO_SNAPSHOT_ID='替换为演示命令打印的完整快照ID'
 ```bash
 python3 -m venv .venv
 .venv/bin/python -m pip install '.[cn,us]'
-.venv/bin/eliot --version
-.venv/bin/eliot doctor --market CN
-.venv/bin/eliot doctor --market US
+.venv/bin/elliottwaver --version
+.venv/bin/elliottwaver doctor --market CN
+.venv/bin/elliottwaver doctor --market US
 ```
 
 ### 从已有安装升级
 
-`brief`、`analyze`、`history` 和自选批量可以沿用原命令、配置和行情快照。已有 `.venv` 时，从更新后的源码目录运行以下命令，安装当前源码和对应依赖。
+0.6.0 起项目更名为 **ElliottWaver**：Python 包为 `elliottwaver`，CLI 命令为 `elliottwaver`，环境变量前缀为 `ELLIOTTWAVER_`，默认快照目录为 `.cache/elliottwaver/`。旧版 `eliot` 命令和 `ELIOT_` 环境变量不再保留兼容别名。
+
+已有 `.venv` 时，从更新后的源码目录重新安装，并按需迁移旧缓存：
 
 ```bash
 .venv/bin/python -m pip install -e '.[cn,us]'
+# 如需沿用旧快照，可移动缓存目录，或在配置中显式指定 cache.directory
+mv .cache/eliotbot .cache/elliottwaver
 ```
 
-也可以在已有虚拟环境中安装下节的 0.5.1 wheel。依赖要求为 `pydantic>=2.12,<3`。用 `eliot --version` 确认安装版本。 [版本说明](../CHANGELOG.md#051--2026-11-22)
+`brief`、`analyze`、`history` 和自选批量的参数与结果格式保持兼容。原 `config.yaml` 中如仍写着旧缓存目录，可继续使用，也可改为 `.cache/elliottwaver`。 [版本说明](../CHANGELOG.md#060--2026-11-22)
 
 ### 从发布 Wheel 安装
 
-将发布文件 `eliotbot-0.5.1-py3-none-any.whl` 放到当前目录。安装依赖需能访问所用 Python 包源。首次运行请在有写权限的工作目录执行。
+将发布文件 `elliottwaver-0.6.0-py3-none-any.whl` 放到当前目录。安装依赖需能访问所用 Python 包源。首次运行请在有写权限的工作目录执行。
 
 ```bash
 python3 -m venv .venv
-.venv/bin/python -m pip install './eliotbot-0.5.1-py3-none-any.whl[cn,us]'
-.venv/bin/eliot --version
-.venv/bin/eliot demo --symbol 600519.SH
+.venv/bin/python -m pip install './elliottwaver-0.6.0-py3-none-any.whl[cn,us]'
+.venv/bin/elliottwaver --version
+.venv/bin/elliottwaver demo --symbol 600519.SH
 ```
 
 单市场安装可选择 `[cn]` 或 `[us]`。用源码包可运行 `scripts/` 中的研究、回放和验收脚本。开发和测试用 `-e '.[dev,cn,us]'`。
@@ -111,7 +115,7 @@ python3 -m venv .venv
 
 ```bash
 source .venv/bin/activate
-eliot analyze 600519 --timeframe 1d
+elliottwaver analyze 600519 --timeframe 1d
 ```
 
 下面仍保留完整路径，便于直接复制。
@@ -134,13 +138,13 @@ eliot analyze 600519 --timeframe 1d
 
 | 周期 | 参数 | 示例 |
 | --- | --- | --- |
-| 日线 | `1d`，默认值 | `eliot analyze 600519 --timeframe 1d` |
-| 周线 | `1w` | `eliot analyze 600519 --timeframe 1w` |
-| 小时线 | `60m` 或 `1h` | `eliot analyze 600519 --timeframe 1h` |
-| 30 分钟 | `30m` | `eliot analyze 600519 --timeframe 30m` |
-| 15 分钟 | `15m` | `eliot analyze 600519 --timeframe 15m` |
-| 5 分钟 | `5m` | `eliot analyze 600519 --timeframe 5m` |
-| 1 分钟 | `1m` | `eliot analyze 600519 --timeframe 1m` |
+| 日线 | `1d`，默认值 | `elliottwaver analyze 600519 --timeframe 1d` |
+| 周线 | `1w` | `elliottwaver analyze 600519 --timeframe 1w` |
+| 小时线 | `60m` 或 `1h` | `elliottwaver analyze 600519 --timeframe 1h` |
+| 30 分钟 | `30m` | `elliottwaver analyze 600519 --timeframe 30m` |
+| 15 分钟 | `15m` | `elliottwaver analyze 600519 --timeframe 15m` |
+| 5 分钟 | `5m` | `elliottwaver analyze 600519 --timeframe 5m` |
+| 1 分钟 | `1m` | `elliottwaver analyze 600519 --timeframe 1m` |
 
 表格中的短命令需要先激活虚拟环境。月线和 4 小时线不能作为当前主分析周期。指数只支持 `1d` 和 `1w`；请求指数分钟线会返回 `INDEX_INTRADAY_UNSUPPORTED`。
 
@@ -155,10 +159,10 @@ eliot analyze 600519 --timeframe 1d
 无需 API key。日线、周线、小时线和分钟线使用同一命令：
 
 ```bash
-.venv/bin/eliot analyze 600519
-.venv/bin/eliot analyze 000001 --timeframe 1w
-.venv/bin/eliot analyze 300750 --timeframe 1h
-.venv/bin/eliot analyze 600519 --timeframe 15m --top-k 5
+.venv/bin/elliottwaver analyze 600519
+.venv/bin/elliottwaver analyze 000001 --timeframe 1w
+.venv/bin/elliottwaver analyze 300750 --timeframe 1h
+.venv/bin/elliottwaver analyze 600519 --timeframe 15m --top-k 5
 ```
 
 默认显示最多 3 个达到门槛的候选，`--top-k` 可以设为 1–20；增加这个值不会强行生成候选。
@@ -166,7 +170,7 @@ eliot analyze 600519 --timeframe 1d
 希望重新从行情源获取数据时使用：
 
 ```bash
-.venv/bin/eliot analyze 600519 --timeframe 1d --refresh
+.venv/bin/elliottwaver analyze 600519 --timeframe 1d --refresh
 ```
 
 `--refresh` 跳过缓存复用，不会删除旧快照。
@@ -190,11 +194,11 @@ ALPACA_API_ENDPOINT=https://paper-api.alpaca.markets
 live 端点为 `https://api.alpaca.markets`。配置文件从当前工作目录读取，因此应在项目根目录执行示例。
 
 ```bash
-.venv/bin/eliot doctor --market US
-.venv/bin/eliot brief AAPL --feed sip
-.venv/bin/eliot analyze AAPL --feed sip
-.venv/bin/eliot analyze MSFT --timeframe 1h --feed sip
-.venv/bin/eliot analyze AAPL --timeframe 15m --feed iex
+.venv/bin/elliottwaver doctor --market US
+.venv/bin/elliottwaver brief AAPL --feed sip
+.venv/bin/elliottwaver analyze AAPL --feed sip
+.venv/bin/elliottwaver analyze MSFT --timeframe 1h --feed sip
+.venv/bin/elliottwaver analyze AAPL --timeframe 15m --feed iex
 ```
 
 默认使用 `sip`；`iex` 必须显式指定，或通过配置修改。需要账户具有所选 feed 的访问权限，权限失败会报错，不会自动更换 feed。不同 feed 的结果会标记来源并分别缓存。
@@ -202,10 +206,10 @@ live 端点为 `https://api.alpaca.markets`。配置文件从当前工作目录�
 取数前会先核对 Alpaca 资产端点返回的资产 ID、`us_equity` 类别和规范代码；返回不同标的时会在发出 K 线请求前终止。`BRK-B` 与 `BRK.B` 会解析到同一个资产。`data fetch` 会输出快照 ID、feed、复权口径、行情截止、分析截止和最后可用时刻；可用 `data inspect` 复核来源，再用 `brief --offline --snapshot` 或 `analyze --offline --snapshot` 离线复跑：
 
 ```bash
-.venv/bin/eliot data fetch AAPL --timeframe 1d --feed sip
-.venv/bin/eliot data inspect <snapshot-id>
-.venv/bin/eliot brief AAPL --offline --snapshot <snapshot-id> --feed sip
-.venv/bin/eliot analyze AAPL --offline --snapshot <snapshot-id> --feed sip
+.venv/bin/elliottwaver data fetch AAPL --timeframe 1d --feed sip
+.venv/bin/elliottwaver data inspect <snapshot-id>
+.venv/bin/elliottwaver brief AAPL --offline --snapshot <snapshot-id> --feed sip
+.venv/bin/elliottwaver analyze AAPL --offline --snapshot <snapshot-id> --feed sip
 ```
 
 离线入口会拒绝与快照不同的 feed 或标的。`brief` 的 JSON、Markdown、HTML 和终端摘要都会显示 `feed`、`adjustment`、`market_asof`、`as_of` 和 `mode`；批量自选也会在每条记录中保留来源和单项失败。
@@ -219,10 +223,10 @@ live 端点为 `https://api.alpaca.markets`。配置文件从当前工作目录�
 无需 API key。指数使用新浪指数日线，来源标记为 `sina-index`，调整口径为 `none`，不计算复权因子。目前支持日线和周线：
 
 ```bash
-.venv/bin/eliot analyze 000688.SH --timeframe 1d
-.venv/bin/eliot analyze 000300.SH --timeframe 1w
-.venv/bin/eliot analyze 399001.SZ --timeframe 1d
-.venv/bin/eliot analyze 899050.BJ --timeframe 1d
+.venv/bin/elliottwaver analyze 000688.SH --timeframe 1d
+.venv/bin/elliottwaver analyze 000300.SH --timeframe 1w
+.venv/bin/elliottwaver analyze 399001.SZ --timeframe 1d
+.venv/bin/elliottwaver analyze 899050.BJ --timeframe 1d
 ```
 
 指数报告会显示“品种：指数；指数无复权，价格为原始点位”。`000001` 默认仍是平安银行；要分析上证指数请写 `000001.SH`。
@@ -230,7 +234,7 @@ live 端点为 `https://api.alpaca.markets`。配置文件从当前工作目录�
 指数默认只取最近 `history_years`（默认 5 年）；分析更长历史时设置 `analysis.history_years` 或 `--start`。例如：
 
 ```bash
-.venv/bin/eliot analyze 000688.SH --timeframe 1w --start 2020-01-01
+.venv/bin/elliottwaver analyze 000688.SH --timeframe 1w --start 2020-01-01
 ```
 
 长期数浪还需要按需提高 `analysis.max_analysis_bars`（默认 600，最大 5000），否则锚点搜索只覆盖最近约 600 根 K 线。指数分钟线尚未启用；请求 `5m` 等周期会返回 `INDEX_INTRADAY_UNSUPPORTED`。
@@ -252,15 +256,15 @@ search:
 联网分析可直接运行以下命令。
 
 ```bash
-.venv/bin/eliot brief 600519.SH --config config.advanced.example.yaml --open
-.venv/bin/eliot brief 600519.SH --config config.advanced.example.yaml --subwave-depth 2 --open
+.venv/bin/elliottwaver brief 600519.SH --config config.advanced.example.yaml --open
+.venv/bin/elliottwaver brief 600519.SH --config config.advanced.example.yaml --subwave-depth 2 --open
 ```
 
 离线时将 `SNAPSHOT_ID` 设为该标的的日线快照 ID。日线摘要可以从这份快照生成完整周线背景，单周期 `analyze` 可直接选择周线。 [保存快照与离线分析](#8-保存快照与离线分析)
 
 ```bash
-.venv/bin/eliot brief 000016.SH --offline --snapshot "$SNAPSHOT_ID" --config config.advanced.example.yaml --json
-.venv/bin/eliot analyze 000016.SH --timeframe 1w --offline --snapshot "$SNAPSHOT_ID" --config config.advanced.example.yaml --json
+.venv/bin/elliottwaver brief 000016.SH --offline --snapshot "$SNAPSHOT_ID" --config config.advanced.example.yaml --json
+.venv/bin/elliottwaver analyze 000016.SH --timeframe 1w --offline --snapshot "$SNAPSHOT_ID" --config config.advanced.example.yaml --json
 ```
 
 高级结果：
@@ -279,13 +283,13 @@ A 股老指数/老股票原始数据可到 1990/1991 年；引擎日历从 **199
 
 ```bash
 # 20 年窗口、默认周线、Top-8、首尾兼顾的锚点、宽桥接搜索
-.venv/bin/eliot analyze 000001.SH --long-term --start 1991-01-01 --allow-gaps
+.venv/bin/elliottwaver analyze 000001.SH --long-term --start 1991-01-01 --allow-gaps
 
 # 只放宽搜索，不改变数据窗口
-.venv/bin/eliot analyze 000300.SH --large-degree --timeframe 1w
+.venv/bin/elliottwaver analyze 000300.SH --large-degree --timeframe 1w
 
 # 子浪规则认证（0/1/2）
-.venv/bin/eliot analyze 000001.SH --long-term --subwave-depth 1
+.venv/bin/elliottwaver analyze 000001.SH --long-term --subwave-depth 1
 ```
 
 `--long-term` 等价于：`history_years=20`、`max_analysis_bars=5000`、默认 `1w`、`top_k=8`、`anchor_mode=spread`、`max_bridge_intervals=21`、`beam_width=512`、`max_expansions=200000`、`max_subwave_depth=1`。`--large-degree` 只应用后三项搜索参数，不改变子浪深度。
@@ -297,9 +301,9 @@ A 股老指数/老股票原始数据可到 1990/1991 年；引擎日历从 **199
 `brief` 自动选择主周期和起点。下面展示如何调整主周期、日期和输出方式。
 
 ```bash
-.venv/bin/eliot brief 600519 --timeframe 1d
-.venv/bin/eliot brief 600519 --start 2015-01-01
-.venv/bin/eliot brief 600519 --timeframe 1d --no-weekly --no-window-check --format json --json
+.venv/bin/elliottwaver brief 600519 --timeframe 1d
+.venv/bin/elliottwaver brief 600519 --start 2015-01-01
+.venv/bin/elliottwaver brief 600519 --timeframe 1d --no-weekly --no-window-check --format json --json
 ```
 
 默认 `--timeframe auto` 选择日线。输入原生周线快照，或 `--start` 到截止时刻超过 5 × 365 天时，自动选周线。显式指定 `--timeframe 1d` 或 `--timeframe 1w` 可锁定周期。`--start` 设置搜索下界，`--anchor YYYY-MM-DD` 指定起浪日。需要更细周期或 `--long-term` 等搜索预设时，使用前文的 `analyze` 示例。
@@ -320,8 +324,8 @@ A 股老指数/老股票原始数据可到 1990/1991 年；引擎日历从 **199
 每次发布完整的 `brief` 后，程序把摘要和路径登记到本地 SQLite 索引。`history` 读取已有报告，`--mode live` 筛选日常记录，`--mode frozen` 筛选回放记录。按日期筛选时，`--as-of` 表示行情日期上界。
 
 ```bash
-.venv/bin/eliot history 600519
-.venv/bin/eliot history 600519 --mode frozen --json
+.venv/bin/elliottwaver history 600519
+.venv/bin/elliottwaver history 600519 --mode frozen --json
 ```
 
 查询返回最近 50 条匹配记录。JSON 数组中每条记录的 `path` 指向原报告目录。生成摘要时若用了自定义缓存，查询时也要传同一个 `--config`。报告移走或校验失败时，历史结果显示 `UNREADABLE`。
@@ -333,7 +337,7 @@ A 股老指数/老股票原始数据可到 1990/1991 年；引擎日历从 **199
 ```bash
 mkdir -p reports
 printf '600519.SH\n000300.SH\n' > reports/my-watchlist.txt
-.venv/bin/eliot watchlist reports/my-watchlist.txt --workers 2 --retries 1 --json
+.venv/bin/elliottwaver watchlist reports/my-watchlist.txt --workers 2 --retries 1 --json
 ```
 
 文件每行一个标的，空行和以 `#` 开头的注释会被忽略，合法代码按规范写法去重。`--workers` 可设为 1、2、4 或 8，`--retries` 可设为 0 至 5，`--retry-delay` 设置两次尝试之间的秒数。非法代码按原文记录，其他标的继续处理，命令最后返回首个失败标的的退出码。已生成但状态为 `INSUFFICIENT_DATA` 或 `STALE_DATA` 的摘要也计为失败，可用 JSON 条目的 `path` 和 `error` 排查。
@@ -345,9 +349,9 @@ printf '600519.SH\n000300.SH\n' > reports/my-watchlist.txt
 先生成 `brief` 并保留其报告目录。等要核对的交易日或交易周结束后下载新快照。以下示例假设贵州茅台原摘要的主周期是日线。
 
 ```bash
-.venv/bin/eliot data fetch 600519 --timeframe 1d --refresh
+.venv/bin/elliottwaver data fetch 600519 --timeframe 1d --refresh
 OUTCOME_SNAPSHOT_ID='替换为新下载行情的完整snapshot_id'
-.venv/bin/eliot settle reports/CN/600519.SH/brief \
+.venv/bin/elliottwaver settle reports/CN/600519.SH/brief \
   --snapshot "$OUTCOME_SNAPSHOT_ID" --output reports/settlements-600519.json --json
 ```
 
@@ -360,9 +364,9 @@ OUTCOME_SNAPSHOT_ID='替换为新下载行情的完整snapshot_id'
 ### 4.7.2 支持矩阵
 
 ```bash
-.venv/bin/eliot support-matrix
+.venv/bin/elliottwaver support-matrix
 # 完成 4.8 训练后，可读所产出的模型汇总
-.venv/bin/eliot support-matrix \
+.venv/bin/elliottwaver support-matrix \
   --model-summary reports/models/summary.json \
   --output reports/support-matrix.json --json
 ```
@@ -379,7 +383,7 @@ PROTOCOL=docs/protocols/roadmap-repair-2026-heldout-smoke.json
   --protocol "$PROTOCOL" --output-dir reports/eval
 .venv/bin/python scripts/train_forecasts.py \
   --protocol "$PROTOCOL" --decisions reports/eval --output-dir reports/models
-.venv/bin/eliot support-matrix --model-summary reports/models/summary.json
+.venv/bin/elliottwaver support-matrix --model-summary reports/models/summary.json
 ```
 
 评估输出 `decisions.jsonl`、`events.parquet`、`summary.json` 和 `manifest.json`。周线样本可以从日线快照派生。先看 `summary.json` 的样本量、成熟比例和分组结果，需要核对单条判断时再看明细。
@@ -412,7 +416,7 @@ PROTOCOL=docs/protocols/roadmap-repair-2026-heldout-smoke.json
 - 测试样本至少 50 行、10 个日期、5 个标的；
 - 支持档覆盖率至少 0.5。
 
-训练结束后先看各事件的 `status` 和 `reasons`。仓库当前没有批准的真实行情模型，日常摘要保持未校准。合格的模型由维护者通过 `eliotbot.forecast.ModelRegistry.register` 登记到缓存的 `models/` 子目录，须包含至少一个 `APPROVED` 事件，批准日须晚于留出期最后一天。训练目录中的模型文件应保留原路径，供注册表读取。
+训练结束后先看各事件的 `status` 和 `reasons`。仓库当前没有批准的真实行情模型，日常摘要保持未校准。合格的模型由维护者通过 `elliottwaver.forecast.ModelRegistry.register` 登记到缓存的 `models/` 子目录，须包含至少一个 `APPROVED` 事件，批准日须晚于留出期最后一天。训练目录中的模型文件应保留原路径，供注册表读取。
 
 - `brief` 在默认缓存的 `models/` 中按决策时间查找兼容的已批准模型，并按事件和候选位置批量选择。不同事件可以由不同模型提供，同一事件的主选和备选也可分别注册；旧事件仍可回退到旧模型。可用 `--model-registry DIR` 指定其他注册表。显式 `brief --model /path/to/model.json` 会在加载成功后将摘要标记为回顾性重算。三分类事件中任一分量落入未获支持的档位，整个事件显示 `UNSUPPORTED_BIN`。
 - 短期事件的历史评分使用 `data_status: HISTORICAL_HOLDOUT`，输出 `study_mode: RETROSPECTIVE` 和 `operational_allowed: false`。训练的 `freeze` 记录实际完成时刻，`--frozen-at` 可指定模拟的历史切分时刻。旧版候选仍可做历史评分。 [短期事件的实验和验证命令](protocols/README.md#短期事件的历史与前向评分)
@@ -428,7 +432,7 @@ PROTOCOL=docs/protocols/roadmap-repair-2026-heldout-smoke.json
 
 ```bash
 .venv/bin/python scripts/review_wave_cases.py \
-  --cases reports/blind-cases.json --cache-root .cache/eliotbot \
+  --cases reports/blind-cases.json --cache-root .cache/elliottwaver \
   --output reports/rule-review.json
 ```
 
@@ -439,7 +443,7 @@ PROTOCOL=docs/protocols/roadmap-repair-2026-heldout-smoke.json
 ```bash
 .venv/bin/python scripts/label_wave_cases.py export \
   --briefs reports/CN/600519.SH/brief \
-  --cache-root .cache/eliotbot --bar-window 60 \
+  --cache-root .cache/elliottwaver --bar-window 60 \
   --output reports/blind-cases.json --html reports/blind-cases.html
 ```
 
@@ -461,7 +465,7 @@ PROTOCOL=docs/protocols/roadmap-repair-2026-heldout-smoke.json
 
 ```bash
 .venv/bin/python scripts/label_wave_cases.py direction \
-  --cases reports/blind-cases.json --cache-root .cache/eliotbot \
+  --cases reports/blind-cases.json --cache-root .cache/elliottwaver \
   --horizon 5 --output reports/direction-labels.json
 ```
 
@@ -528,13 +532,13 @@ HTML 包含 K 线、成交量、MACD 三个面板。可以通过图上方的下�
 指定输出根目录或导出格式：
 
 ```bash
-.venv/bin/eliot analyze 600519 --output-dir reports/my-scan --format html,md
+.venv/bin/elliottwaver analyze 600519 --output-dir reports/my-scan --format html,md
 
 # 直接生成 PNG，无需 Kaleido
-.venv/bin/eliot analyze 600519 --renderer svg --format html,png,md
+.venv/bin/elliottwaver analyze 600519 --renderer svg --format html,png,md
 
 # 完整 JSON 输出到终端，文件报告仍会生成
-.venv/bin/eliot analyze 600519 --format json --json
+.venv/bin/elliottwaver analyze 600519 --format json --json
 ```
 
 `analysis.json` 和 `manifest.json` 始终写入；`--format json` 表示只保留这两个基础文件。要额外导出 Plotly 的 PNG，需安装 `.[png]` 并满足 Kaleido 的浏览器要求；上面的 SVG 渲染命令可直接生成 PNG。
@@ -619,13 +623,13 @@ HTML 包含 K 线、成交量、MACD 三个面板。可以通过图上方的下�
 
 ```bash
 # 以某个已完成交易日为截止时刻
-.venv/bin/eliot analyze 600519 --as-of 2026-11-16
+.venv/bin/elliottwaver analyze 600519 --as-of 2026-11-16
 
 # 分钟分析，必须携带时区
-.venv/bin/eliot analyze 600519 --timeframe 5m --as-of '2026-11-16T14:00:00+08:00'
+.venv/bin/elliottwaver analyze 600519 --timeframe 5m --as-of '2026-11-16T14:00:00+08:00'
 
 # 限定候选锚点搜索的最早日期，以及数据截止日期
-.venv/bin/eliot analyze 600519 --start 2025-01-01 --end 2026-11-16
+.venv/bin/elliottwaver analyze 600519 --start 2025-01-01 --end 2026-11-16
 ```
 
 `--as-of YYYY-MM-DD` 对 A 股解释为该日收盘后加缓冲，对美股解释为纽约当地次日零点加缓冲。精确时间必须带 `+08:00`、`-05:00`、`Z` 等时区信息；不能请求未来尚不可用的时刻。
@@ -641,7 +645,7 @@ HTML 包含 K 线、成交量、MACD 三个面板。可以通过图上方的下�
 正常分析会自动保存快照。也可以先下载数据，再决定如何分析：
 
 ```bash
-.venv/bin/eliot data fetch 600519 --timeframe 1d
+.venv/bin/elliottwaver data fetch 600519 --timeframe 1d
 ```
 
 命令输出 JSON，其中 `snapshot_id` 是该快照的完整 ID。将其填入下面的变量，保留引号：
@@ -649,15 +653,15 @@ HTML 包含 K 线、成交量、MACD 三个面板。可以通过图上方的下�
 ```bash
 SNAPSHOT_ID='替换为刚才返回的完整snapshot_id'
 
-.venv/bin/eliot data inspect "$SNAPSHOT_ID"
-.venv/bin/eliot brief 600519 --offline --snapshot "$SNAPSHOT_ID"
-.venv/bin/eliot analyze 600519 --offline --snapshot "$SNAPSHOT_ID"
+.venv/bin/elliottwaver data inspect "$SNAPSHOT_ID"
+.venv/bin/elliottwaver brief 600519 --offline --snapshot "$SNAPSHOT_ID"
+.venv/bin/elliottwaver analyze 600519 --offline --snapshot "$SNAPSHOT_ID"
 
 # 日线快照也可以生成完整周线分析
-.venv/bin/eliot analyze 600519 --offline --snapshot "$SNAPSHOT_ID" --timeframe 1w
+.venv/bin/elliottwaver analyze 600519 --offline --snapshot "$SNAPSHOT_ID" --timeframe 1w
 ```
 
-默认快照目录为 `.cache/eliotbot/`。快照文件及元数据会校验 SHA256，不要直接修改其中的文件。
+默认快照目录为 `.cache/elliottwaver/`。快照文件及元数据会校验 SHA256，不要直接修改其中的文件。
 
 `analyze --offline` 默认沿用快照周期和截止时间。`brief` 默认自动选择日线或周线，分钟快照请用 `analyze` 或显式传入匹配的周期。标的和 feed 必须匹配快照。日线快照可以派生周线，小时或分钟分析需要对应周期的快照。
 
@@ -670,7 +674,7 @@ SNAPSHOT_ID='替换为刚才返回的完整snapshot_id'
 沿用上一节设置的日线 `SNAPSHOT_ID`：
 
 ```bash
-.venv/bin/eliot replay "$SNAPSHOT_ID" \
+.venv/bin/elliottwaver replay "$SNAPSHOT_ID" \
   --start 2025-01-01 \
   --end 2026-11-16 \
   --step 5 \
@@ -692,7 +696,7 @@ SNAPSHOT_ID='替换为刚才返回的完整snapshot_id'
 
 ```bash
 cp -n config.example.yaml config.yaml
-.venv/bin/eliot analyze 600519 --config config.yaml
+.venv/bin/elliottwaver analyze 600519 --config config.yaml
 ```
 
 常用设置：
@@ -713,30 +717,30 @@ cp -n config.example.yaml config.yaml
 | `search.max_subwave_depth` | `0` | `0/1/2`；1 认证一层子浪，2 再向下认证一层 |
 | `data.us_feed` | `sip` | 默认美股 feed |
 | `data.delayed_access_buffer_minutes` | `20` | K 线结束后的可用时间缓冲 |
-| `cache.directory` | `.cache/eliotbot` | 快照、摘要历史、结算记录和默认模型注册表的根目录 |
+| `cache.directory` | `.cache/elliottwaver` | 快照、摘要历史、结算记录和默认模型注册表的根目录 |
 | `output.directory` | `reports` | 真实分析默认报告根目录 |
 | `output.formats` | `[html, md]` | 默认报告格式；JSON 始终保存 |
 
 配置字段必须符合样例结构，未知字段会报错。`search.max_subwave_depth` 允许 `0/1/2`；`1` 对已确认父腿做一层子模板规则认证，`2` 再向下认证一层。`--long-term` 会把它设为 1，显式 `--subwave-depth 0` 可覆盖。`demo` 有独立的默认输出目录和格式，需要通过其 `--output-dir`、`--format` 修改。
 
-已暴露为命令参数的设置，其优先级为：显式命令参数 > `ELIOT_` 环境变量 > YAML 配置 > 内置默认值。例如只对一次调用改变候选数：
+已暴露为命令参数的设置，其优先级为：显式命令参数 > `ELLIOTTWAVER_` 环境变量 > YAML 配置 > 内置默认值。例如只对一次调用改变候选数：
 
 ```bash
-ELIOT_ANALYSIS__TOP_K=5 .venv/bin/eliot analyze 600519
+ELLIOTTWAVER_ANALYSIS__TOP_K=5 .venv/bin/elliottwaver analyze 600519
 ```
 
 需要自己的脚本读取结果时，使用 `--json`，诊断和错误会走 stderr：
 
 ```bash
 mkdir -p reports
-.venv/bin/eliot analyze 600519 --format json --json > reports/600519-result.json
+.venv/bin/elliottwaver analyze 600519 --format json --json > reports/600519-result.json
 ```
 
 批量收盘摘要使用 [`watchlist`](#47-自选批量)。如果需要为每只标的生成单周期图表，可逐只调用 `analyze`。例如依次分析 3 只股票，失败时输出股票代码并继续：
 
 ```bash
 for symbol in 600519 000001 300750; do
-  if ! .venv/bin/eliot analyze "$symbol" --timeframe 1d; then
+  if ! .venv/bin/elliottwaver analyze "$symbol" --timeframe 1d; then
     printf '分析未成功：%s\n' "$symbol" >&2
   fi
 done
@@ -769,24 +773,24 @@ done
 | `--open` | `analyze` 尝试打开 `chart.html`，`brief` 尝试打开 `index.html` |
 
 ```bash
-.venv/bin/eliot --help
-.venv/bin/eliot analyze --help
-.venv/bin/eliot brief --help
-.venv/bin/eliot history --help
-.venv/bin/eliot watchlist --help
-.venv/bin/eliot settle --help
-.venv/bin/eliot support-matrix --help
-.venv/bin/eliot demo --help
-.venv/bin/eliot data fetch --help
-.venv/bin/eliot data inspect --help
-.venv/bin/eliot replay --help
+.venv/bin/elliottwaver --help
+.venv/bin/elliottwaver analyze --help
+.venv/bin/elliottwaver brief --help
+.venv/bin/elliottwaver history --help
+.venv/bin/elliottwaver watchlist --help
+.venv/bin/elliottwaver settle --help
+.venv/bin/elliottwaver support-matrix --help
+.venv/bin/elliottwaver demo --help
+.venv/bin/elliottwaver data fetch --help
+.venv/bin/elliottwaver data inspect --help
+.venv/bin/elliottwaver replay --help
 ```
 
 ## 12. 常见问题
 
 | 现象 | 检查方式 |
 | --- | --- |
-| `eliot: command not found` | 使用 `.venv/bin/eliot`，或先 `source .venv/bin/activate` |
+| `elliottwaver: command not found` | 使用 `.venv/bin/elliottwaver`，或先 `source .venv/bin/activate` |
 | 缺少 Python 模块 | 检查使用的是项目虚拟环境，运行 `doctor`；按安装步骤补齐依赖 |
 | 网络解析失败、超时、`SOURCE_UNAVAILABLE` | 在运行该命令的终端检查网络和代理；离线演示及已有快照分析不需要网络 |
 | Alpaca 401/403 或权限错误 | 检查密钥、paper/live 端点以及显式选择的 feed 权限；`doctor` 不验证在线权限 |

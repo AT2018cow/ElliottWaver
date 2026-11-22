@@ -1,21 +1,21 @@
 import pytest
 from conftest import make_pivots
 
-import eliotbot.service as service_module
-from eliotbot.config import Settings
-from eliotbot.data.demo import demo_bundle
-from eliotbot.engine.matcher import Candidate, SearchBudget
-from eliotbot.engine.parents import ParentLink
-from eliotbot.engine.templates import DIAGONAL, FLAT, IMPULSE, TRIANGLE
-from eliotbot.schemas.market import AnalysisRequest
-from eliotbot.schemas.wave import (
+import elliottwaver.service as service_module
+from elliottwaver.config import Settings
+from elliottwaver.data.demo import demo_bundle
+from elliottwaver.engine.matcher import Candidate, SearchBudget
+from elliottwaver.engine.parents import ParentLink
+from elliottwaver.engine.templates import DIAGONAL, FLAT, IMPULSE, TRIANGLE
+from elliottwaver.schemas.market import AnalysisRequest
+from elliottwaver.schemas.wave import (
     ScoreBreakdown,
     ScoreEvidence,
     StructureLeg,
     StructureNode,
     WaveStructure,
 )
-from eliotbot.service import AnalysisService
+from elliottwaver.service import AnalysisService
 
 
 def _score(candidate, bars, indicators, **kwargs):

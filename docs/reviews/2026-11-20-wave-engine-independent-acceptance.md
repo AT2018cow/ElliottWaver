@@ -24,9 +24,9 @@
 使用 `docs/protocols/wave-engine-variant-fixtures.json` 的冻结合成快照，运行未 monkeypatch 的：
 
 ```bash
-.venv/bin/eliot analyze <symbol> --offline --snapshot <id> \
+.venv/bin/elliottwaver analyze <symbol> --offline --snapshot <id> \
   --config config.variant.example.yaml --format json --json
-.venv/bin/eliot brief <symbol> --offline --snapshot <id> \
+.venv/bin/elliottwaver brief <symbol> --offline --snapshot <id> \
   --config config.variant.example.yaml --no-weekly --no-window-check --json
 ```
 

@@ -8,8 +8,8 @@
 
 | 项目 | 对照规则 | v0.2.0 的实际行为 |
 | --- | --- | --- |
-| **EW-01 三角形 E 浪净回撤漏检** | 完成的三角形须对前一浪形成净回撤，顺势三角形的 B 浪可以越过 A 浪起点。 [三角形规则](https://www.elliottwave.com/waveopedia/triangles/) | `TRIANGLE_SHAPE` 检查轨道和 E 相对 C 的位置，遗漏 E 相对 A 起点的边界。`0/A/B/C/D/E = 100/110/90/107/94/98` 和 `E=100` 均被匹配器纳入 `COMPLETE`。给五条腿分别构造合格的细尺度锯齿后，子浪状态也会是 `VERIFIED`。涨跌镜像均复现。 [规则实现](../../src/eliotbot/engine/rules.py#L136) [认证实现](../../src/eliotbot/engine/subwaves.py#L172) |
-| **EW-02 浪 3 长度口径差异** | Frost/Prechter 以各浪自身起点为基准比较百分比长度，并指出绝对价差在绝大多数情况下会给出相同结果。 [驱动浪规则](https://www.elliottwave.com/waveopedia/motive-waves/) | 仓库设计采用绝对价差。`0–5 = 100/140/120/164/148/210` 的第 1、3、5 浪价差是 `40/44/62`，涨幅是 `40.00%/36.67%/41.89%`，程序通过，百分比口径下浪 3 最短。反向分歧也存在，`100/130/108/136/132/161` 的价差为 `30/28/29`，涨幅为 `30.00%/25.93%/21.97%`，程序拒绝，百分比口径下浪 5 最短。开发中的浪 5 长度上限和失效位也依赖此口径。 [仓库设计](../../DESIGN.md#L215) [规则实现](../../src/eliotbot/engine/rules.py#L200) [失效位](../../src/eliotbot/engine/projector.py#L77) |
+| **EW-01 三角形 E 浪净回撤漏检** | 完成的三角形须对前一浪形成净回撤，顺势三角形的 B 浪可以越过 A 浪起点。 [三角形规则](https://www.elliottwave.com/waveopedia/triangles/) | `TRIANGLE_SHAPE` 检查轨道和 E 相对 C 的位置，遗漏 E 相对 A 起点的边界。`0/A/B/C/D/E = 100/110/90/107/94/98` 和 `E=100` 均被匹配器纳入 `COMPLETE`。给五条腿分别构造合格的细尺度锯齿后，子浪状态也会是 `VERIFIED`。涨跌镜像均复现。 [规则实现](../../src/elliottwaver/engine/rules.py#L136) [认证实现](../../src/elliottwaver/engine/subwaves.py#L172) |
+| **EW-02 浪 3 长度口径差异** | Frost/Prechter 以各浪自身起点为基准比较百分比长度，并指出绝对价差在绝大多数情况下会给出相同结果。 [驱动浪规则](https://www.elliottwave.com/waveopedia/motive-waves/) | 仓库设计采用绝对价差。`0–5 = 100/140/120/164/148/210` 的第 1、3、5 浪价差是 `40/44/62`，涨幅是 `40.00%/36.67%/41.89%`，程序通过，百分比口径下浪 3 最短。反向分歧也存在，`100/130/108/136/132/161` 的价差为 `30/28/29`，涨幅为 `30.00%/25.93%/21.97%`，程序拒绝，百分比口径下浪 5 最短。开发中的浪 5 长度上限和失效位也依赖此口径。 [仓库设计](../../DESIGN.md#L215) [规则实现](../../src/elliottwaver/engine/rules.py#L200) [失效位](../../src/elliottwaver/engine/projector.py#L77) |
 
 ## v0.2.0 模板覆盖
 
@@ -19,10 +19,10 @@
 | ABC 锯齿 | B 浪区间影线不得触及 A 起点，完成态采用 C 越过 A 终点的非截短模板。子浪检查按 `5-3-5` 的位置规则运行。 [锯齿](https://www.elliottwave.com/waveopedia/zigzags/) |
 | 平台 | 子浪检查使用 `3-3-5` 位置规则。端点筛选要求 B 回撤至少 90%，且 C 落后于 A 终点至多 25% 的 A 浪长度。该 25% 是程序门槛，早于子浪检查生效。`100/140/92/127` 具备顺势平台的 B、C 相对位置，但因 C 落后 A 终点 32.5% 被过滤。要认定实际顺势平台，还须检查 `3-3-5` 与相邻结构。 [平台](https://www.elliottwave.com/waveopedia/flats/) |
 | 三角形 | 支持两条斜轨的收敛和扩散形态。等高或等低的水平边界在严格轨道比较中被排除，阻挡型未覆盖。对已完成收敛三角形，现有深度认证使用项目已选的 A 组门槛，至少四条锯齿族腿，复杂腿至多一条，嵌套 E 腿保留为 `PROVISIONAL`。 [三角形](https://www.elliottwave.com/waveopedia/triangles/) [项目口径](2026-11-18-cn-triangle-classic-v6.md) |
-| 楔形 | 实现为允许浪 4 与浪 1 重叠并要求轨道收敛的独立模板，其中重叠属于当前实现的必要条件。程序尚未区分引导、终结亚型，也未验证楔形内部结构。仓库原始设计提到的扩散楔形尚未实现。 [楔形](https://www.elliottwave.com/waveopedia/elliott-wave-pattern-diagonals/) [模板](../../src/eliotbot/engine/templates.py#L69) |
+| 楔形 | 实现为允许浪 4 与浪 1 重叠并要求轨道收敛的独立模板，其中重叠属于当前实现的必要条件。程序尚未区分引导、终结亚型，也未验证楔形内部结构。仓库原始设计提到的扩散楔形尚未实现。 [楔形](https://www.elliottwave.com/waveopedia/elliott-wave-pattern-diagonals/) [模板](../../src/elliottwaver/engine/templates.py#L69) |
 | 双锯齿 WXY | 子浪检查要求 W、Y 为锯齿而 X 为调整结构。端点实现额外要求 X 至少回撤 W 的 50%、Y 越过 W 终点。`100/130/124/145` 因 X 仅回撤 20% 被过滤。一般双重三浪、三重调整属于更广的组合范围。 [锯齿](https://www.elliottwave.com/waveopedia/zigzags/) [组合调整](https://www.elliottwave.com/waveopedia/combinations/) |
 
-`COMPLETE` 表示模板端点齐备并通过当前端点规则。默认 `max_subwave_depth=0`，子浪状态为 `UNAVAILABLE`。深度 1 的子浪 `VERIFIED` 表示直接子模板通过了当前位置和端点检查，父级 `VERIFIED` 则表示候选与允许的父腿吻合。斐波那契吻合度进入候选评分。 [报告字段](../USER_GUIDE.md#L511) [配置](../../src/eliotbot/config.py#L51) [硬规则调用](../../src/eliotbot/engine/matcher.py#L107) [评分](../../src/eliotbot/engine/scorer.py)
+`COMPLETE` 表示模板端点齐备并通过当前端点规则。默认 `max_subwave_depth=0`，子浪状态为 `UNAVAILABLE`。深度 1 的子浪 `VERIFIED` 表示直接子模板通过了当前位置和端点检查，父级 `VERIFIED` 则表示候选与允许的父腿吻合。斐波那契吻合度进入候选评分。 [报告字段](../USER_GUIDE.md#L511) [配置](../../src/elliottwaver/config.py#L51) [硬规则调用](../../src/elliottwaver/engine/matcher.py#L107) [评分](../../src/elliottwaver/engine/scorer.py)
 
 ## 复现与通过条件
 

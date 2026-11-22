@@ -73,6 +73,6 @@
 .venv/bin/python scripts/acceptance_cn_index.py --live
 ```
 
-[离线证据](2026-11-17-cn-index-evidence.json)默认使用 `.cache/eliotbot/` 中的指数原始快照；最早的 600519 兼容性样本位于 `.cache/live-smoke/`。原有七组输入与报告路径见[开发者验证摘要](../validation_cn_index_20261117.json)。没有这些原始输入时，重新下载产生的快照不能冒充同版本重放。
+[离线证据](2026-11-17-cn-index-evidence.json)默认使用 `.cache/elliottwaver/` 中的指数原始快照；最早的 600519 兼容性样本位于 `.cache/live-smoke/`。原有七组输入与报告路径见[开发者验证摘要](../validation_cn_index_20261117.json)。没有这些原始输入时，重新下载产生的快照不能冒充同版本重放。
 
 当前支持范围仍为 `SH000*`、`SZ399*`、`BJ899*` 的日线/周线，证券是否实际存在由行情源继续核验。指数分钟线、北交所个股、未列明的其他指数代码族不在本次通过范围。未进行 PIT 认证、概率校准、收益比较或真实美股账户联调。

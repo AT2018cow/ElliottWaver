@@ -9,21 +9,21 @@ from tempfile import TemporaryDirectory
 
 from typer.testing import CliRunner
 
-from eliotbot.cli.main import app
-from eliotbot.config import load_settings, long_term_settings
-from eliotbot.data.snapshots import SnapshotStore
-from eliotbot.engine.matcher import Candidate
-from eliotbot.engine.projector import project
-from eliotbot.engine.rules import check_pattern
-from eliotbot.engine.subwaves import certify_subwaves
-from eliotbot.engine.templates import DIAGONAL, FLAT, TRIANGLE, ZIGZAG
-from eliotbot.engine.zigzag import ZigZagResult
-from eliotbot.evaluation.replay import replay
-from eliotbot.schemas.market import AnalysisRequest, Bar
-from eliotbot.schemas.wave import PivotPoint
-from eliotbot.service import AnalysisService, prepare_bundle
-from eliotbot.util import atomic_write, digest
-from eliotbot.visualization.report_formatter import publish_report
+from elliottwaver.cli.main import app
+from elliottwaver.config import load_settings, long_term_settings
+from elliottwaver.data.snapshots import SnapshotStore
+from elliottwaver.engine.matcher import Candidate
+from elliottwaver.engine.projector import project
+from elliottwaver.engine.rules import check_pattern
+from elliottwaver.engine.subwaves import certify_subwaves
+from elliottwaver.engine.templates import DIAGONAL, FLAT, TRIANGLE, ZIGZAG
+from elliottwaver.engine.zigzag import ZigZagResult
+from elliottwaver.evaluation.replay import replay
+from elliottwaver.schemas.market import AnalysisRequest, Bar
+from elliottwaver.schemas.wave import PivotPoint
+from elliottwaver.service import AnalysisService, prepare_bundle
+from elliottwaver.util import atomic_write, digest
+from elliottwaver.visualization.report_formatter import publish_report
 
 
 def fixture(prices: list[int], indices: list[int] | None = None, direction: int = 1):
@@ -157,8 +157,8 @@ def verify_report(report: Path, result_digest: str, snapshot_id: str) -> None:
 def frozen_checks(reports: Path) -> tuple[list[dict], dict, dict]:
     summary = []
     profiles = (
-        ("validation_20261118_long_history_v3", ".cache/eliotbot", True),
-        ("validation_20261118_cn_index_v3", ".cache/eliotbot", False),
+        ("validation_20261118_long_history_v3", ".cache/elliottwaver", True),
+        ("validation_20261118_cn_index_v3", ".cache/elliottwaver", False),
         ("validation_20261118_ext5_v3", ".cache/live-smoke", False),
     )
     prefix_count = 0
@@ -223,7 +223,7 @@ def frozen_checks(reports: Path) -> tuple[list[dict], dict, dict]:
                     assert direct.result_digest == row.result_digest
                     prefix_count += 1
             if case["label"] == "pingan_long":
-                with TemporaryDirectory(prefix="eliot-engine-review-", dir="/tmp") as tmp:
+                with TemporaryDirectory(prefix="elliottwaver-engine-review-", dir="/tmp") as tmp:
                     config = Path(tmp) / "config.json"
                     configured = settings.model_dump(mode="json")
                     configured["cache"]["directory"] = root

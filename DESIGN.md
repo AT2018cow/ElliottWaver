@@ -1,4 +1,4 @@
-# EliotBot 系统架构与详细设计文档
+# ElliottWaver 系统架构与详细设计文档
 
 本文保留原始产品设计。原设计中的剧本评分在当前实现中归一化为候选相对权重。日用版以可复核的波浪规则和分析报告为验收依据，事件概率使用独立的留出校准。[产品路线图](docs/ROADMAP.md) · [中文使用手册](docs/USER_GUIDE.md) · [实现及验收状态](docs/IMPLEMENTATION_STATUS.md)
 
@@ -23,16 +23,16 @@
 
 ## 2. 系统架构与目录规划
 
-采用核心引擎库（`eliotbot`）与入口层（`cli` / `web`）分离的分层架构：
+采用核心引擎库（`elliottwaver`）与入口层（`cli` / `web`）分离的分层架构：
 
 ```text
-EliotBot/
+ElliottWaver/
 ├── DESIGN.md                    # 系统设计文档
 ├── pyproject.toml               # 项目依赖与打包配置 (Python 3.10+)
 ├── config.example.yaml          # 配置文件模板 (API Key、算法超参数)
 ├── .env.example                 # 环境变量模板 (ALPACA_API_KEY 等)
 │
-├── eliotbot/                    # 【核心引擎包 - CLI 与 Web 共享】
+├── elliottwaver/                    # 【核心引擎包 - CLI 与 Web 共享】
 │   ├── __init__.py
 │   ├── config.py                # 配置加载与校验
 │   ├── schemas/                 # 统一数据结构定义 (Pydantic Models)
@@ -67,7 +67,7 @@ EliotBot/
 │   └── console_render.py        # Rich 终端彩色面板与表格输出
 │
 ├── web/                         # 【Phase 2：Web 服务预留目录】
-│   ├── api/                     # FastAPI 路由 (调用 eliotbot.service)
+│   ├── api/                     # FastAPI 路由 (调用 elliottwaver.service)
 │   └── frontend/                # 前端单页应用 (渲染 Plotly JSON / TradingView Lightweight Charts)
 │
 └── tests/                       # 单元测试与标准浪型合成数据回测
@@ -75,7 +75,7 @@ EliotBot/
 
 ---
 
-## 3. 核心数据模型设计 (`eliotbot/schemas/`)
+## 3. 核心数据模型设计 (`elliottwaver/schemas/`)
 
 为了确保 Phase 1 (CLI) 向 Phase 2 (Web) 平滑过渡，核心服务层输出严格类型的 JSON 友好结构：
 
@@ -148,7 +148,7 @@ class AnalysisResult(BaseModel):
 
 ---
 
-## 4. 数据获取与自适应时间跨度设计 (`eliotbot/data/`)
+## 4. 数据获取与自适应时间跨度设计 (`elliottwaver/data/`)
 
 ### 4.1 股票代码自动识别路由 (`router.py`)
 用户输入单一代码参数即可自动分流：
@@ -183,7 +183,7 @@ class AnalysisResult(BaseModel):
 
 ---
 
-## 5. 波浪分析核心引擎设计 (`eliotbot/engine/`)
+## 5. 波浪分析核心引擎设计 (`elliottwaver/engine/`)
 
 ### 5.1 多尺度 ATR 自适应拐点提取 (`zigzag.py`)
 不同股票波动率差异巨大（如四大行日均波动 1%，妖股/科技股日均波动 5%+），固定百分比阈值无法通用。
@@ -293,11 +293,11 @@ $$f(r) = \max_{k} w_k \cdot \exp\left(-\frac{(r - r_k^*)^2}{2\sigma^2}\right)$$
 
 ```bash
 # 1. 最简用法：自动识别市场（A股/美股）、自动选择锚点跨度、输出终端报告 + 图表
-eliot analyze 600519
-eliot analyze AAPL
+elliottwaver analyze 600519
+elliottwaver analyze AAPL
 
 # 2. 进阶可选参数
-eliot analyze sz300750 \
+elliottwaver analyze sz300750 \
   --timeframe 1d \              # 可选强制指定主周期: 60m, 1d, 1w (默认自适应 1d)
   --top-k 3 \                   # 输出前 K 种高概率走势 (默认 3)
   --output-dir ./reports \      # 图表与 Markdown 报告保存目录
@@ -314,7 +314,7 @@ eliot analyze sz300750 \
 
 ## 7. Phase 2：Web 版本无缝演进方案
 
-由于 Phase 1 已经将核心逻辑完全封装在 `eliotbot.service.analyze_symbol()` 与 `Plotly Figure JSON` 中，后续升级 Web 版无需重写任何算法代码：
+由于 Phase 1 已经将核心逻辑完全封装在 `elliottwaver.service.analyze_symbol()` 与 `Plotly Figure JSON` 中，后续升级 Web 版无需重写任何算法代码：
 
 1. **后端（`web/api/`）**：
    - 使用 **FastAPI** 暴露两个核心接口：
@@ -361,7 +361,7 @@ eliot analyze sz300750 \
   - 编写标准波浪形态合成数据的单元测试。
 - **Milestone 1.4 - 图表渲染与 CLI 封装**：
   - 实现 Plotly 多剧本波浪推演图（K线 + 主/次浪标 + 虚线预测箭头 + 目标区间带 + 失效线 + MACD背离连线）；
-  - 实现 `eliot analyze <symbol>` CLI 命令、Rich 终端报告及 Markdown 报告导出。
+  - 实现 `elliottwaver analyze <symbol>` CLI 命令、Rich 终端报告及 Markdown 报告导出。
 
 ### Phase 2：Web 交互版（后续迭代）
 - **Milestone 2.1**：搭建 FastAPI 服务端，封装分析接口与异步缓存任务。

@@ -4,6 +4,8 @@
 
 提交引用约定：记录不保存提交哈希。`vX.Y.Z` 指对应发布标签；“YYYY-MM-DD 的‘提交标题’”指该日期下标题完全匹配的提交，可用 `git log --all --grep='提交标题' --fixed-strings` 定位。仓库初始提交用 `git rev-list --max-parents=0 HEAD` 定位。
 
+2026-11-22 项目更名为 ElliottWaver：当前包名为 `elliottwaver`，CLI 为 `elliottwaver`。更名前的验收记录已按新名称统一改写路径和命令；`reviewed_file_sha256` 仍记录评审时的内容，源码改名后不再与当前文件逐字对应。
+
 A 股三角形子浪对照已完成固定样本试跑。后续实施与复验见[试跑复核与下一步](2026-11-18-cn-triangle-experiment-followup.md)。
 
 | 日期 | 范围 | 结论 | 证据 |
@@ -31,8 +33,8 @@ A 股三角形子浪对照已完成固定样本试跑。后续实施与复验见
 | 2026-11-19 | E 决策时模型可用性与回顾性重算 | 245 项测试；注册表批准/撤回时间线、决策时模型加载、回顾性标记通过 | [记录](2026-11-19-e-decision-time-models.md) |
 | 2026-11-19 | E 扩大样本训练、校准与正式审批 | 证据不足：8 个事件均未通过设计门槛；未注册默认模型；219 项测试 | [审批记录](2026-11-19-e-model-approval.md)、[证据](2026-11-19-e-model-approval-evidence.json)、[协议](../protocols/e-expanded-2023-2025.json) |
 | 2026-11-19 | C–G 首版及补充：历史、自选、评估、概率、标注、结算 | 254 项测试；历史/自选/离线评估/训练推理/盲标评分/增量核销通过 | [验收记录](2026-11-19-c-g-acceptance.md)、[支持矩阵](2026-11-19-g-support-matrix.json) |
-| 2026-11-19 | `eliot brief` B 首版 | 188 项测试；周线背景、跨周期对齐、换窗复核和 weekly 产物通过 | [验收记录](2026-11-19-brief-b-acceptance.md) |
-| 2026-11-19 | `eliot brief` A 首版 | 185 项测试；两只个股 + 两个指数烟测通过；摘要/JSON/MD/HTML/图表可生成 | [验收记录](2026-11-19-brief-mvp-acceptance.md) |
+| 2026-11-19 | `elliottwaver brief` B 首版 | 188 项测试；周线背景、跨周期对齐、换窗复核和 weekly 产物通过 | [验收记录](2026-11-19-brief-b-acceptance.md) |
+| 2026-11-19 | `elliottwaver brief` A 首版 | 185 项测试；两只个股 + 两个指数烟测通过；摘要/JSON/MD/HTML/图表可生成 | [验收记录](2026-11-19-brief-mvp-acceptance.md) |
 | 2026-11-18 | 三角形 `subwave-v6` 修复与默认组 | 正式认证采用 A 组，修复子浪备选搜索、回放复权坐标和产物字段。 | [修复与决策](2026-11-18-cn-triangle-classic-v6.md) |
 | 2026-11-18 | A 股三角形后续实验独立验收 | 部分通过。价格无分歧，复权坐标与整组候选选择待修复。 | [独立验收](2026-11-18-cn-triangle-followup-acceptance.md) |
 | 2026-11-18 | A 股三角形规则复核与正式认证实现记录 | 自验 176 项测试。小回放无价格分歧。价格标签和结构认证的独立复核见上行。 | [复核结果](2026-11-18-cn-triangle-experiment-followup-results.md) |

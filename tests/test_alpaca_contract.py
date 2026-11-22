@@ -1,9 +1,9 @@
 from datetime import UTC, date, datetime, timedelta
 
-from eliotbot.config import DataConfig
-from eliotbot.data.alpaca_provider import AlpacaProvider
-from eliotbot.data.calendar import load_calendar
-from eliotbot.data.router import route_symbol
+from elliottwaver.config import DataConfig
+from elliottwaver.data.alpaca_provider import AlpacaProvider
+from elliottwaver.data.calendar import load_calendar
+from elliottwaver.data.router import route_symbol
 
 
 class Responses:

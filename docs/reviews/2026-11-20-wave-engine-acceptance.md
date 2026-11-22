@@ -77,7 +77,7 @@
   --protocol docs/protocols/wave-engine-acceptance-v1.json \
   --config config.advanced.example.yaml \
   --output reports/wave-engine/benchmark/advanced.json
-.venv/bin/eliot brief 000016.SH --offline \
+.venv/bin/elliottwaver brief 000016.SH --offline \
   --snapshot abfd7531e5f8e49a3cec1f27100d21cccc67c2d53c07c68e684fd0ac39c16a4f \
   --config config.advanced.example.yaml --json
 ```

@@ -6,8 +6,8 @@
 
 | 市场 | 标的 | 类型 | 快照缓存 |
 | --- | --- | --- | --- |
-| CN | `600519.SH` | 个股 | `.cache/eliotbot` |
-| CN | `000016.SH` | 指数 | `.cache/eliotbot` |
+| CN | `600519.SH` | 个股 | `.cache/elliottwaver` |
+| CN | `000016.SH` | 指数 | `.cache/elliottwaver` |
 | US | `AAPL` | 个股 | `.cache/us-acceptance` |
 | US | `SPY` | ETF（按 EQUITY 路由） | `.cache/us-acceptance` |
 
@@ -16,11 +16,11 @@
 每个标的分别运行 JSON、Markdown、HTML 和终端输出：
 
 ```bash
-.venv/bin/eliot brief <symbol> --offline --snapshot <id> \
+.venv/bin/elliottwaver brief <symbol> --offline --snapshot <id> \
   --config <cache-config> --no-weekly --no-window-check --format json --json
-.venv/bin/eliot brief <symbol> --offline --snapshot <id> \
+.venv/bin/elliottwaver brief <symbol> --offline --snapshot <id> \
   --config <cache-config> --no-weekly --no-window-check --format md --output-dir <reports>
-.venv/bin/eliot brief <symbol> --offline --snapshot <id> \
+.venv/bin/elliottwaver brief <symbol> --offline --snapshot <id> \
   --config <cache-config> --no-weekly --no-window-check --format html --output-dir <reports>
 ```
 
@@ -44,9 +44,9 @@ JSON、Markdown、HTML 和终端都包含同一个 `outlook` 的期限、当前�
 ## watchlist
 
 ```bash
-.venv/bin/eliot watchlist watch-cn.txt --as-of 2026-11-18 --config <cn-config> \
+.venv/bin/elliottwaver watchlist watch-cn.txt --as-of 2026-11-18 --config <cn-config> \
   --no-weekly --no-window-check --json
-.venv/bin/eliot watchlist watch-us.txt --as-of 2026-11-18 --config <us-config> \
+.venv/bin/elliottwaver watchlist watch-us.txt --as-of 2026-11-18 --config <us-config> \
   --no-weekly --no-window-check --json
 ```
 
@@ -55,8 +55,8 @@ JSON、Markdown、HTML 和终端都包含同一个 `outlook` 的期限、当前�
 ## history
 
 ```bash
-.venv/bin/eliot history 600519.SH --config <cn-config> --json
-.venv/bin/eliot history AAPL --config <us-config> --json
+.venv/bin/elliottwaver history 600519.SH --config <cn-config> --json
+.venv/bin/elliottwaver history AAPL --config <us-config> --json
 ```
 
 两个市场均返回 `2026-11-18` 的 `OK` 记录；CN 历史中另有早前运行留下的 `UNREADABLE` 条目，不影响本次新报告。
@@ -64,8 +64,8 @@ JSON、Markdown、HTML 和终端都包含同一个 `outlook` 的期限、当前�
 ## settle
 
 ```bash
-.venv/bin/eliot settle reports/CN --cache-root .cache/eliotbot --json
-.venv/bin/eliot settle reports/US --cache-root .cache/us-acceptance --json
+.venv/bin/elliottwaver settle reports/CN --cache-root .cache/elliottwaver --json
+.venv/bin/elliottwaver settle reports/US --cache-root .cache/us-acceptance --json
 ```
 
 | 市场 | 行数 | 事件 |
@@ -78,8 +78,8 @@ JSON、Markdown、HTML 和终端都包含同一个 `outlook` 的期限、当前�
 ## support-matrix
 
 ```bash
-.venv/bin/eliot support-matrix --json
-.venv/bin/eliot support-matrix --model-summary pe5-score/summary.json --json
+.venv/bin/elliottwaver support-matrix --json
+.venv/bin/elliottwaver support-matrix --model-summary pe5-score/summary.json --json
 ```
 
 - 无模型汇总：26 行，覆盖 1d/1w 的收盘、确认、目标、推进和新 outlook 事件。

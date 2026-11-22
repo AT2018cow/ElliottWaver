@@ -4,23 +4,23 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from eliotbot.brief import build_brief
-from eliotbot.config import Settings
-from eliotbot.data.snapshots import SnapshotStore
-from eliotbot.evaluation.decisions import evaluate_protocol, read_evaluation_manifest
-from eliotbot.evaluation.features import (
+from elliottwaver.brief import build_brief
+from elliottwaver.config import Settings
+from elliottwaver.data.snapshots import SnapshotStore
+from elliottwaver.evaluation.decisions import evaluate_protocol, read_evaluation_manifest
+from elliottwaver.evaluation.features import (
     FEATURE_VERSION,
     OUTLOOK_FEATURES,
     SUPPORTED_FEATURE_VERSIONS,
     event_feature_order,
     outlook_features,
 )
-from eliotbot.schemas.market import AnalysisRequest
-from eliotbot.schemas.outlook import OutlookCase, OutlookCondition
-from eliotbot.schemas.wave import LevelCondition, PriceZone, WaveScenario
-from eliotbot.service import prepare_bundle
-from eliotbot.util import canonical_json, digest
-from eliotbot.visualization.brief_formatter import publish_brief
+from elliottwaver.schemas.market import AnalysisRequest
+from elliottwaver.schemas.outlook import OutlookCase, OutlookCondition
+from elliottwaver.schemas.wave import LevelCondition, PriceZone, WaveScenario
+from elliottwaver.service import prepare_bundle
+from elliottwaver.util import canonical_json, digest
+from elliottwaver.visualization.brief_formatter import publish_brief
 from scripts import train_forecasts
 
 
@@ -114,7 +114,7 @@ def test_freeze_writes_a_digest_identified_candidate(tmp_path, monkeypatch):
     protocol = {
         "protocol_version": "1",
         "protocol_id": "freeze-fixture",
-        "cache_root": ".cache/eliotbot",
+        "cache_root": ".cache/elliottwaver",
         "samples": [
             {
                 "symbol": "AAPL",

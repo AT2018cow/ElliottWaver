@@ -4,12 +4,12 @@ import pytest
 from conftest import make_bar
 from pydantic import ValidationError
 
-from eliotbot.config import Settings, load_settings
-from eliotbot.data.adjustment import adjust_to_basis
-from eliotbot.data.quality import normalize_bars
-from eliotbot.data.router import route_symbol
-from eliotbot.errors import DataError, InputError
-from eliotbot.schemas.market import AnalysisRequest, Bar, FactorPoint, MarketDataBundle
+from elliottwaver.config import Settings, load_settings
+from elliottwaver.data.adjustment import adjust_to_basis
+from elliottwaver.data.quality import normalize_bars
+from elliottwaver.data.router import route_symbol
+from elliottwaver.errors import DataError, InputError
+from elliottwaver.schemas.market import AnalysisRequest, Bar, FactorPoint, MarketDataBundle
 
 
 @pytest.mark.parametrize(
@@ -108,7 +108,7 @@ def test_config_extra_fields_and_environment_precedence(tmp_path, monkeypatch):
         Settings(typo=True)
     path = tmp_path / "config.yaml"
     path.write_text("analysis:\n  top_k: 2\n  warmup_bars: 150\n")
-    monkeypatch.setenv("ELIOT_ANALYSIS__TOP_K", "4")
+    monkeypatch.setenv("ELLIOTTWAVER_ANALYSIS__TOP_K", "4")
     settings = load_settings(path)
     assert settings.analysis.top_k == 4
     assert settings.analysis.warmup_bars == 150

@@ -2,16 +2,16 @@ from datetime import UTC, date, datetime, timedelta
 
 import pytest
 
-from eliotbot.config import DataConfig, Settings
-from eliotbot.data.alpaca_provider import AlpacaProvider
-from eliotbot.data.calendar import bar_window, load_calendar, parse_as_of
-from eliotbot.data.demo import demo_bundle
-from eliotbot.data.periods import as_weekly, target_session
-from eliotbot.data.router import route_symbol
-from eliotbot.data.snapshots import SnapshotStore
-from eliotbot.errors import DataError, SourceError
-from eliotbot.schemas.market import AnalysisRequest
-from eliotbot.service import AnalysisService
+from elliottwaver.config import DataConfig, Settings
+from elliottwaver.data.alpaca_provider import AlpacaProvider
+from elliottwaver.data.calendar import bar_window, load_calendar, parse_as_of
+from elliottwaver.data.demo import demo_bundle
+from elliottwaver.data.periods import as_weekly, target_session
+from elliottwaver.data.router import route_symbol
+from elliottwaver.data.snapshots import SnapshotStore
+from elliottwaver.errors import DataError, SourceError
+from elliottwaver.schemas.market import AnalysisRequest
+from elliottwaver.service import AnalysisService
 
 
 class Responses:
@@ -181,7 +181,7 @@ def test_alpaca_conflicting_duplicate_timestamp_is_rejected():
 
 
 def _us_bars(calendar, days, *, start_price=100.0):
-    from eliotbot.schemas.market import Bar
+    from elliottwaver.schemas.market import Bar
 
     observed = datetime(2024, 1, 1, tzinfo=UTC)
     result = []
@@ -229,7 +229,7 @@ def test_us_holiday_and_early_close_are_calendar_facts():
 
 
 def test_us_shortened_week_is_complete_but_current_partial_week_is_not():
-    from eliotbot.data.resample import weekly_bars
+    from elliottwaver.data.resample import weekly_bars
 
     calendar = load_calendar(route_symbol("AAPL"), date(2024, 3, 18), date(2024, 4, 5))
     days = [day for day in calendar.dates if date(2024, 3, 18) <= day <= date(2024, 4, 1)]
@@ -298,9 +298,9 @@ def _sip_bundle():
 
 
 def test_brief_surfaces_feed_adjustment_mode_and_cutoff():
-    from eliotbot.brief import build_brief
-    from eliotbot.visualization.brief_formatter import brief_html, brief_markdown
-    from eliotbot.visualization.chart_builder import render_html
+    from elliottwaver.brief import build_brief
+    from elliottwaver.visualization.brief_formatter import brief_html, brief_markdown
+    from elliottwaver.visualization.chart_builder import render_html
 
     source = _sip_bundle()
     decision = source.bars[-30]
@@ -327,8 +327,8 @@ def test_brief_surfaces_feed_adjustment_mode_and_cutoff():
 
 
 def test_console_brief_and_result_surface_feed_and_adjustment(capsys):
-    from eliotbot.brief import build_brief
-    from eliotbot.cli.console_render import render_brief, render_result
+    from elliottwaver.brief import build_brief
+    from elliottwaver.cli.console_render import render_brief, render_result
 
     source = _sip_bundle()
     decision = source.bars[-30]
@@ -344,7 +344,7 @@ def test_console_brief_and_result_surface_feed_and_adjustment(capsys):
 def test_offline_brief_rejects_a_different_feed(tmp_path):
     from typer.testing import CliRunner
 
-    from eliotbot.cli.main import app
+    from elliottwaver.cli.main import app
 
     cache = tmp_path / "cache"
     snapshot = SnapshotStore(cache).save(_sip_bundle())
@@ -376,7 +376,7 @@ def test_offline_brief_reports_actual_source_metadata(tmp_path):
 
     from typer.testing import CliRunner
 
-    from eliotbot.cli.main import app
+    from elliottwaver.cli.main import app
 
     cache = tmp_path / "cache"
     source = _sip_bundle()
@@ -405,7 +405,7 @@ def test_offline_brief_reports_actual_source_metadata(tmp_path):
     assert payload["feed"] == "sip"
     assert payload["adjustment"] == "provider_all"
     assert payload["mode"] == "FROZEN_DATA_REPLAY"
-    from eliotbot.brief import build_brief
+    from elliottwaver.brief import build_brief
 
     direct = build_brief(
         AnalysisRequest(
@@ -427,8 +427,8 @@ def test_watchlist_reports_feed_and_keeps_item_failures(tmp_path, monkeypatch):
 
     from typer.testing import CliRunner
 
-    from eliotbot.cli import main as cli_main
-    from eliotbot.cli.main import app
+    from elliottwaver.cli import main as cli_main
+    from elliottwaver.cli.main import app
 
     cache = tmp_path / "cache"
     source = _sip_bundle()
@@ -478,7 +478,7 @@ def test_watchlist_reports_feed_and_keeps_item_failures(tmp_path, monkeypatch):
 
 
 def test_prefix_analysis_matches_full_analysis_at_the_same_decision():
-    from eliotbot.data.demo import demo_bundle
+    from elliottwaver.data.demo import demo_bundle
 
     bundle = demo_bundle("AAPL")
     decision = bundle.bars[-30]
@@ -514,7 +514,7 @@ def test_prefix_analysis_matches_full_analysis_at_the_same_decision():
 
 
 def test_provider_price_scale_bridges_a_clean_split():
-    from eliotbot.data.adjustment import provider_price_scale
+    from elliottwaver.data.adjustment import provider_price_scale
 
     issued = demo_bundle("AAPL")
     current = issued.model_copy(
@@ -536,8 +536,8 @@ def test_provider_price_scale_bridges_a_clean_split():
 
 
 def test_alpaca_credentials_are_required_and_alias_conflicts_are_rejected(tmp_path, monkeypatch):
-    from eliotbot.config import alpaca_asset_endpoint, alpaca_credentials
-    from eliotbot.errors import InputError
+    from elliottwaver.config import alpaca_asset_endpoint, alpaca_credentials
+    from elliottwaver.errors import InputError
 
     monkeypatch.chdir(tmp_path)
     for name in (
@@ -562,8 +562,8 @@ def test_alpaca_credentials_are_required_and_alias_conflicts_are_rejected(tmp_pa
 
 
 def test_http_retry_after_beyond_deadline_stops_without_sleeping():
-    from eliotbot.data.http import HTTPClient
-    from eliotbot.errors import SourceError
+    from elliottwaver.data.http import HTTPClient
+    from elliottwaver.errors import SourceError
 
     class Response:
         status_code = 429
@@ -585,8 +585,8 @@ def test_http_retry_after_beyond_deadline_stops_without_sleeping():
 
 
 def test_http_malformed_json_is_a_source_error():
-    from eliotbot.data.http import HTTPClient
-    from eliotbot.errors import SourceError
+    from elliottwaver.data.http import HTTPClient
+    from elliottwaver.errors import SourceError
 
     class Response:
         status_code = 200
@@ -607,8 +607,8 @@ def test_fetch_cli_reports_source_and_availability(tmp_path, monkeypatch):
 
     from typer.testing import CliRunner
 
-    from eliotbot.cli import main as cli_main
-    from eliotbot.cli.main import app
+    from elliottwaver.cli import main as cli_main
+    from elliottwaver.cli.main import app
 
     cache = tmp_path / "cache"
     source = _sip_bundle()
@@ -633,7 +633,7 @@ def test_offline_analyze_matches_direct_analysis_and_inspect_metadata(tmp_path):
 
     from typer.testing import CliRunner
 
-    from eliotbot.cli.main import app
+    from elliottwaver.cli.main import app
 
     source = _sip_bundle()
     cache = tmp_path / "cache"
@@ -678,10 +678,10 @@ def test_offline_analyze_matches_direct_analysis_and_inspect_metadata(tmp_path):
 def test_us_sip_and_iex_caches_are_separate(tmp_path, monkeypatch):
     import sqlite3
 
-    from eliotbot.data import workflow
-    from eliotbot.data.workflow import fetch_bundle
-    from eliotbot.schemas.market import MarketDataBundle, Provenance
-    from eliotbot.util import digest
+    from elliottwaver.data import workflow
+    from elliottwaver.data.workflow import fetch_bundle
+    from elliottwaver.schemas.market import MarketDataBundle, Provenance
+    from elliottwaver.util import digest
 
     calendar = load_calendar(route_symbol("AAPL"), date(2024, 6, 1), date(2024, 7, 8))
     days = [day for day in calendar.dates if day <= date(2024, 7, 5)][-80:]
@@ -783,7 +783,7 @@ def test_us_sip_and_iex_caches_are_separate(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("cutoffs", [(5, 1, 5), (1, 5, 1)])
 def test_us_intraday_cache_separates_newly_available_daily_context(tmp_path, cutoffs):
-    from eliotbot.data.workflow import fetch_bundle
+    from elliottwaver.data.workflow import fetch_bundle
 
     july_2 = _bar("2024-07-02")
     july_3 = _bar("2024-07-03")
@@ -817,8 +817,8 @@ def test_us_intraday_cache_separates_newly_available_daily_context(tmp_path, cut
 def test_legacy_alpaca_snapshot_is_rejected_and_cache_is_refetched(tmp_path, monkeypatch):
     from typer.testing import CliRunner
 
-    from eliotbot.cli.main import app
-    from eliotbot.data import snapshots, workflow
+    from elliottwaver.cli.main import app
+    from elliottwaver.data import snapshots, workflow
 
     source = _long_daily_bundle()
     settings = Settings(cache={"directory": tmp_path / "cache"})
@@ -869,7 +869,7 @@ def test_legacy_alpaca_snapshot_is_rejected_and_cache_is_refetched(tmp_path, mon
 
 
 def test_earlier_cache_cutoff_does_not_reuse_unavailable_context(tmp_path):
-    from eliotbot.data.workflow import fetch_bundle
+    from elliottwaver.data.workflow import fetch_bundle
 
     source = _long_daily_bundle()
     pending_at = source.as_of + timedelta(minutes=30)
@@ -893,7 +893,7 @@ def test_earlier_cache_cutoff_does_not_reuse_unavailable_context(tmp_path):
 
 
 def test_us_week_with_an_internal_missing_session_is_not_complete():
-    from eliotbot.data.resample import weekly_bars
+    from elliottwaver.data.resample import weekly_bars
 
     calendar = load_calendar(route_symbol("AAPL"), date(2024, 3, 18), date(2024, 4, 5))
     days = [
@@ -906,8 +906,8 @@ def test_us_week_with_an_internal_missing_session_is_not_complete():
 
 
 def _long_daily_bundle():
-    from eliotbot.schemas.market import MarketDataBundle, Provenance
-    from eliotbot.util import digest
+    from elliottwaver.schemas.market import MarketDataBundle, Provenance
+    from elliottwaver.util import digest
 
     calendar = load_calendar(route_symbol("AAPL"), date(2022, 6, 1), date(2024, 7, 5))
     days = [day for day in calendar.dates if day <= date(2024, 7, 5)][-420:]
@@ -942,8 +942,8 @@ def test_offline_weekly_brief_matches_derived_weekly_analysis(tmp_path):
 
     from typer.testing import CliRunner
 
-    from eliotbot.brief import build_brief
-    from eliotbot.cli.main import app
+    from elliottwaver.brief import build_brief
+    from elliottwaver.cli.main import app
 
     source = _long_daily_bundle()
     weekly = as_weekly(source)
@@ -992,7 +992,7 @@ def test_replay_manifest_records_source_and_frozen_mode(tmp_path):
 
     from typer.testing import CliRunner
 
-    from eliotbot.cli.main import app
+    from elliottwaver.cli.main import app
 
     source = _long_daily_bundle()
     cache = tmp_path / "cache"
@@ -1042,7 +1042,7 @@ def test_alpaca_forbidden_asset_request_does_not_fall_back_to_iex():
 
 
 def test_provider_price_scale_bridges_a_dividend_adjustment():
-    from eliotbot.data.adjustment import provider_price_scale
+    from elliottwaver.data.adjustment import provider_price_scale
 
     issued = demo_bundle("AAPL")
     current = issued.model_copy(
@@ -1065,7 +1065,7 @@ def test_provider_price_scale_bridges_a_dividend_adjustment():
 
 
 def test_us_weekends_and_holidays_are_not_reported_as_gaps():
-    from eliotbot.data.quality import missing_sessions
+    from elliottwaver.data.quality import missing_sessions
 
     bundle = _long_daily_bundle()
     assert missing_sessions(bundle) == ()
@@ -1084,9 +1084,9 @@ def _weekly_demo_daily_bundle():
     from datetime import time, timedelta
     from zoneinfo import ZoneInfo
 
-    from eliotbot.data.demo import demo_bundle
-    from eliotbot.schemas.market import Bar, MarketDataBundle, Provenance
-    from eliotbot.util import digest
+    from elliottwaver.data.demo import demo_bundle
+    from elliottwaver.schemas.market import Bar, MarketDataBundle, Provenance
+    from elliottwaver.util import digest
 
     source_weekly = demo_bundle("AAPL", timeframe="1w")
     zone = ZoneInfo("America/New_York")
@@ -1156,7 +1156,7 @@ def _weekly_demo_daily_bundle():
 
 
 def test_us_provider_all_daily_to_weekly_projection_stays_in_adjusted_coordinate():
-    from eliotbot.schemas.market import AnalysisRequest
+    from elliottwaver.schemas.market import AnalysisRequest
 
     daily, source_weekly = _weekly_demo_daily_bundle()
     weekly = as_weekly(daily)

@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-`src/eliotbot/` contains the Python package: `cli/` handles commands, `data/` handles providers and snapshots, `schemas/` defines contracts, `engine/` implements wave analysis, `evaluation/` runs replay, and `visualization/` produces reports. `service.py` coordinates analysis; keep the engine independent of network access.
+`src/elliottwaver/` contains the Python package: `cli/` handles commands, `data/` handles providers and snapshots, `schemas/` defines contracts, `engine/` implements wave analysis, `evaluation/` runs replay, and `visualization/` produces reports. `service.py` coordinates analysis; keep the engine independent of network access.
 
 Tests live in `tests/`, reusable fixtures in `tests/conftest.py`, and snapshot validation tooling in `scripts/`. Read `docs/USER_GUIDE.md` for usage and `docs/IMPLEMENTATION_STATUS.md` for implemented scope. Generated charts and data belong in ignored `reports/` and `.cache/` directories.
 
@@ -13,8 +13,8 @@ Run from the repository root with Python 3.11+:
 ```bash
 python3 -m venv .venv
 .venv/bin/python -m pip install -e '.[dev,cn,us]'
-.venv/bin/eliot doctor
-.venv/bin/eliot demo
+.venv/bin/elliottwaver doctor
+.venv/bin/elliottwaver demo
 .venv/bin/python -m pytest tests -q
 .venv/bin/ruff check src tests scripts
 .venv/bin/ruff format --check src tests scripts

@@ -1,7 +1,7 @@
 {
   "protocol_version": "1",
   "protocol_id": "prediction-outlook-history-holdout-cn-weekly-v1",
-  "cache_root": ".cache/eliotbot",
+  "cache_root": ".cache/elliottwaver",
   "samples": [
     {
       "symbol": "000016.SH",

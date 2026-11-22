@@ -1,9 +1,20 @@
 # 版本说明
 
+> 0.6.0 前的历史版本实际使用包名 `eliotbot` 和命令 `eliot`；为统一阅读，历史条目中的命令已改写为 `elliottwaver`。
+
+## 0.6.0 · 2026-11-22
+
+项目更名为 **ElliottWaver**。
+
+- Python 包 `eliotbot` 更名为 `elliottwaver`，CLI 命令 `eliot` 更名为 `elliottwaver`。
+- 环境变量前缀 `ELIOT_` 更名为 `ELLIOTTWAVER_`；默认缓存目录改为 `.cache/elliottwaver/`。
+- 旧命令、旧环境变量和旧缓存目录不再作为默认入口；已有快照可移动到新缓存目录，或在配置中显式指定 `cache.directory`。
+- 分析引擎、报告格式和结果契约不变；本次为命名与发布入口调整。
+
 ## 0.5.1 · 2026-11-22
 
-- `eliot --version` 在默认 CLI 入口中直接输出包版本。
-- `eliot doctor` 按引擎模板表列出推动浪、锯齿、三角形、平台、楔形和 WXY。
+- `elliottwaver --version` 在默认 CLI 入口中直接输出包版本。
+- `elliottwaver doctor` 按引擎模板表列出推动浪、锯齿、三角形、平台、楔形和 WXY。
 - 安装手册同步更新，并注明修复复验和发布验收各自的测试数。 [升级与安装](docs/USER_GUIDE.md#从已有安装升级)
 
 ## 0.5.0 · 2026-11-22
@@ -34,7 +45,7 @@
 - 完成三角形的 E 浪必须形成净回撤。E 尚在发展且未满足时，规则显示 `PENDING`。
 - 普通推动浪与楔形按各浪自身起点的百分比比较浪 1、3、5。浪 5 的失效价、目标区和回放共用这个边界，影线严格越界才触发失效。
 
-升级后重新运行 `eliot brief` 或 `eliot analyze` 即可按新规则分析。原始快照可继续用于离线分析，同一快照的新报告将记录新引擎版本。 [规则复验](docs/reviews/2026-11-20-elliott-rule-conformance.md#修复复验)
+升级后重新运行 `elliottwaver brief` 或 `elliottwaver analyze` 即可按新规则分析。原始快照可继续用于离线分析，同一快照的新报告将记录新引擎版本。 [规则复验](docs/reviews/2026-11-20-elliott-rule-conformance.md#修复复验)
 
 ## 0.2.0 · 2026-11-20
 
@@ -54,7 +65,7 @@
 - `brief` 自动选择分析窗口，展示主备浪型、规则证据、确认及失效条件、目标区与完整周线背景。结果支持终端、HTML、Markdown 和 JSON。
 - `analyze` 支持单周期检查。沪深个股可查询日线、周线和小时／分钟线，沪深京指数支持日线和周线。
 - `history` 查询原摘要，`watchlist` 批量分析自选，`settle` 用冻结行情结算条件事件。
-- 支持可校验的行情快照、离线分析和逐前缀回放。可通过 `eliot demo` 验证安装与出图。
+- 支持可校验的行情快照、离线分析和逐前缀回放。可通过 `elliottwaver demo` 验证安装与出图。
 - 候选权重反映规则与评分。事件概率状态为 `UNCALIBRATED`，作为独立研究功能验收。
 
 联网分析 A 股使用新浪公开行情。请先核对报告的行情日期，遇到数据或规则证据不足时按报告状态处理。安装步骤、离线演示和日用命令见[中文使用手册](docs/USER_GUIDE.md)。

@@ -6,11 +6,11 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
-from eliotbot.data.adjustment import adjust_to_basis
-from eliotbot.data.demo import demo_bundle
-from eliotbot.data.snapshots import SnapshotStore
-from eliotbot.schemas.market import FactorPoint
-from eliotbot.util import atomic_write, canonical_json, digest
+from elliottwaver.data.adjustment import adjust_to_basis
+from elliottwaver.data.demo import demo_bundle
+from elliottwaver.data.snapshots import SnapshotStore
+from elliottwaver.schemas.market import FactorPoint
+from elliottwaver.util import atomic_write, canonical_json, digest
 
 
 def _save(store: SnapshotStore, bundle):
@@ -112,7 +112,7 @@ def build(cache_root: Path) -> dict:
 
 
 def main() -> int:
-    records = build(Path(".cache/eliotbot"))
+    records = build(Path(".cache/elliottwaver"))
     atomic_write(
         Path("docs/protocols/wave-engine-synthetic-samples.json"),
         canonical_json({"schema_version": "1.0", "samples": records}) + "\n",

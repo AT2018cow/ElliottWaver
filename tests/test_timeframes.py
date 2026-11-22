@@ -5,14 +5,14 @@ import pytest
 from conftest import make_bar
 from typer.testing import CliRunner
 
-from eliotbot.cli.main import app
-from eliotbot.data.adjustment import adjust_to_basis
-from eliotbot.data.calendar import Session, TradingCalendar, load_calendar
-from eliotbot.data.demo import demo_bundle
-from eliotbot.data.periods import aggregate_intraday, intraday_windows, target_session
-from eliotbot.schemas.market import AnalysisRequest, FactorPoint, MarketDataBundle
-from eliotbot.service import AnalysisService, prepare_bundle
-from eliotbot.timeframes import TIMEFRAMES
+from elliottwaver.cli.main import app
+from elliottwaver.data.adjustment import adjust_to_basis
+from elliottwaver.data.calendar import Session, TradingCalendar, load_calendar
+from elliottwaver.data.demo import demo_bundle
+from elliottwaver.data.periods import aggregate_intraday, intraday_windows, target_session
+from elliottwaver.schemas.market import AnalysisRequest, FactorPoint, MarketDataBundle
+from elliottwaver.service import AnalysisService, prepare_bundle
+from elliottwaver.timeframes import TIMEFRAMES
 
 
 @pytest.mark.parametrize("symbol", ["AAPL", "600519"])
@@ -55,7 +55,7 @@ def test_hour_alias_and_cli_option(tmp_path, monkeypatch):
 
 
 def test_cn_hour_windows_do_not_span_the_lunch_break():
-    from eliotbot.data.router import route_symbol
+    from elliottwaver.data.router import route_symbol
 
     instrument = route_symbol("600519")
     calendar = load_calendar(instrument, date(2024, 6, 3), date(2024, 6, 7))
@@ -68,7 +68,7 @@ def test_cn_hour_windows_do_not_span_the_lunch_break():
 
 
 def test_us_early_close_preserves_a_partial_hour():
-    from eliotbot.data.router import route_symbol
+    from elliottwaver.data.router import route_symbol
 
     instrument = route_symbol("AAPL")
     calendar = load_calendar(instrument, date(2024, 7, 1), date(2024, 7, 8))
@@ -82,7 +82,7 @@ def test_us_early_close_preserves_a_partial_hour():
 
 
 def test_hour_aggregation_refuses_a_hidden_missing_subbar():
-    from eliotbot.data.router import route_symbol
+    from elliottwaver.data.router import route_symbol
 
     instrument = route_symbol("AAPL")
     opened = datetime(2024, 7, 1, 13, 30, tzinfo=UTC)

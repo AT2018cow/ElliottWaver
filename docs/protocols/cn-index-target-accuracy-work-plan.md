@@ -10,7 +10,7 @@
 
 ## E1　滚动校准
 
-在 `src/eliotbot/evaluation/calibration.py` 增加纯函数，接收已冻结的基础预测对数几率及此前可见的二元结果，只估计一个截距 `delta`。基础模型权重及静态校准参数在每个验证折开始前冻结。预测公式为 `p = sigmoid(z + delta)`，其中 `z` 是同一基础模型加静态校准后的正类对数几率。拟合最小化二元交叉熵的均值加 `0.1 * delta**2 / 2`，在 `[-2, 2]` 内可用二分求解。
+在 `src/elliottwaver/evaluation/calibration.py` 增加纯函数，接收已冻结的基础预测对数几率及此前可见的二元结果，只估计一个截距 `delta`。基础模型权重及静态校准参数在每个验证折开始前冻结。预测公式为 `p = sigmoid(z + delta)`，其中 `z` 是同一基础模型加静态校准后的正类对数几率。拟合最小化二元交叉熵的均值加 `0.1 * delta**2 / 2`，在 `[-2, 2]` 内可用二分求解。
 
 首轮只测试一组预先约定的参数。每个决策取最近 12 个已有可用结果的不同决策日，每个日期保留其全部标的和候选。至少 8 个日期、100 条结果且正负各不少于 10 条时估计 `delta`。样本不足用 `delta = 0` 并记录原因。这些是本轮滚动校准的实验参数，正式发布门槛沿用原协议。
 
@@ -26,7 +26,7 @@
 
 ## E2　接入目标区距离
 
-在 `src/eliotbot/evaluation/features.py` 增加可选目标区特征。使用与 `first_touch()` 相同的首个目标区 `scenario.target_zones[0]`，在决策时的价格坐标计算。设区间为 `[L, H]`、决策收盘为 `C`。
+在 `src/elliottwaver/evaluation/features.py` 增加可选目标区特征。使用与 `first_touch()` 相同的首个目标区 `scenario.target_zones[0]`，在决策时的价格坐标计算。设区间为 `[L, H]`、决策收盘为 `C`。
 
 | 字段 | 数值 |
 | --- | --- |
@@ -34,7 +34,7 @@
 | `inside_target_zone` | `L <= C <= H` 为 1，其余为 0 |
 | `missing_target_geometry` | 缺目标、区间非法或 ATR 不可用时为 1，前两列置 0 |
 
-已入区和已越过区间都只是决策特征。未来事件仍从下一交易会话按 `src/eliotbot/evaluation/outcomes.py` 的原规则判定。复用一份特征计算供 `evaluation/decisions.py` 和 `forecast.py`，避免研究与摘要口径漂移。新列进入目标先达模型时，也加到相同事件的完整价格基线。保留原确认距离、失效距离与现有动量对照。
+已入区和已越过区间都只是决策特征。未来事件仍从下一交易会话按 `src/elliottwaver/evaluation/outcomes.py` 的原规则判定。复用一份特征计算供 `evaluation/decisions.py` 和 `forecast.py`，避免研究与摘要口径漂移。新列进入目标先达模型时，也加到相同事件的完整价格基线。保留原确认距离、失效距离与现有动量对照。
 
 通过协议字段 `feature_version` 显式选择新列。现有协议缺省为 `2`，列顺序与模型行为保留。新目标几何使用 `3`，同步校验评估清单、列顺序和候选哈希。用相同快照重放 2023–2025 的开发数据。按标的、周期、决策日期、快照 ID、候选 ID 和事件 ID 对齐 V2、V3，核对候选集合、标签、预定到期日和分段计数。
 
@@ -46,7 +46,7 @@
 
 ## E3　核对候选为何缺失效边界
 
-从历史事件明细导出 `stage × pattern × 缺失原因` 的计数和占比，复现 1,548／1,534／14 三个数。在 `src/eliotbot/engine/projector.py` 顺着规则分支逐类核查。优先抽查 `COMPLETE`、`B_DEVELOPING`、`C_DEVELOPING`、`W5_DEVELOPING`；另保留有失效缺目标的案例。每个代表例记录标的、决策日期、快照 ID、候选 ID、条件类型、规则依据和图。
+从历史事件明细导出 `stage × pattern × 缺失原因` 的计数和占比，复现 1,548／1,534／14 三个数。在 `src/elliottwaver/engine/projector.py` 顺着规则分支逐类核查。优先抽查 `COMPLETE`、`B_DEVELOPING`、`C_DEVELOPING`、`W5_DEVELOPING`；另保留有失效缺目标的案例。每个代表例记录标的、决策日期、快照 ID、候选 ID、条件类型、规则依据和图。
 
 把只可给阶段退出线的结构、确有硬规则但实现可能漏发的结构、数据证据不足的结构各自记录。无合法失效边界时继续 `UNDEFINED_EVENT`。发现漏发时先给冻结行情反例、涨跌镜像和独立预期。引擎规则修订后单列新的事件覆盖率，保持 E1、E2 四组对照的标签口径一致。
 

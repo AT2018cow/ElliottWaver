@@ -11,18 +11,18 @@ from collections import Counter, defaultdict
 from datetime import date
 from pathlib import Path
 
-from eliotbot.data.periods import as_weekly
-from eliotbot.data.snapshots import SnapshotStore
-from eliotbot.errors import DataError
-from eliotbot.evaluation.outcomes import outcome_window
-from eliotbot.label_models import (
+from elliottwaver.data.periods import as_weekly
+from elliottwaver.data.snapshots import SnapshotStore
+from elliottwaver.errors import DataError
+from elliottwaver.evaluation.outcomes import outcome_window
+from elliottwaver.label_models import (
     load_label_model,
     predict_label_probabilities,
     validate_label_identities,
 )
-from eliotbot.schemas.market import asset_type_for
-from eliotbot.util import atomic_write, canonical_json, digest
-from eliotbot.visualization.brief_formatter import read_brief_report
+from elliottwaver.schemas.market import asset_type_for
+from elliottwaver.util import atomic_write, canonical_json, digest
+from elliottwaver.visualization.brief_formatter import read_brief_report
 
 HIDDEN_KEYS = {
     "future_bars",
@@ -72,8 +72,8 @@ def export_cases(input_path: Path, output_path: Path) -> dict:
 
 
 def _bars_for_brief(brief: dict, cache_root: Path, window: int) -> tuple[list[dict], bool]:
-    from eliotbot.schemas.market import AnalysisRequest
-    from eliotbot.service import prepare_bundle
+    from elliottwaver.schemas.market import AnalysisRequest
+    from elliottwaver.service import prepare_bundle
 
     store = SnapshotStore(cache_root)
     try:
@@ -363,7 +363,7 @@ def _svg(case: dict) -> str:
     )
 
 
-def blind_html(cases: list[dict], title: str = "EliotBot 盲标") -> str:
+def blind_html(cases: list[dict], title: str = "ElliottWaver 盲标") -> str:
     sections = []
     for case_number, case in enumerate(cases, 1):
         endpoints = (
@@ -447,7 +447,7 @@ def export_brief_cases(
     briefs_root: Path,
     output_path: Path,
     *,
-    cache_root: Path = Path(".cache/eliotbot"),
+    cache_root: Path = Path(".cache/elliottwaver"),
     bar_window: int = 120,
     max_per_stratum: int | None = None,
     html_path: Path | None = None,
@@ -854,7 +854,7 @@ def direction_labels(
     cases_path: Path,
     output_path: Path,
     *,
-    cache_root: Path = Path(".cache/eliotbot"),
+    cache_root: Path = Path(".cache/elliottwaver"),
     horizon: int | None = None,
 ) -> dict:
     payload = json.loads(cases_path.read_text())
@@ -945,7 +945,7 @@ def main() -> int:
     source.add_argument("--input", type=Path)
     source.add_argument("--briefs", type=Path)
     export.add_argument("--output", type=Path, required=True)
-    export.add_argument("--cache-root", type=Path, default=Path(".cache/eliotbot"))
+    export.add_argument("--cache-root", type=Path, default=Path(".cache/elliottwaver"))
     export.add_argument("--bar-window", type=int, default=120)
     export.add_argument("--max-per-stratum", type=int)
     export.add_argument("--html", type=Path)
@@ -959,7 +959,7 @@ def main() -> int:
     direction = sub.add_parser("direction")
     direction.add_argument("--cases", type=Path, required=True)
     direction.add_argument("--output", type=Path, required=True)
-    direction.add_argument("--cache-root", type=Path, default=Path(".cache/eliotbot"))
+    direction.add_argument("--cache-root", type=Path, default=Path(".cache/elliottwaver"))
     direction.add_argument("--horizon", type=int)
     predict = sub.add_parser("predict")
     predict.add_argument("--cases", type=Path, required=True)

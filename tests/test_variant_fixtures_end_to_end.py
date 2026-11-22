@@ -4,11 +4,11 @@ from itertools import pairwise
 
 import pytest
 
-from eliotbot.brief import build_brief
-from eliotbot.config import Settings
-from eliotbot.schemas.market import AnalysisRequest
-from eliotbot.service import AnalysisService
-from eliotbot.visualization.brief_formatter import brief_html, brief_markdown
+from elliottwaver.brief import build_brief
+from elliottwaver.config import Settings
+from elliottwaver.schemas.market import AnalysisRequest
+from elliottwaver.service import AnalysisService
+from elliottwaver.visualization.brief_formatter import brief_html, brief_markdown
 from scripts.make_variant_fixtures import PATHS, PER, _bundle
 
 

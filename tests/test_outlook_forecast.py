@@ -2,16 +2,16 @@ import json
 
 import pytest
 
-from eliotbot.brief import build_brief
-from eliotbot.config import Settings
-from eliotbot.data.demo import demo_bundle
-from eliotbot.engine.indicators import calculate
-from eliotbot.evaluation.features import event_feature_order
-from eliotbot.forecast import forecasts_for_brief, validate_approval_time, validate_model
-from eliotbot.schemas.market import AnalysisRequest
-from eliotbot.schemas.outlook import BriefOutlook, OutlookCase, OutlookEvent
-from eliotbot.settlement import support_matrix
-from eliotbot.util import digest
+from elliottwaver.brief import build_brief
+from elliottwaver.config import Settings
+from elliottwaver.data.demo import demo_bundle
+from elliottwaver.engine.indicators import calculate
+from elliottwaver.evaluation.features import event_feature_order
+from elliottwaver.forecast import forecasts_for_brief, validate_approval_time, validate_model
+from elliottwaver.schemas.market import AnalysisRequest
+from elliottwaver.schemas.outlook import BriefOutlook, OutlookCase, OutlookEvent
+from elliottwaver.settlement import support_matrix
+from elliottwaver.util import digest
 
 
 def _model(*, slot="PRIMARY", include_scope=True, event_id="ADVANCE_FIRST_5D_V1"):
@@ -241,7 +241,7 @@ def test_validate_model_requires_symbol_slot_for_close_event():
 
 
 def test_registry_queries_by_event_and_outlook_slot(tmp_path):
-    from eliotbot.forecast import ModelRegistry
+    from elliottwaver.forecast import ModelRegistry
 
     registry = ModelRegistry(tmp_path / "registry")
     advance = tmp_path / "advance.json"

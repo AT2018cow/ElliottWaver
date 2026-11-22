@@ -8,19 +8,19 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 from typer.testing import CliRunner
 
-from eliotbot.cli.main import app
-from eliotbot.data.router import route_symbol
-from eliotbot.engine.indicators import calculate
-from eliotbot.engine.zigzag import extract
-from eliotbot.errors import DataError, ExportError
-from eliotbot.evaluation.events import evaluate_event
-from eliotbot.evaluation.replay import replay
-from eliotbot.schemas.market import AnalysisRequest, Bar
-from eliotbot.schemas.wave import LevelCondition, PriceZone
-from eliotbot.service import AnalysisService, prepare_bundle
-from eliotbot.util import digest
-from eliotbot.visualization.chart_builder import build_plotly
-from eliotbot.visualization.report_formatter import markdown_report, publish_report
+from elliottwaver.cli.main import app
+from elliottwaver.data.router import route_symbol
+from elliottwaver.engine.indicators import calculate
+from elliottwaver.engine.zigzag import extract
+from elliottwaver.errors import DataError, ExportError
+from elliottwaver.evaluation.events import evaluate_event
+from elliottwaver.evaluation.replay import replay
+from elliottwaver.schemas.market import AnalysisRequest, Bar
+from elliottwaver.schemas.wave import LevelCondition, PriceZone
+from elliottwaver.service import AnalysisService, prepare_bundle
+from elliottwaver.util import digest
+from elliottwaver.visualization.chart_builder import build_plotly
+from elliottwaver.visualization.report_formatter import markdown_report, publish_report
 
 
 def test_replay_matches_individual_prefix_analysis(bundle):
@@ -40,7 +40,7 @@ def test_replay_matches_individual_prefix_analysis(bundle):
 @given(multiplier=st.floats(min_value=0.2, max_value=20, allow_nan=False, allow_infinity=False))
 @settings(max_examples=12, deadline=None)
 def test_positive_price_scaling_preserves_causal_pivots(multiplier):
-    from eliotbot.data.demo import demo_bundle
+    from elliottwaver.data.demo import demo_bundle
 
     bundle = demo_bundle()
     changed = tuple(
@@ -161,7 +161,7 @@ def test_engine_version_is_bound_into_result_identity(bundle):
 
 
 def test_markdown_report_shows_selected_scoring_profile(bundle):
-    from eliotbot.config import Settings
+    from elliottwaver.config import Settings
 
     request = AnalysisRequest(symbol="AAPL", as_of=bundle.as_of)
     bundle = prepare_bundle(request, bundle)
@@ -189,7 +189,7 @@ def test_export_failure_does_not_publish_or_update_latest(tmp_path, bundle, monk
     def failed(*args, **kwargs):
         raise RuntimeError("renderer failed")
 
-    monkeypatch.setattr("eliotbot.visualization.report_formatter.render_html", failed)
+    monkeypatch.setattr("elliottwaver.visualization.report_formatter.render_html", failed)
     with pytest.raises(ExportError):
         publish_report(result, bundle, tmp_path)
     assert not list(tmp_path.rglob("latest*.json"))
@@ -199,7 +199,7 @@ def test_export_failure_does_not_publish_or_update_latest(tmp_path, bundle, monk
 def test_plotly_report_separates_version_and_mode_from_result_identity(
     bundle, tmp_path, monkeypatch
 ):
-    from eliotbot.visualization import report_formatter
+    from elliottwaver.visualization import report_formatter
 
     request = AnalysisRequest(symbol="AAPL", as_of=bundle.as_of)
     prepared = prepare_bundle(request, bundle)

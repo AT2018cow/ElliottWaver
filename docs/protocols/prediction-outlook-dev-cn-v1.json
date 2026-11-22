@@ -1,6 +1,6 @@
 {
   "protocol_version": "1",
-  "cache_root": ".cache/eliotbot",
+  "cache_root": ".cache/elliottwaver",
   "grid": {
     "start": "2023-01-01",
     "end": "2026-09-30",

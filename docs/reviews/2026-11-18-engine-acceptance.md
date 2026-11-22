@@ -20,12 +20,12 @@
 
 | ID | 级别 | 结果与影响 |
 | --- | --- | --- |
-| ENG-R01 | P2 | 楔形允许浪 3 为最短。规范化端点 `[100,130,125,145,128,160]` 的三段长度是 30、20、32，涨跌镜像均无 FAIL。楔形绕过了推动浪分支中的长度约束，且没有自己的轨道几何校验。见 [rules.py](../../src/eliotbot/engine/rules.py#L127)。 |
-| ENG-R02 | P2 | 三角形把腿长递减当成收敛。端点 `[100,120,115,134,130,148]` 位于 `[0,10,11,12,112,113]` 根，A–C 和 B–D 斜率分别为 7 和约 0.149 点/根，上下轨随时间拉开，却由收敛分支判 PASS。见 [rules.py](../../src/eliotbot/engine/rules.py#L108)。 |
-| ENG-R03 | P2 | 平台 B 可以越过起点，投影却套用锯齿 B 的失效线。上涨向端点 `[100,120,99]` 已回撤 105%，规则不拒绝，但报告给出 `LOW <= 100` 失效条件，而当前最低价已是 99。WXY 同一分支也使用 B、C 和 A 的说明。见 [projector.py](../../src/eliotbot/engine/projector.py#L97)。 |
-| ENG-R04 | P2 | 深度 2 将父段之外的拐点计入评分。固定父端点索引 `[10,20,25,30]`，中间尺度只有跨越父区间的 `[0,40]` 两个拐点。仅在最细尺度加索引 `[2,4]` 的父段外拐点，拟合从 0 升至 0.5。该特征有 15 的权重，会影响证据覆盖、质量和排名。见 [subwaves.py](../../src/eliotbot/engine/subwaves.py#L59)。 |
-| ENG-R05 | P3 | 显式 `--subwave-depth 0` 无法覆盖配置里的 1。实际输出仍带深度 1 的配置摘要，用户请求关闭检查时引擎继续使用它。见 [main.py](../../src/eliotbot/cli/main.py#L78)。 |
-| ENG-R06 | P2 | `analyze --allow-gaps` 与公开 `replay` 不能对齐。平安银行长历史周线用同一搜索配置分析得到 `OK`，回放末根结果却为 `INSUFFICIENT_DATA`。Python 回放函数支持 `allow_gaps`，CLI 没有暴露该参数，开发验证脚本通过直接调用函数绕过了差异。见 [main.py](../../src/eliotbot/cli/main.py#L256)。 |
+| ENG-R01 | P2 | 楔形允许浪 3 为最短。规范化端点 `[100,130,125,145,128,160]` 的三段长度是 30、20、32，涨跌镜像均无 FAIL。楔形绕过了推动浪分支中的长度约束，且没有自己的轨道几何校验。见 [rules.py](../../src/elliottwaver/engine/rules.py#L127)。 |
+| ENG-R02 | P2 | 三角形把腿长递减当成收敛。端点 `[100,120,115,134,130,148]` 位于 `[0,10,11,12,112,113]` 根，A–C 和 B–D 斜率分别为 7 和约 0.149 点/根，上下轨随时间拉开，却由收敛分支判 PASS。见 [rules.py](../../src/elliottwaver/engine/rules.py#L108)。 |
+| ENG-R03 | P2 | 平台 B 可以越过起点，投影却套用锯齿 B 的失效线。上涨向端点 `[100,120,99]` 已回撤 105%，规则不拒绝，但报告给出 `LOW <= 100` 失效条件，而当前最低价已是 99。WXY 同一分支也使用 B、C 和 A 的说明。见 [projector.py](../../src/elliottwaver/engine/projector.py#L97)。 |
+| ENG-R04 | P2 | 深度 2 将父段之外的拐点计入评分。固定父端点索引 `[10,20,25,30]`，中间尺度只有跨越父区间的 `[0,40]` 两个拐点。仅在最细尺度加索引 `[2,4]` 的父段外拐点，拟合从 0 升至 0.5。该特征有 15 的权重，会影响证据覆盖、质量和排名。见 [subwaves.py](../../src/elliottwaver/engine/subwaves.py#L59)。 |
+| ENG-R05 | P3 | 显式 `--subwave-depth 0` 无法覆盖配置里的 1。实际输出仍带深度 1 的配置摘要，用户请求关闭检查时引擎继续使用它。见 [main.py](../../src/elliottwaver/cli/main.py#L78)。 |
+| ENG-R06 | P2 | `analyze --allow-gaps` 与公开 `replay` 不能对齐。平安银行长历史周线用同一搜索配置分析得到 `OK`，回放末根结果却为 `INSUFFICIENT_DATA`。Python 回放函数支持 `allow_gaps`，CLI 没有暴露该参数，开发验证脚本通过直接调用函数绕过了差异。见 [main.py](../../src/elliottwaver/cli/main.py#L256)。 |
 
 楔形和三角形的预期来自仓库设计 §9.4。EWI 的资料同样指出楔形第三浪不可最短，并以 A–C、B–D 端点线定义三角形边界。几根 K 线的价格反例验证的是硬约束本身，未涉及父级位置或内部完整数浪。参见 [楔形规则](https://www.elliottwave.com/waveopedia/elliott-wave-pattern-diagonals/)、[三角形几何](https://www.elliottwave.com/waveopedia/triangles/)。
 

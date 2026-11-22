@@ -10,17 +10,17 @@ import time
 from collections import deque
 from pathlib import Path
 
-from eliotbot.brief import build_brief
-from eliotbot.config import load_settings
-from eliotbot.data.snapshots import SnapshotStore
-from eliotbot.evaluation.outcomes import period_dates
-from eliotbot.schemas.market import AnalysisRequest
-from eliotbot.service import AnalysisService, engine_rules_version
-from eliotbot.util import atomic_write, canonical_json
+from elliottwaver.brief import build_brief
+from elliottwaver.config import load_settings
+from elliottwaver.data.snapshots import SnapshotStore
+from elliottwaver.evaluation.outcomes import period_dates
+from elliottwaver.schemas.market import AnalysisRequest
+from elliottwaver.service import AnalysisService, engine_rules_version
+from elliottwaver.util import atomic_write, canonical_json
 
 
 def _cases(protocol: dict, limit: int):
-    store = SnapshotStore(Path(protocol.get("cache_root", ".cache/eliotbot")))
+    store = SnapshotStore(Path(protocol.get("cache_root", ".cache/elliottwaver")))
     start, end = (protocol["grid"][key] for key in ("start", "end"))
     groups = deque()
     for sample in protocol["samples"]:

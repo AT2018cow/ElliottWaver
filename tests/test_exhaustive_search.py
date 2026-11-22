@@ -2,11 +2,11 @@ import json
 
 from conftest import make_pivots
 
-from eliotbot.config import SearchConfig
-from eliotbot.engine.matcher import Candidate, search
-from eliotbot.engine.rules import check_pattern
-from eliotbot.engine.templates import TEMPLATES
-from eliotbot.engine.zigzag import ZigZagResult
+from elliottwaver.config import SearchConfig
+from elliottwaver.engine.matcher import Candidate, search
+from elliottwaver.engine.rules import check_pattern
+from elliottwaver.engine.templates import TEMPLATES
+from elliottwaver.engine.zigzag import ZigZagResult
 
 
 def test_advanced_budget_reaches_alternate_scale_regardless_of_input_order():

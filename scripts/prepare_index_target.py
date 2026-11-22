@@ -22,16 +22,16 @@ from train_forecasts import (
     forecast_evidence,
 )
 
-from eliotbot.evaluation.calibration import brier, log_loss, predict
-from eliotbot.evaluation.decisions import read_evaluation_manifest, split_windows
-from eliotbot.evaluation.features import (
+from elliottwaver.evaluation.calibration import brier, log_loss, predict
+from elliottwaver.evaluation.decisions import read_evaluation_manifest, split_windows
+from elliottwaver.evaluation.features import (
     FEATURE_VERSION,
     PATTERNS,
     STAGES,
     event_feature_order,
 )
-from eliotbot.forecast import validate_model
-from eliotbot.util import atomic_write, canonical_json, digest
+from elliottwaver.forecast import validate_model
+from elliottwaver.util import atomic_write, canonical_json, digest
 
 EVENT = "TARGET_FIRST_20D_V1"
 CLASSES = ["NO", "YES"]

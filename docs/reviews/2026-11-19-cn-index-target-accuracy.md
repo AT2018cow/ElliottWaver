@@ -20,7 +20,7 @@ V3 评估用 7 个指数原快照重放 2023-01-01 至 2025-12-31，共 1,078 �
 
 ## E1 滚动校准
 
-实现位于 `src/eliotbot/evaluation/calibration.py` 的 `rolling_logit_offset()`：
+实现位于 `src/elliottwaver/evaluation/calibration.py` 的 `rolling_logit_offset()`：
 
 - 只接收 `label_available_at <= decision.as_of` 的明确结果；早触价仍等到预定到期 bar 可用。
 - 取最近 12 个不同决策日，每个日期保留全部可用标的和候选；至少 8 日、100 条、正负各 10 条才估计。

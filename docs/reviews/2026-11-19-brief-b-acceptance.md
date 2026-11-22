@@ -1,4 +1,4 @@
-# `eliot brief` B 首版验收记录
+# `elliottwaver brief` B 首版验收记录
 
 日期 2026-11-19。范围是 B 组“周线背景与换窗复核”的首版：同一日线源派生周线、跨周期方向对齐、自动换窗敏感性。C–G 未纳入。
 
@@ -62,7 +62,7 @@ window_comparison: CHANGED_COUNT_SAME_BIAS
 .venv/bin/python -m pytest tests -q
 .venv/bin/ruff check src tests scripts
 .venv/bin/ruff format --check src tests scripts
-.venv/bin/eliot brief 600519.SH --offline \
+.venv/bin/elliottwaver brief 600519.SH --offline \
   --snapshot 8378a32d2ce12a8419cb853ad4c6558aa4644f11aae7302c3319d14530d87f8d \
   --output-dir reports/brief-b --format html,md
 ```

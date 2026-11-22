@@ -23,7 +23,7 @@
 
 ```bash
 .venv/bin/python scripts/label_wave_cases.py direction \
-  --cases blind-cases.json --cache-root .cache/eliotbot \
+  --cases blind-cases.json --cache-root .cache/elliottwaver \
   --horizon 5 --output direction-labels.json
 ```
 
@@ -43,7 +43,7 @@ case e40572d8da78bff7177ca149 DOWN 2026-03-06
 
 ## 每模板独立二项模型
 
-新增 `src/eliotbot/label_models.py`、`scripts/train_label_models.py` 和 `label_wave_cases.py predict`。
+新增 `src/elliottwaver/label_models.py`、`scripts/train_label_models.py` 和 `label_wave_cases.py predict`。
 
 - 每模板一个独立二项逻辑回归；模板之间不共享系数。
 - 目标：`case_target = 该 case 全部有效判读中认可该模板的比例`。

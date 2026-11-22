@@ -1,10 +1,10 @@
-from eliotbot.brief import build_brief
-from eliotbot.cli.console_render import render_brief
-from eliotbot.config import Settings
-from eliotbot.data.demo import demo_bundle
-from eliotbot.schemas.market import AnalysisRequest
-from eliotbot.settlement import SettlementStore, event_specs
-from eliotbot.visualization.brief_formatter import brief_html, brief_markdown, publish_brief
+from elliottwaver.brief import build_brief
+from elliottwaver.cli.console_render import render_brief
+from elliottwaver.config import Settings
+from elliottwaver.data.demo import demo_bundle
+from elliottwaver.schemas.market import AnalysisRequest
+from elliottwaver.settlement import SettlementStore, event_specs
+from elliottwaver.visualization.brief_formatter import brief_html, brief_markdown, publish_brief
 
 
 def _run(tmp_path):
@@ -54,7 +54,7 @@ def test_event_specs_include_outlook_events(tmp_path):
 
 def test_settle_brief_records_outlook_events(tmp_path):
     bundle, run, path = _run(tmp_path)
-    store = SettlementStore(tmp_path / ".cache/eliotbot")
+    store = SettlementStore(tmp_path / ".cache/elliottwaver")
     store.register_brief(run.brief, path)
     store.settle_brief(run.brief, path, bundle)
     rows = store.rows(brief_digest=run.brief.brief_digest)
@@ -68,10 +68,10 @@ def test_stage_exit_is_strict_at_the_boundary():
 
     from conftest import make_bar
 
-    from eliotbot.evaluation.events import EVENT_SPECS
-    from eliotbot.evaluation.outcomes import OutcomeWindow, evaluate_outlook_event
-    from eliotbot.schemas.outlook import OutlookCase, OutlookCondition
-    from eliotbot.schemas.wave import LevelCondition, PriceZone
+    from elliottwaver.evaluation.events import EVENT_SPECS
+    from elliottwaver.evaluation.outcomes import OutcomeWindow, evaluate_outlook_event
+    from elliottwaver.schemas.outlook import OutlookCase, OutlookCondition
+    from elliottwaver.schemas.wave import LevelCondition, PriceZone
 
     active = datetime(2026, 1, 1, tzinfo=UTC)
     case = OutlookCase(
@@ -120,8 +120,8 @@ def test_weekly_outlook_skips_the_current_week(monkeypatch):
     from datetime import UTC, date, datetime, time
     from types import SimpleNamespace
 
-    from eliotbot.data.calendar import Session
-    from eliotbot.outlook import _periods
+    from elliottwaver.data.calendar import Session
+    from elliottwaver.outlook import _periods
 
     def session(day):
         return Session(
@@ -135,7 +135,7 @@ def test_weekly_outlook_skips_the_current_week(monkeypatch):
         date(2026, 11, 23) + __import__("datetime").timedelta(days=index) for index in range(10)
     ]
     fake = SimpleNamespace(sessions=tuple(session(day) for day in days))
-    monkeypatch.setattr("eliotbot.outlook.load_calendar", lambda *args, **kwargs: fake)
+    monkeypatch.setattr("elliottwaver.outlook.load_calendar", lambda *args, **kwargs: fake)
     bundle = demo_bundle("AAPL")
     periods, horizon, unit = _periods(bundle, date(2026, 11, 18), "1w")
     assert horizon == 2 and unit == "WEEKS"
@@ -147,8 +147,8 @@ def test_daily_outlook_skips_holiday_sessions(monkeypatch):
     from datetime import UTC, date, datetime, time
     from types import SimpleNamespace
 
-    from eliotbot.data.calendar import Session
-    from eliotbot.outlook import _periods
+    from elliottwaver.data.calendar import Session
+    from elliottwaver.outlook import _periods
 
     def session(day):
         return Session(
@@ -166,7 +166,7 @@ def test_daily_outlook_skips_holiday_sessions(monkeypatch):
         date(2026, 11, 24),
     ]
     fake = SimpleNamespace(sessions=tuple(session(day) for day in days))
-    monkeypatch.setattr("eliotbot.outlook.load_calendar", lambda *args, **kwargs: fake)
+    monkeypatch.setattr("elliottwaver.outlook.load_calendar", lambda *args, **kwargs: fake)
     bundle = demo_bundle("AAPL")
     periods, horizon, unit = _periods(bundle, date(2026, 11, 16), "1d")
     assert horizon == 5 and unit == "SESSIONS"
@@ -177,13 +177,13 @@ def test_daily_outlook_skips_holiday_sessions(monkeypatch):
 def test_cn_split_settlement_matches_unsplit(tmp_path):
     from datetime import timedelta
 
-    from eliotbot.brief import build_brief
-    from eliotbot.config import Settings
-    from eliotbot.data.demo import demo_bundle
-    from eliotbot.data.snapshots import SnapshotStore
-    from eliotbot.schemas.market import AnalysisRequest, FactorPoint
-    from eliotbot.settlement import SettlementStore
-    from eliotbot.visualization.brief_formatter import publish_brief
+    from elliottwaver.brief import build_brief
+    from elliottwaver.config import Settings
+    from elliottwaver.data.demo import demo_bundle
+    from elliottwaver.data.snapshots import SnapshotStore
+    from elliottwaver.schemas.market import AnalysisRequest, FactorPoint
+    from elliottwaver.settlement import SettlementStore
+    from elliottwaver.visualization.brief_formatter import publish_brief
 
     bundle = demo_bundle("600519.SH")
     factors = (FactorPoint(effective_date=bundle.bars[0].session_date, factor=1.0),)
@@ -242,12 +242,12 @@ def test_cn_split_settlement_matches_unsplit(tmp_path):
 def test_old_report_without_outlook_reads_and_renders(tmp_path):
     from dataclasses import replace
 
-    from eliotbot.brief import build_brief
-    from eliotbot.config import Settings
-    from eliotbot.data.demo import demo_bundle
-    from eliotbot.schemas.market import AnalysisRequest
-    from eliotbot.util import digest
-    from eliotbot.visualization.brief_formatter import (
+    from elliottwaver.brief import build_brief
+    from elliottwaver.config import Settings
+    from elliottwaver.data.demo import demo_bundle
+    from elliottwaver.schemas.market import AnalysisRequest
+    from elliottwaver.util import digest
+    from elliottwaver.visualization.brief_formatter import (
         brief_html,
         brief_markdown,
         publish_brief,
@@ -281,8 +281,8 @@ def test_old_report_without_outlook_reads_and_renders(tmp_path):
 def test_outcome_window_explicit_cutoff_is_right_censored():
     from datetime import timedelta
 
-    from eliotbot.data.demo import demo_bundle
-    from eliotbot.evaluation.outcomes import outcome_window
+    from elliottwaver.data.demo import demo_bundle
+    from elliottwaver.evaluation.outcomes import outcome_window
 
     bundle = demo_bundle("AAPL")
     decision = bundle.bars[-30].session_date
@@ -298,11 +298,11 @@ def test_outcome_window_explicit_cutoff_is_right_censored():
 
 
 def test_previous_brief_replay_preserves_outlook(tmp_path):
-    from eliotbot.brief import attach_previous, build_brief
-    from eliotbot.config import Settings
-    from eliotbot.data.demo import demo_bundle
-    from eliotbot.schemas.market import AnalysisRequest
-    from eliotbot.visualization.brief_formatter import publish_brief
+    from elliottwaver.brief import attach_previous, build_brief
+    from elliottwaver.config import Settings
+    from elliottwaver.data.demo import demo_bundle
+    from elliottwaver.schemas.market import AnalysisRequest
+    from elliottwaver.visualization.brief_formatter import publish_brief
 
     bundle = demo_bundle("AAPL")
     previous = build_brief(

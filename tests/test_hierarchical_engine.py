@@ -4,19 +4,19 @@ from types import SimpleNamespace
 import pytest
 from conftest import make_pivots
 
-from eliotbot.config import Settings
-from eliotbot.data.demo import demo_bundle
-from eliotbot.data.router import route_symbol
-from eliotbot.engine.hierarchical import build_structure, match_interval
-from eliotbot.engine.matcher import Candidate, SearchBudget
-from eliotbot.engine.rules import classify_variant
-from eliotbot.engine.templates import IMPULSE
-from eliotbot.engine.timeframe_link import link_timeframes
-from eliotbot.engine.zigzag import ZigZagResult
-from eliotbot.schemas.market import AnalysisRequest, Bar, MarketDataBundle, Provenance
-from eliotbot.schemas.wave import PivotPoint, WaveLabel, WaveScenario
-from eliotbot.service import AnalysisService
-from eliotbot.util import digest
+from elliottwaver.config import Settings
+from elliottwaver.data.demo import demo_bundle
+from elliottwaver.data.router import route_symbol
+from elliottwaver.engine.hierarchical import build_structure, match_interval
+from elliottwaver.engine.matcher import Candidate, SearchBudget
+from elliottwaver.engine.rules import classify_variant
+from elliottwaver.engine.templates import IMPULSE
+from elliottwaver.engine.timeframe_link import link_timeframes
+from elliottwaver.engine.zigzag import ZigZagResult
+from elliottwaver.schemas.market import AnalysisRequest, Bar, MarketDataBundle, Provenance
+from elliottwaver.schemas.wave import PivotPoint, WaveLabel, WaveScenario
+from elliottwaver.service import AnalysisService
+from elliottwaver.util import digest
 
 
 def _as_of():
@@ -208,9 +208,9 @@ def _link_contexts(
     historical=False,
     depth=1,
 ):
-    from eliotbot.data.periods import as_weekly
-    from eliotbot.engine.templates import TEMPLATES
-    from eliotbot.schemas.wave import WaveStructure
+    from elliottwaver.data.periods import as_weekly
+    from elliottwaver.engine.templates import TEMPLATES
+    from elliottwaver.schemas.wave import WaveStructure
 
     prices = [
         110,
@@ -426,7 +426,7 @@ def test_link_timeframes_links_two_parent_candidates():
 
 
 def test_expensive_historical_link_keeps_the_other_displayed_relationships(monkeypatch):
-    from eliotbot.engine.hierarchical import IntervalMatch
+    from elliottwaver.engine.hierarchical import IntervalMatch
 
     allowances = []
 
@@ -436,7 +436,7 @@ def test_expensive_historical_link_keeps_the_other_displayed_relationships(monke
         assert not budget.take()
         return IntervalMatch("SEARCH_LIMITED")
 
-    monkeypatch.setattr("eliotbot.engine.timeframe_link.match_interval", exhaust)
+    monkeypatch.setattr("elliottwaver.engine.timeframe_link.match_interval", exhaust)
     relations = _link_contexts(two_parents=True, daily_proof=False)
     displayed = {r.weekly_scenario_id for r in relations if r.daily_scenario_id}
     assert len(allowances) == 2 and len(displayed) == 2
@@ -496,7 +496,7 @@ def test_weekly_links_use_requested_depth_for_displayed_and_historical_counts(de
 
 
 def test_historical_weekly_link_with_one_proven_layer_is_only_verified_at_depth_one():
-    from eliotbot.data.periods import as_weekly
+    from elliottwaver.data.periods import as_weekly
 
     prices = [
         160,
@@ -634,7 +634,7 @@ def test_engine_profile_changes_config_identity_only_in_advanced_mode():
 
 
 def test_near_identical_candidates_merge_scales_without_weight_inflation():
-    from eliotbot.engine.matcher import deduplicate_candidates
+    from elliottwaver.engine.matcher import deduplicate_candidates
 
     bars, points = make_pivots([100, 120, 110, 150, 132, 160])
     first = Candidate(IMPULSE, points, points[-1], 1, "COMPLETE", (), (1.4,))
@@ -648,8 +648,8 @@ def _daily_from_weekly_demo():
     from datetime import time
     from zoneinfo import ZoneInfo
 
-    from eliotbot.data.demo import demo_bundle
-    from eliotbot.schemas.market import MarketDataBundle, Provenance
+    from elliottwaver.data.demo import demo_bundle
+    from elliottwaver.schemas.market import MarketDataBundle, Provenance
 
     weekly = demo_bundle("AAPL", timeframe="1w")
     zone = ZoneInfo("America/New_York")
@@ -705,7 +705,7 @@ def _daily_from_weekly_demo():
 
 
 def test_advanced_brief_links_daily_and_weekly_structures():
-    from eliotbot.brief import build_brief
+    from elliottwaver.brief import build_brief
 
     source = _daily_from_weekly_demo()
     settings = Settings(
@@ -740,7 +740,7 @@ def test_barrier_triangle_endpoint_examples():
 
 
 def test_truncated_fifth_requires_the_explicit_variant():
-    from eliotbot.engine.rules import check_pattern
+    from elliottwaver.engine.rules import check_pattern
 
     bars, points = make_pivots([100, 125, 113, 152, 135, 149])
     regular = check_pattern("IMPULSE", points, bars, 1, developing=False)
@@ -753,7 +753,7 @@ def test_truncated_fifth_requires_the_explicit_variant():
 
 
 def test_advanced_diagonal_permissions_cover_33333_and_53535():
-    from eliotbot.engine.templates import allowed_child_templates_advanced
+    from elliottwaver.engine.templates import allowed_child_templates_advanced
 
     leading = allowed_child_templates_advanced("DIAGONAL", 0, variant="LEADING_DIAGONAL")
     assert "IMPULSE" in leading
@@ -768,7 +768,7 @@ def test_advanced_diagonal_permissions_cover_33333_and_53535():
 
 
 def test_match_interval_certifies_leading_diagonal_53535_leg():
-    from eliotbot.engine.templates import allowed_child_templates_advanced
+    from elliottwaver.engine.templates import allowed_child_templates_advanced
 
     bars, points = make_pivots([100, 120, 110, 150, 132, 160])
     result = match_interval(
@@ -787,7 +787,7 @@ def test_match_interval_certifies_leading_diagonal_53535_leg():
 
 
 def test_advanced_wxy_matrix_allows_double_three_combinations():
-    from eliotbot.engine.templates import allowed_child_templates_advanced
+    from elliottwaver.engine.templates import allowed_child_templates_advanced
 
     assert "FLAT" in allowed_child_templates_advanced("WXY", 0)
     assert "TRIANGLE" in allowed_child_templates_advanced("WXY", 2)
@@ -797,8 +797,8 @@ def test_advanced_wxy_matrix_allows_double_three_combinations():
 def test_wxy_double_three_end_to_end_and_triangle_y():
     from conftest import make_bar
 
-    from eliotbot.engine.hierarchical import structure_variant
-    from eliotbot.engine.templates import WXY
+    from elliottwaver.engine.hierarchical import structure_variant
+    from elliottwaver.engine.templates import WXY
 
     anchors = {
         0: 100,
@@ -879,14 +879,14 @@ def test_wxy_double_three_end_to_end_and_triangle_y():
 
 
 def test_advanced_wxy_matrix_rejects_triangle_as_wave_w():
-    from eliotbot.engine.templates import allowed_child_templates_advanced
+    from elliottwaver.engine.templates import allowed_child_templates_advanced
 
     assert "TRIANGLE" not in allowed_child_templates_advanced("WXY", 0)
     assert "WXY" not in allowed_child_templates_advanced("WXY", 2)
 
 
 def test_full_variant_parent_position_matrix():
-    from eliotbot.engine.templates import variant_allowed_in_parent
+    from elliottwaver.engine.templates import variant_allowed_in_parent
 
     assert variant_allowed_in_parent("LEADING_DIAGONAL", "IMPULSE", "1")
     assert variant_allowed_in_parent("LEADING_DIAGONAL", "ZIGZAG_ABC", "A")
@@ -906,7 +906,7 @@ def test_full_variant_parent_position_matrix():
 
 
 def test_brief_compares_multiple_automatic_windows():
-    from eliotbot.brief import build_brief
+    from elliottwaver.brief import build_brief
 
     source = _daily_from_weekly_demo()
     run = build_brief(
@@ -924,8 +924,8 @@ def test_brief_compares_multiple_automatic_windows():
 
 
 def test_second_alternate_window_can_report_a_direction_change():
-    from eliotbot.brief import _advanced_windows
-    from eliotbot.schemas.brief import BriefAnchor
+    from elliottwaver.brief import _advanced_windows
+    from elliottwaver.schemas.brief import BriefAnchor
 
     data = _daily_from_weekly_demo()
     req = AnalysisRequest(symbol="AAPL", as_of=data.as_of)

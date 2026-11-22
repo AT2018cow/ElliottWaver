@@ -32,7 +32,9 @@ V3 目标几何与滚动校准使用[七指数开发协议](cn-index-target-v3-2
 
 当前手册使用的端到端验证协议。茅台、平安银行、上证指数和沪深 300 使用四份日线快照。训练与校准使用 2023–2025 年数据，留出取 2026-04-01 至 2026-09-30，结果观察截止为 2026-09-30。每周采一个决策点，按交易会话计算 5／20 日结果。个股与指数分别训练。每类只有两个标的，低于发布门槛。
 
-运行前，按 `samples[].snapshot_id` 逐个执行 `eliot data inspect ID`。默认缓存位置为 `.cache/eliotbot`，协议内的 `cache_root` 须指向快照所在的缓存目录。
+运行前，按 `samples[].snapshot_id` 逐个执行 `elliottwaver data inspect ID`。默认缓存位置为 `.cache/elliottwaver`，协议内的 `cache_root` 须指向快照所在的缓存目录。
+
+部分历史协议含固定的 SHA-256 绑定，为保持证据一致性仍保留旧缓存目录 `.cache/eliotbot`。运行这些协议时，可将快照放在该目录；如已迁移到新目录，复制协议后修改 `cache_root` 再运行。
 
 ```bash
 .venv/bin/python scripts/evaluate_briefs.py \
@@ -49,7 +51,7 @@ V3 目标几何与滚动校准使用[七指数开发协议](cn-index-target-v3-2
 mkdir -p reports
 cp docs/protocols/roadmap-repair-2026-heldout-smoke.json reports/protocol-local.json
 for symbol in 600519.SH 000001.SZ 000001.SH 000300.SH; do
-  .venv/bin/eliot data fetch "$symbol" --timeframe 1d \
+  .venv/bin/elliottwaver data fetch "$symbol" --timeframe 1d \
     --start 2022-01-01 --as-of 2026-09-30
 done
 ```
@@ -93,7 +95,7 @@ done
 
 先用 `evaluate_briefs.py` 生成开发评估，再用 `train_forecasts.py freeze` 拟合指定事件和候选位置。历史留出协议使用 `HISTORICAL_HOLDOUT`，以常规回放生成留出评估，运行 `score --candidate CANDIDATE.json --holdout HOLDOUT_DIR --output-dir SCORE_DIR`。显式 `--frozen-at` 表示模拟历史切分，实际参数冻结时间保存在 `frozen_at` 字段。历史评分报告保留指标和原因，发布状态为回顾性研究。
 
-正式前向路径使用实际冻结后的新候选。参考 `prediction-outlook-holdout-*-v1.json` 准备未来网格、标的、事件和其他规则。先运行 `seal` 保存计划。在网格规定的决策日保留正常实时 `eliot brief` 生成的 `LIVE` 报告和发行快照。到期后仅填入已经取得的结果快照 ID，把协议状态改为 `SEALED_FORWARD_HOLDOUT`，再执行回放和评分。
+正式前向路径使用实际冻结后的新候选。参考 `prediction-outlook-holdout-*-v1.json` 准备未来网格、标的、事件和其他规则。先运行 `seal` 保存计划。在网格规定的决策日保留正常实时 `elliottwaver brief` 生成的 `LIVE` 报告和发行快照。到期后仅填入已经取得的结果快照 ID，把协议状态改为 `SEALED_FORWARD_HOLDOUT`，再执行回放和评分。
 
 ```bash
 .venv/bin/python scripts/train_forecasts.py seal \

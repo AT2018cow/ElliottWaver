@@ -23,26 +23,26 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
-from eliotbot import ENGINE_VERSION
-from eliotbot.config import load_settings, long_term_settings
-from eliotbot.data.adjustment import adjust_to_basis
-from eliotbot.data.periods import as_weekly
-from eliotbot.data.quality import missing_intervals
-from eliotbot.data.resample import weekly_bars
-from eliotbot.data.snapshots import SnapshotStore
-from eliotbot.engine.indicators import calculate
-from eliotbot.engine.matcher import Candidate, search
-from eliotbot.engine.scorer import score
-from eliotbot.engine.span_selector import select_anchors
-from eliotbot.engine.subwaves import (
+from elliottwaver import ENGINE_VERSION
+from elliottwaver.config import load_settings, long_term_settings
+from elliottwaver.data.adjustment import adjust_to_basis
+from elliottwaver.data.periods import as_weekly
+from elliottwaver.data.quality import missing_intervals
+from elliottwaver.data.resample import weekly_bars
+from elliottwaver.data.snapshots import SnapshotStore
+from elliottwaver.engine.indicators import calculate
+from elliottwaver.engine.matcher import Candidate, search
+from elliottwaver.engine.scorer import score
+from elliottwaver.engine.span_selector import select_anchors
+from elliottwaver.engine.subwaves import (
     certify_subwaves,
     classify_triangle_legs,
     is_completed_contracting_triangle,
 )
-from eliotbot.engine.zigzag import extract
-from eliotbot.schemas.market import AnalysisRequest, MarketDataBundle
-from eliotbot.service import prepare_bundle
-from eliotbot.util import atomic_write, digest
+from elliottwaver.engine.zigzag import extract
+from elliottwaver.schemas.market import AnalysisRequest, MarketDataBundle
+from elliottwaver.service import prepare_bundle
+from elliottwaver.util import atomic_write, digest
 
 DAILY_START = date(2023, 1, 2)
 DAILY_END = date(2025, 12, 31)
@@ -148,7 +148,7 @@ WEEKLY_SYMBOLS = {
 
 
 def _snapshot_root() -> Path:
-    return Path(".cache/eliotbot")
+    return Path(".cache/elliottwaver")
 
 
 def _source_hash() -> str:
@@ -199,7 +199,7 @@ def _policy(certification) -> dict[str, Any]:
 
 
 def _nested_links(candidates: list[Candidate], timeframe: str, allow_nested: bool):
-    import eliotbot.engine.parents as parents
+    import elliottwaver.engine.parents as parents
 
     original = parents.allowed_child_templates
 

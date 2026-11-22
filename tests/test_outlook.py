@@ -2,14 +2,14 @@ from datetime import UTC, datetime
 
 from conftest import make_pivots
 
-from eliotbot.brief import build_brief
-from eliotbot.config import Settings
-from eliotbot.data.demo import demo_bundle
-from eliotbot.engine.matcher import Candidate
-from eliotbot.engine.projector import project_with_gates
-from eliotbot.engine.templates import IMPULSE, WXY
-from eliotbot.outlook import build_outlook
-from eliotbot.schemas.market import AnalysisRequest
+from elliottwaver.brief import build_brief
+from elliottwaver.config import Settings
+from elliottwaver.data.demo import demo_bundle
+from elliottwaver.engine.matcher import Candidate
+from elliottwaver.engine.projector import project_with_gates
+from elliottwaver.engine.templates import IMPULSE, WXY
+from elliottwaver.outlook import build_outlook
+from elliottwaver.schemas.market import AnalysisRequest
 
 
 def _as_of():

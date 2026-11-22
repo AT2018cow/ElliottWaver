@@ -2,8 +2,8 @@ import json
 
 from typer.testing import CliRunner
 
-from eliotbot import __version__
-from eliotbot.cli.main import app
+from elliottwaver import __version__
+from elliottwaver.cli.main import app
 
 
 def test_version_exits_without_a_subcommand():

@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from eliotbot.label_models import (
+from elliottwaver.label_models import (
     case_target,
     load_label_model,
     predict_label_probabilities,

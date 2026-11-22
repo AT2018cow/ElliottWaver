@@ -3,14 +3,14 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from eliotbot.config import DataConfig, Settings
-from eliotbot.data.router import route_symbol
-from eliotbot.data.sina_provider import SinaProvider
-from eliotbot.data.snapshots import SnapshotStore
-from eliotbot.data.workflow import fetch_bundle
-from eliotbot.errors import DataError
-from eliotbot.schemas.market import AnalysisRequest
-from eliotbot.service import prepare_bundle
+from elliottwaver.config import DataConfig, Settings
+from elliottwaver.data.router import route_symbol
+from elliottwaver.data.sina_provider import SinaProvider
+from elliottwaver.data.snapshots import SnapshotStore
+from elliottwaver.data.workflow import fetch_bundle
+from elliottwaver.errors import DataError
+from elliottwaver.schemas.market import AnalysisRequest
+from elliottwaver.service import prepare_bundle
 
 DATES = (date(2024, 1, 2), date(2024, 1, 3), date(2024, 1, 4), date(2024, 1, 5))
 AS_OF = datetime(2024, 1, 5, 15, 30, tzinfo=ZoneInfo("Asia/Shanghai"))

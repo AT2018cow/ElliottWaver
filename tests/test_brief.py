@@ -5,21 +5,21 @@ from datetime import UTC, datetime
 import pytest
 from typer.testing import CliRunner
 
-from eliotbot.brief import _cross_timeframe, build_brief
-from eliotbot.cli.main import _choose_brief_timeframe, app
-from eliotbot.config import Settings
-from eliotbot.data.snapshots import SnapshotStore
-from eliotbot.evaluation.features import (
+from elliottwaver.brief import _cross_timeframe, build_brief
+from elliottwaver.cli.main import _choose_brief_timeframe, app
+from elliottwaver.config import Settings
+from elliottwaver.data.snapshots import SnapshotStore
+from elliottwaver.evaluation.features import (
     CANDIDATE_FEATURES,
     DECISION_FEATURES,
     PATTERNS,
     STAGES,
 )
-from eliotbot.forecast import ModelRegistry
-from eliotbot.schemas.market import AnalysisRequest
-from eliotbot.service import prepare_bundle
-from eliotbot.util import digest
-from eliotbot.visualization.brief_formatter import publish_brief
+from elliottwaver.forecast import ModelRegistry
+from elliottwaver.schemas.market import AnalysisRequest
+from elliottwaver.service import prepare_bundle
+from elliottwaver.util import digest
+from elliottwaver.visualization.brief_formatter import publish_brief
 
 
 def test_build_brief_has_window_cards_and_digest(bundle):
@@ -63,7 +63,7 @@ def test_publish_brief_writes_manifest_and_hashes(bundle, tmp_path):
 
 
 def test_plotly_brief_regenerates_after_render_version_changes(bundle, tmp_path, monkeypatch):
-    from eliotbot.visualization import brief_formatter
+    from elliottwaver.visualization import brief_formatter
 
     request = AnalysisRequest(symbol="AAPL", as_of=bundle.as_of, mode="FROZEN_DATA_REPLAY")
     run = build_brief(request, bundle, Settings(), include_weekly=False)
@@ -82,7 +82,7 @@ def test_plotly_brief_regenerates_after_render_version_changes(bundle, tmp_path,
 def test_human_brief_render_version_changes_directory_without_changing_json(
     bundle, tmp_path, monkeypatch
 ):
-    from eliotbot.visualization import brief_formatter
+    from elliottwaver.visualization import brief_formatter
 
     run = build_brief(AnalysisRequest(symbol="AAPL", as_of=bundle.as_of), bundle, Settings())
     with monkeypatch.context() as old_version:
@@ -117,7 +117,7 @@ def test_brief_cli_uses_approved_model_registry(tmp_path, monkeypatch, bundle, a
 
     request = AnalysisRequest(symbol="AAPL", as_of=bundle.as_of)
     prepared = prepare_bundle(request, bundle)
-    snapshot_id = SnapshotStore(tmp_path / ".cache/eliotbot").save(prepared)
+    snapshot_id = SnapshotStore(tmp_path / ".cache/elliottwaver").save(prepared)
     result = CliRunner().invoke(
         app,
         [
@@ -146,12 +146,12 @@ def test_brief_cli_uses_default_model_registry(tmp_path, monkeypatch, bundle, ap
     model = approved_model()
     model_path = tmp_path / "model.json"
     model_path.write_text(json.dumps(model))
-    registry = ModelRegistry(tmp_path / ".cache/eliotbot/models")
+    registry = ModelRegistry(tmp_path / ".cache/elliottwaver/models")
     registry.register(model_path, approved_at=bundle.bars[-20].usable_at)
 
     request = AnalysisRequest(symbol="AAPL", as_of=bundle.as_of)
     prepared = prepare_bundle(request, bundle)
-    snapshot_id = SnapshotStore(tmp_path / ".cache/eliotbot").save(prepared)
+    snapshot_id = SnapshotStore(tmp_path / ".cache/elliottwaver").save(prepared)
     result = CliRunner().invoke(
         app,
         [
@@ -176,7 +176,7 @@ def test_brief_cli_offline_json_and_snapshot(tmp_path, monkeypatch, bundle):
     monkeypatch.chdir(tmp_path)
     request = AnalysisRequest(symbol="AAPL", as_of=bundle.as_of)
     prepared = prepare_bundle(request, bundle)
-    snapshot_id = SnapshotStore(tmp_path / ".cache/eliotbot").save(prepared)
+    snapshot_id = SnapshotStore(tmp_path / ".cache/elliottwaver").save(prepared)
 
     result = CliRunner().invoke(
         app,

@@ -11,13 +11,13 @@ from pathlib import Path
 
 from train_forecasts import _load_rows
 
-from eliotbot.config import Settings
-from eliotbot.data.snapshots import SnapshotStore
-from eliotbot.errors import DataError
-from eliotbot.evaluation.decisions import read_evaluation_manifest
-from eliotbot.schemas.market import AnalysisRequest
-from eliotbot.service import AnalysisService, prepare_bundle
-from eliotbot.util import atomic_write, canonical_json
+from elliottwaver.config import Settings
+from elliottwaver.data.snapshots import SnapshotStore
+from elliottwaver.errors import DataError
+from elliottwaver.evaluation.decisions import read_evaluation_manifest
+from elliottwaver.schemas.market import AnalysisRequest
+from elliottwaver.service import AnalysisService, prepare_bundle
+from elliottwaver.util import atomic_write, canonical_json
 
 EVENT = "TARGET_FIRST_20D_V1"
 SETTLED_STATUSES = {"TARGET_FIRST", "INVALIDATED_FIRST", "EXPIRED"}
@@ -283,7 +283,7 @@ def audit(evaluation: Path, output_dir: Path) -> dict:
         if (item[1].get("features") or {}).get("missing_invalidation") == 0
     ]
     service = AnalysisService(Settings(**protocol.get("settings", {})))
-    store = SnapshotStore(Path(protocol.get("cache_root", ".cache/eliotbot")))
+    store = SnapshotStore(Path(protocol.get("cache_root", ".cache/elliottwaver")))
     bundles = {}
 
     def replay(decision):

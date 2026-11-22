@@ -6,7 +6,7 @@
 
 | 协议 | 市场 | 样本 | 缓存 |
 | --- | --- | --- | --- |
-| `prediction-outlook-dev-cn-v1.json` | CN | `600519.SH`（个股）、`000016.SH`（指数） | `.cache/eliotbot` |
+| `prediction-outlook-dev-cn-v1.json` | CN | `600519.SH`（个股）、`000016.SH`（指数） | `.cache/elliottwaver` |
 | `prediction-outlook-dev-us-v1.json` | US | `AAPL`、`SPY` | `.cache/us-acceptance` |
 
 - 事件：`ADVANCE_FIRST_5D_V1`、`OUTLOOK_TARGET_FIRST_5D_V1`、`CONFIRM_FIRST_20D_V1`、`TARGET_FIRST_20D_V1`、`CLOSE_BAND_5D_V1`。

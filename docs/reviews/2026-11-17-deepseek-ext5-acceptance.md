@@ -43,7 +43,7 @@
 
 **优先级：P2；状态：已独立复现；待修正。**
 
-位置：`src/eliotbot/visualization/report_formatter.py:46` 附近，使用首尾下标构造 `S{first}-S{last}`。
+位置：`src/elliottwaver/visualization/report_formatter.py:46` 附近，使用首尾下标构造 `S{first}-S{last}`。
 
 触发条件：展示至少四个候选，存在 `EXCLUDED_STRUCTURE`，S1 没有目标，而有目标的候选为 S2、S4，S3 没有目标。这是格式器的独立构造输入；在本轮九组默认 Top-K=3 的真实报告中没有触发此模式，不声称已经影响那些报告。程序允许 `--top-k 4` 至 `20`。
 

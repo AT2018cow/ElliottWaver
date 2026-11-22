@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
-from eliotbot.settlement import support_matrix
+from elliottwaver.settlement import support_matrix
 
 
 def main() -> int:

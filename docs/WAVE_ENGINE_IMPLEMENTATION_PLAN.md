@@ -6,7 +6,7 @@
 
 DeepSeek 负责实现和自测，Codex 负责独立验收。以本地 `0.2.1` 源码包及校验文件为基线，保留 `ew-rules-v4` 已验收的 E 浪净回撤、浪 3 百分比长度、浪 5 失效价。开始前记录基线源码指纹、快照 ID 和配置。`v0.2.0` 标签对应前一版，复验基线使用已包含两项规则修复的 `0.2.1`。 [基线规则复验](reviews/2026-11-20-elliott-rule-conformance.md#修复复验)
 
-范围为沪深个股和指数、美股个股及 ETF 的日线和完整周线。小时线只作为后续可选的细分证据。继续使用 `eliot analyze`、`eliot brief`、`eliot watchlist` 和现有历史、报告、结算入口。新增结果使用结构证据与相对评分，事件概率继续走现有独立注册和校准流程。
+范围为沪深个股和指数、美股个股及 ETF 的日线和完整周线。小时线只作为后续可选的细分证据。继续使用 `elliottwaver analyze`、`elliottwaver brief`、`elliottwaver watchlist` 和现有历史、报告、结算入口。新增结果使用结构证据与相对评分，事件概率继续走现有独立注册和校准流程。
 
 | 交付节点 | 开发内容 | 可用状态 |
 | --- | --- | --- |
@@ -104,8 +104,8 @@ match_interval(
 .venv/bin/ruff format --check src tests scripts
 git diff --check
 .venv/bin/python scripts/evaluate_briefs.py --protocol docs/protocols/wave-engine-acceptance-v1.json --output-dir reports/wave-engine/acceptance
-.venv/bin/eliot brief AAPL --offline --snapshot "$AAPL_SNAPSHOT" --config "$ADVANCED_CONFIG" --json
-.venv/bin/eliot analyze 000300.SH --timeframe 1w --offline --snapshot "$CN_INDEX_SNAPSHOT" --config "$ADVANCED_CONFIG" --json
+.venv/bin/elliottwaver brief AAPL --offline --snapshot "$AAPL_SNAPSHOT" --config "$ADVANCED_CONFIG" --json
+.venv/bin/elliottwaver analyze 000300.SH --timeframe 1w --offline --snapshot "$CN_INDEX_SNAPSHOT" --config "$ADVANCED_CONFIG" --json
 ```
 
 ### 独立验收门槛

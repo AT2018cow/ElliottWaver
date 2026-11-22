@@ -3,8 +3,8 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "eliotbot"
-version = "0.5.1"
+name = "elliottwaver"
+version = "0.6.0"
 description = "Reproducible Elliott wave analysis for A-share and US equities"
 readme = "README.md"
 license = "GPL-3.0-only"
@@ -24,7 +24,7 @@ png = ["kaleido>=1,<2"]
 dev = ["pytest>=8,<10", "hypothesis>=6,<7", "ruff>=0.9,<1"]
 
 [project.scripts]
-eliot = "eliotbot.cli.main:app"
+elliottwaver = "elliottwaver.cli.main:app"
 
 [tool.setuptools.packages.find]
 where = ["src"]

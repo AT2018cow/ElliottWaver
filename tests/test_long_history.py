@@ -3,21 +3,21 @@ from zoneinfo import ZoneInfo
 
 from conftest import make_bar
 
-from eliotbot.config import (
+from elliottwaver.config import (
     DataConfig,
     SearchConfig,
     Settings,
     large_degree_settings,
     long_term_settings,
 )
-from eliotbot.data.calendar import load_calendar
-from eliotbot.data.router import route_symbol
-from eliotbot.data.sina_provider import SinaProvider
-from eliotbot.engine.matcher import search
-from eliotbot.engine.zigzag import ZigZagResult
-from eliotbot.schemas.market import AnalysisRequest
-from eliotbot.schemas.wave import PivotPoint
-from eliotbot.service import AnalysisService
+from elliottwaver.data.calendar import load_calendar
+from elliottwaver.data.router import route_symbol
+from elliottwaver.data.sina_provider import SinaProvider
+from elliottwaver.engine.matcher import search
+from elliottwaver.engine.zigzag import ZigZagResult
+from elliottwaver.schemas.market import AnalysisRequest
+from elliottwaver.schemas.wave import PivotPoint
+from elliottwaver.service import AnalysisService
 
 
 def test_xshg_calendar_clamps_pre_1991_start():

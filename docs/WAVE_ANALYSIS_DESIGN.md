@@ -1,4 +1,4 @@
-# EliotBot 收盘分析与概率评估实施设计
+# ElliottWaver 收盘分析与概率评估实施设计
 
 本文保留 A–G 的实施规格、依赖关系与验收用例，编号对应[产品路线图](ROADMAP.md)。下文的伪代码和字段示例用于说明设计。当前命令、参数和输出以[中文使用手册](USER_GUIDE.md)为准，交付和实测范围见[实现与验收状态](IMPLEMENTATION_STATUS.md)。
 
@@ -11,7 +11,7 @@
 | 模板和硬约束 | 在 `engine/templates.py` 与 `engine/rules.py` 核对模板适用条件、硬约束、进行中阶段的待确认状态。正例、反例、边界值和涨跌镜像都给出独立预期，遇到流派差异先记录采用的口径。 |
 | 拐点和结构证据 | 在 `engine/zigzag.py`、`engine/matcher.py`、`engine/parents.py`、`engine/subwaves.py` 核对极值、确认时间、父子浪位置和子浪证据。固定数据与复权口径做逐前缀回放，保留进行中端点和待定证据的状态。 |
 | 条件价和排序 | 在 `engine/projector.py` 独立复算确认、硬失效、阶段退出与目标区，覆盖等价位、涨跌方向和跳空触发。在 `engine/scorer.py` 核对指南评分与候选权重，权重用于阅读主备结构。 |
-| 日周线和报告 | 通过 `eliot analyze`、`eliot brief` 和冻结回放交叉核对同一候选的端点、规则、条件价、数据截止和图示。行情出现新极值或失效时，核对报告如何更新，同时保留原报告供查询。 |
+| 日周线和报告 | 通过 `elliottwaver analyze`、`elliottwaver brief` 和冻结回放交叉核对同一候选的端点、规则、条件价、数据截止和图示。行情出现新极值或失效时，核对报告如何更新，同时保留原报告供查询。 |
 
 合成行情用于验证明确的规则和边界。冻结真实行情用于验证接线、可解释性及多解场景。达到路线图的日用验收条件后即可收口。E 的统计概率使用自己的准入标准。
 
@@ -19,15 +19,15 @@
 
 ### 入口、代码位置和执行顺序
 
-新增 `eliot brief SYMBOL`，保留 `eliot analyze` 的单周期命令和输出契约。第一项交付以沪深个股和已接入的指数为范围，主周期为日线。接受 `--as-of`、`--anchor`、`--snapshot`、`--offline`、`--allow-gaps`、`--config`、`--output-dir`、`--open`、`--json`。离线需要日线源快照；实际输入周期不符报参数错误。手动锚点遵循原入口的精确匹配语义。
+新增 `elliottwaver brief SYMBOL`，保留 `elliottwaver analyze` 的单周期命令和输出契约。第一项交付以沪深个股和已接入的指数为范围，主周期为日线。接受 `--as-of`、`--anchor`、`--snapshot`、`--offline`、`--allow-gaps`、`--config`、`--output-dir`、`--open`、`--json`。离线需要日线源快照；实际输入周期不符报参数错误。手动锚点遵循原入口的精确匹配语义。
 
 | 位置 | 实现 |
 | --- | --- |
-| [cli/main.py](../src/eliotbot/cli/main.py) | 增加 `run_brief`，Typer 与 argparse fallback 同时注册。提取与 `run_analyze` 共用的请求／快照装载代码，沿用 `route_symbol`、`parse_as_of`、`fetch_bundle` 和 `SnapshotStore`。`--json` 的 stdout 只写结构化结果。 |
-| [service.py](../src/eliotbot/service.py) 与新增 `brief.py` | 前者保留正式数浪入口。后者接受已装载的日线源快照，组合摘要，签名见下。所有 CLI 和回放走同一个构造函数。 |
-| [engine/span_selector.py](../src/eliotbot/engine/span_selector.py) | 在实际选择锚点的位置产生结构化说明，保留原 `select_anchors(...) -> (dates, warnings)` 接口作为同一实现的投影。 |
-| 新增 `schemas/brief.py` | 从 [Contract](../src/eliotbot/schemas/market.py) 派生严格模型，复用 `AnalysisResult`、`LevelCondition`、`PriceZone`。保留旧 `analysis.json` 的 schema 1.0 和历史摘要校验算法。 |
-| [visualization/report_formatter.py](../src/eliotbot/visualization/report_formatter.py) 与 [cli/console_render.py](../src/eliotbot/cli/console_render.py) | 新增摘要发布和终端摘要。各渲染器读取同一个 Brief 对象。复用 [render_html](../src/eliotbot/visualization/chart_builder.py) 生成可离线查看的原图。 |
+| [cli/main.py](../src/elliottwaver/cli/main.py) | 增加 `run_brief`，Typer 与 argparse fallback 同时注册。提取与 `run_analyze` 共用的请求／快照装载代码，沿用 `route_symbol`、`parse_as_of`、`fetch_bundle` 和 `SnapshotStore`。`--json` 的 stdout 只写结构化结果。 |
+| [service.py](../src/elliottwaver/service.py) 与新增 `brief.py` | 前者保留正式数浪入口。后者接受已装载的日线源快照，组合摘要，签名见下。所有 CLI 和回放走同一个构造函数。 |
+| [engine/span_selector.py](../src/elliottwaver/engine/span_selector.py) | 在实际选择锚点的位置产生结构化说明，保留原 `select_anchors(...) -> (dates, warnings)` 接口作为同一实现的投影。 |
+| 新增 `schemas/brief.py` | 从 [Contract](../src/elliottwaver/schemas/market.py) 派生严格模型，复用 `AnalysisResult`、`LevelCondition`、`PriceZone`。保留旧 `analysis.json` 的 schema 1.0 和历史摘要校验算法。 |
+| [visualization/report_formatter.py](../src/elliottwaver/visualization/report_formatter.py) 与 [cli/console_render.py](../src/elliottwaver/cli/console_render.py) | 新增摘要发布和终端摘要。各渲染器读取同一个 Brief 对象。复用 [render_html](../src/elliottwaver/visualization/chart_builder.py) 生成可离线查看的原图。 |
 
 ```python
 # 新接口示意。source 在一次请求中只装载一次。
@@ -82,7 +82,7 @@ daily = summarize_period(result, window, cards)
 
 ## C　旧判断、变动与修订
 
-新增 `eliot history SYMBOL [--as-of YYYY-MM-DD] [--mode live|frozen] [--json]`。以新的本地 SQLite 表索引已验证的 brief 目录。至少存 `brief_digest PRIMARY KEY, lineage_key, market_asof, as_of, observed_at, source_snapshot_id, report_path, mode`，对 `(lineage_key, market_asof, observed_at)` 建索引。lineage 按规范证券、feed、复权方式、周期组合、配置、锚点策略和引擎／摘要策略版本生成。模式单列过滤。
+新增 `elliottwaver history SYMBOL [--as-of YYYY-MM-DD] [--mode live|frozen] [--json]`。以新的本地 SQLite 表索引已验证的 brief 目录。至少存 `brief_digest PRIMARY KEY, lineage_key, market_asof, as_of, observed_at, source_snapshot_id, report_path, mode`，对 `(lineage_key, market_asof, observed_at)` 建索引。lineage 按规范证券、feed、复权方式、周期组合、配置、锚点策略和引擎／摘要策略版本生成。模式单列过滤。
 
 - 比较前从索引取同一 lineage 和 mode、日期严格早于本次行情日且当时已经发布的最近报告。live 以实际保存时刻约束当时可见的版本；历史回放从自己的运行批次按决策日期构造前序。固定 `previous_digest` 后计算本次身份。同日新修订作为另一版本保存。按日期查询返回该日各版本及时间，不把事后回放写成当时实发。没有上次记录时显示“首次记录”。
 - 用稳定结构键匹配候选。键相同但暂定点移动记 `TIP_MOVED`。已完成原始端点序列延长、模板方向相同且前缀吻合记 `STAGE_ADVANCED`，多个可行匹配时报告歧义。原备选成为主选记 `ALTERNATE_PROMOTED`，其余主选变化记 `COUNT_CHANGED`。上一报告的确认／失效线按 D 的决策日坐标检查新增交易会话。
@@ -91,7 +91,7 @@ daily = summarize_period(result, window, cards)
 
 ## D　共用决策入口，独立结算结果
 
-新增 `evaluation/decisions.py`、`evaluation/outcomes.py` 和薄命令 `scripts/evaluate_briefs.py --protocol FILE --output-dir DIR`。复用 [replay](../src/eliotbot/evaluation/replay.py) 的前缀请求语义。其现有迭代按存在的 bar 且满 60 根才开始，评估器需按协议的交易日历构造**完整网格**，再调用 B 的无渲染计算入口。这样短历史、整日缺 bar、无候选、搜索受限都能进入分母对账。正常回放不写正式报告、历史索引或模型指针。
+新增 `evaluation/decisions.py`、`evaluation/outcomes.py` 和薄命令 `scripts/evaluate_briefs.py --protocol FILE --output-dir DIR`。复用 [replay](../src/elliottwaver/evaluation/replay.py) 的前缀请求语义。其现有迭代按存在的 bar 且满 60 根才开始，评估器需按协议的交易日历构造**完整网格**，再调用 B 的无渲染计算入口。这样短历史、整日缺 bar、无候选、搜索受限都能进入分母对账。正常回放不写正式报告、历史索引或模型指针。
 
 **协议输入。** 将已填写的协议签入仓库。必填 schema、事件版本、代码／有效配置摘要、缓存根、标的及日线 snapshot ID、交易所日历版本、分析与结果覆盖范围、采样频率、缺口策略、训练／校准／留出边界、统计门槛和随机种子。先用上证指数与茅台对账，再用约 30 只分层沪深个股及 4 个代表指数。保存名单来源和退市、覆盖不足处理。既有三角形样本用于开发回归；新研究单列未查看的留出。下例是可用于编写首个加载测试的样本条目。
 
@@ -101,13 +101,13 @@ daily = summarize_period(result, window, cards)
 
 顶层 `protocol_version="1"`，`samples[]` 使用上表条目，`grid` 含 `calendar_id, calendar_version, start, end, cadence, outcome_as_of`。cadence 取 EVERY_SESSION 或 LAST_SESSION_OF_WEEK。日线走势和候选确认默认 EVERY_SESSION，周线结构评估用 LAST_SESSION_OF_WEEK。`splits.train/calibration/test` 各含首尾交易日，`settings` 存有效配置，`events[]` 存事件 ID，`release` 存 E 的门槛、分档、块长和 seed。加载时检查日期有序、分段不重叠、事件版本已支持、样本代码与快照证券身份一致。只做 D 的结构和标签复核可以省略 splits、release；E 的训练入口要求两者完整。
 
-**数据流。** 第一步只将决策当时可用的前缀交给分析和特征函数，保存决策与边界。第二步读取这些不可变记录与结果窗口行情，单独结算。交易日按交易所日历计数，`t` 为决策收盘，第一根结果 bar 是下一个交易会话。不要以“第 H 根有成交的 bar”代替第 H 个会话。指数保留原始点位。个股决策价 `C_t` 和 ATR 从 `prepared_daily.bars` 读取，未来行情调用 `adjust_to_basis(future_raw, factors, basis_date=t)`，即 `raw_s × F(s)/F(t)`。跨周 OHLC 先在同一基准调整各日，再聚完整周。周线的 `sessions` 含日历交易日，周线事件另构完整交易周网格。[复权实现](../src/eliotbot/data/adjustment.py) · [周线聚合](../src/eliotbot/data/resample.py)
+**数据流。** 第一步只将决策当时可用的前缀交给分析和特征函数，保存决策与边界。第二步读取这些不可变记录与结果窗口行情，单独结算。交易日按交易所日历计数，`t` 为决策收盘，第一根结果 bar 是下一个交易会话。不要以“第 H 根有成交的 bar”代替第 H 个会话。指数保留原始点位。个股决策价 `C_t` 和 ATR 从 `prepared_daily.bars` 读取，未来行情调用 `adjust_to_basis(future_raw, factors, basis_date=t)`，即 `raw_s × F(s)/F(t)`。跨周 OHLC 先在同一基准调整各日，再聚完整周。周线的 `sessions` 含日历交易日，周线事件另构完整交易周网格。[复权实现](../src/elliottwaver/data/adjustment.py) · [周线聚合](../src/elliottwaver/data/resample.py)
 
 | event_id | 锁定边界、单位及标签 |
 | --- | --- |
 | `CLOSE_BAND_5D_V1`、`CLOSE_BAND_20D_V1` | 单位为日线标的 × 决策日 × 期限，周线可作背景。用现有 `calculate(...).atr[-1]` 的日线 ATR(14)，要求有限且大于零。令 `L=C_t−ATR_t, U=C_t+ATR_t`。第 H 个会话收盘严格高于 U 为 UP，严格低于 L 为 DOWN，其他为 RANGE。途中触价不改标签。只需到期收盘和其复权证据，途中遗漏另记质量标识。 |
 | `CONFIRM_FIRST_20D_V1` | 单位为日线候选 × 决策日。在 t 固定当时已经生效的 CONFIRMATION 与 INVALIDATION 列表，按原 side、op、price 求值，任何一条同类条件命中即触发该类。缺任一类标 UNDEFINED_EVENT。决策当根不参与结算，条件沿用原不等式，下个会话即使跳空越过边界也按该根实际 OHLC 比较。逐根检查，两侧同根命中为 AMBIGUOUS_SAME_BAR，仅确认先达为 1，先失效或完整窗口到期均为 0。首个未决会话缺失即停止定序。 |
-| `TARGET_FIRST_20D_V1` | 单列检验日线原报告首个目标区与结构失效的先后。复用现有 [evaluate_event](../src/eliotbot/evaluation/events.py) 的目标命中／跳空、同根双触及和失效比较语义，传入已对齐至决策日坐标的结果行情。缺目标或失效线为 UNDEFINED_EVENT。只有 STAGE_EXIT 时单列阶段结束。它不充当上一个事件的确认线。 |
+| `TARGET_FIRST_20D_V1` | 单列检验日线原报告首个目标区与结构失效的先后。复用现有 [evaluate_event](../src/elliottwaver/evaluation/events.py) 的目标命中／跳空、同根双触及和失效比较语义，传入已对齐至决策日坐标的结果行情。缺目标或失效线为 UNDEFINED_EVENT。只有 STAGE_EXIT 时单列阶段结束。它不充当上一个事件的确认线。 |
 
 决策时点超出有效输入覆盖记 INPUT_UNAVAILABLE。结算需用的会话已过去但缺 bar／因子记 INCOMPLETE_DATA，结果快照尚未覆盖到所需会话记 RIGHT_CENSORED。用协议的结果观察截止日与行情覆盖清单区分缺失和截尾。先触价事件若已观察到明确的首次命中，可以在期限到齐前核销。缺失、歧义、截尾都保留计数，并从可判定标签的分母剔除。预注册的同根歧义要另报全成／全败边界。历史三角形专用日 20／周 8 的对称 ATR 先触价事件保留独立编号及原协议。[三角形实验](reviews/2026-11-18-cn-triangle-experiment-protocol.md)
 
@@ -147,7 +147,7 @@ daily = summarize_period(result, window, cards)
 
 ## G　自选、核销与维护
 
-新增 `eliot watchlist FILE --output-dir DIR [--json]`，FILE 为每行一个规范证券代码的 UTF-8 文件，空行忽略，按规范代码保序去重。每只调用同一 brief 流程，隔离错误，汇总 symbol、行情日、状态、报告路径、错误码。全部处理完后返回首个失败标的的非零退出码，UNCLEAR 按有效分析处理。增量核销使用 `(brief_digest,event_id,scenario_id或标的作用域)` 作唯一键，只推进未成熟记录，绑定实际结算行情版本。行情后来修订时新增结算修订版本，保留最初观察。模型撤回不改写已经发出的概率。交付一份支持矩阵，列出证券类别、周期、事件、适用模型、通过的测试和未通过原因。
+新增 `elliottwaver watchlist FILE --output-dir DIR [--json]`，FILE 为每行一个规范证券代码的 UTF-8 文件，空行忽略，按规范代码保序去重。每只调用同一 brief 流程，隔离错误，汇总 symbol、行情日、状态、报告路径、错误码。全部处理完后返回首个失败标的的非零退出码，UNCLEAR 按有效分析处理。增量核销使用 `(brief_digest,event_id,scenario_id或标的作用域)` 作唯一键，只推进未成熟记录，绑定实际结算行情版本。行情后来修订时新增结算修订版本，保留最初观察。模型撤回不改写已经发出的概率。交付一份支持矩阵，列出证券类别、周期、事件、适用模型、通过的测试和未通过原因。
 
 ## 验收用例与交接顺序
 
@@ -172,11 +172,11 @@ daily = summarize_period(result, window, cards)
 A1–A3 可使用以下冻结快照复验。
 
 ```bash
-.venv/bin/eliot brief 600519 --offline --snapshot 8378a32d2ce12a8419cb853ad4c6558aa4644f11aae7302c3319d14530d87f8d --json
-.venv/bin/eliot brief 000300.SH --offline --snapshot 9d87a58582943ad7145120c032ea8cc1505e9521084527b40cc4b18d30baebcf
+.venv/bin/elliottwaver brief 600519 --offline --snapshot 8378a32d2ce12a8419cb853ad4c6558aa4644f11aae7302c3319d14530d87f8d --json
+.venv/bin/elliottwaver brief 000300.SH --offline --snapshot 9d87a58582943ad7145120c032ea8cc1505e9521084527b40cc4b18d30baebcf
 ```
 
-上述 ID 对应已有本地实验样本。新环境先用现有 `eliot data fetch SYMBOL --timeframe 1d` 保存日线并替换为实际返回的 ID。每个变更运行现有离线测试、Ruff 检查；触及引擎、回放或价格坐标时，再跑独立复验。
+上述 ID 对应已有本地实验样本。新环境先用现有 `elliottwaver data fetch SYMBOL --timeframe 1d` 保存日线并替换为实际返回的 ID。每个变更运行现有离线测试、Ruff 检查；触及引擎、回放或价格坐标时，再跑独立复验。
 
 ```bash
 .venv/bin/python -m pytest tests -q

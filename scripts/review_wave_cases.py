@@ -10,11 +10,11 @@ from functools import lru_cache
 from itertools import pairwise
 from pathlib import Path
 
-from eliotbot.data.snapshots import SnapshotStore
-from eliotbot.errors import DataError, InputError
-from eliotbot.schemas.market import AnalysisRequest, MarketDataBundle
-from eliotbot.service import prepare_bundle
-from eliotbot.util import atomic_write, canonical_json
+from elliottwaver.data.snapshots import SnapshotStore
+from elliottwaver.errors import DataError, InputError
+from elliottwaver.schemas.market import AnalysisRequest, MarketDataBundle
+from elliottwaver.service import prepare_bundle
+from elliottwaver.util import atomic_write, canonical_json
 
 
 def _rule(name, valid, explanation, observed=None, boundary=None):
@@ -245,7 +245,7 @@ def run(cases_path: Path, cache_root: Path, output: Path) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cases", type=Path, required=True)
-    parser.add_argument("--cache-root", type=Path, default=Path(".cache/eliotbot"))
+    parser.add_argument("--cache-root", type=Path, default=Path(".cache/elliottwaver"))
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     result = run(args.cases, args.cache_root, args.output)

@@ -8,7 +8,7 @@
 
 - 新增 `HistoryStore`：SQLite `briefs` 表，保存 brief digest、`lineage_key`、`base_lineage_key`、行情截止、发布时间、源快照、报告路径和模式。
 - 发布 `brief` 后先校验 manifest/文件哈希，再登记索引。
-- `eliot history SYMBOL` 支持 `--as-of`、`--mode live|frozen`、`--json`。
+- `elliottwaver history SYMBOL` 支持 `--as-of`、`--mode live|frozen`、`--json`。
 - `brief.previous` 支持 `FIRST_RECORD / SAME_COUNT / ALTERNATE_PROMOTED / STAGE_ADVANCED / COUNT_CHANGED / CONFIG_CHANGED / DATA_REVISED / NOT_COMPARABLE`。
 - 配置变化：比较上一份与当前摘要的 `config_hash`、`engine_version`；变化时输出 `CONFIG_CHANGED`，并保留结构变化和修订计数。
 - 数据口径变化：比较 `feed`、`adjustment`、`timeframe` 和证券身份；变化时输出 `NOT_COMPARABLE`，原因列出具体字段。
@@ -52,7 +52,7 @@ CLI：2026-03-27 默认配置 → 2026-03-30 + --subwave-depth 1，
 
 ```bash
 printf '600519.SH\n000300.SH\n600519.SH\n' > watchlist.txt
-.venv/bin/eliot watchlist watchlist.txt --output-dir reports/watchlist \
+.venv/bin/elliottwaver watchlist watchlist.txt --output-dir reports/watchlist \
   --workers 2 --retries 1 --retry-delay 0 \
   --model-registry reports/model-registry/registry --json
 ```
@@ -87,7 +87,7 @@ registry.load()                  # 返回 v1；全部撤回则返回 None
 
 ### G 增量核销
 
-新增 `eliotbot/settlement.py`、`eliot settle` 命令和 `eliot support-matrix` 命令。
+新增 `elliottwaver/settlement.py`、`elliottwaver settle` 命令和 `elliottwaver support-matrix` 命令。
 
 - `SettlementStore` 使用 SQLite：
   - `settlements` 以 `(brief_digest, event_id, scope)` 为唯一键；`scope` 为候选 `scenario_id` 或标的（收盘区间事件）。
@@ -208,7 +208,7 @@ search_truncated            0
 - 发布门槛：相对三项基线，Brier 和 log loss 改善的配对 95% 区间下界均大于 0；每个展示可靠性档至少 50 个成熟观测、10 个不同决策日期，预测均值减实际发生率的 95% 区间在 ±0.10 内；测试至少 50 行、10 个日期、5 个标的；支持档覆盖率至少 0.5。
 - 输出 `model.json`、`summary.json`、`manifest.json`；`model.json` 记录事件版本、适用范围、分割、引擎/配置摘要、特征顺序、编码、参数、类别顺序、温度、支持档、样本量和验证摘要。
 - `brief --model model.json` 只加载 `APPROVED` 事件；未获支持显示 `INSUFFICIENT_EVIDENCE` 或 `UNCALIBRATED`。线上三分类任一分量落入未获支持档位时整组置空，显示 `UNSUPPORTED_BIN`。
-- `ModelRegistry` 支持 current/previous、撤回、损坏/缺失和引擎/配置/周期/品种/feed/复权兼容性回退；`brief` 默认读取 `.cache/eliotbot/models`，`--model-registry` 与 `watchlist --model-registry` 共用。
+- `ModelRegistry` 支持 current/previous、撤回、损坏/缺失和引擎/配置/周期/品种/feed/复权兼容性回退；`brief` 默认读取 `.cache/elliottwaver/models`，`--model-registry` 与 `watchlist --model-registry` 共用。
 - 当前扩大样本审批结果见 [E 模型审批记录](2026-11-19-e-model-approval.md)。
 
 ## F 盲标评分
@@ -218,7 +218,7 @@ search_truncated            0
 ```bash
 # 从已发布 brief/daily 报告自动生成分层盲标 case
 .venv/bin/python scripts/label_wave_cases.py export \
-  --briefs reports/CN/600519.SH/brief --cache-root .cache/eliotbot \
+  --briefs reports/CN/600519.SH/brief --cache-root .cache/elliottwaver \
   --bar-window 60 --output blind-cases.json --html blind-cases.html
 
 # 通用 case 输入校验
@@ -313,7 +313,7 @@ overall: recognition 0.273，double 55，dp 15，dn 40，kappa 1.000
 
 - 盲标页面新增标注者涨跌单选：`UP / DOWN / ABSTAIN`；`import` 保留 `direction`；`score` 输出 `directions` 的方向计数、双人一致率和 Cohen κ。
 - 新增 `label_wave_cases.py direction`：从 case 的 `source_snapshot_id` 和 `decision_date` 读取未来行情，输出实际 `UP / DOWN / FLAT`、`RIGHT_CENSORED`、`decision_close`、`future_close`、`return`；该文件不进入盲标 case。
-- 新增 `src/eliotbot/label_models.py`、`scripts/train_label_models.py` 和 `label_wave_cases.py predict`：
+- 新增 `src/elliottwaver/label_models.py`、`scripts/train_label_models.py` 和 `label_wave_cases.py predict`：
   - 每模板独立二项逻辑回归。
   - 目标为该 case 全部有效判读中认可该模板的比例，按 case 均权。
   - 同一 case 的判读必须留在同一 split；跨 split 直接报错。

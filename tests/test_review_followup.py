@@ -8,23 +8,23 @@ import numpy as np
 import pytest
 from typer.testing import CliRunner
 
-from eliotbot.brief import attach_previous, build_brief
-from eliotbot.cli.main import app
-from eliotbot.config import Settings
-from eliotbot.data.demo import demo_bundle
-from eliotbot.data.periods import as_weekly
-from eliotbot.data.snapshots import SnapshotStore
-from eliotbot.errors import InputError
-from eliotbot.evaluation.calibration import bootstrap_reliability
-from eliotbot.evaluation.decisions import evaluate_protocol, merge_evaluations
-from eliotbot.evaluation.outcomes import close_band, first_touch, outcome_window
-from eliotbot.forecast import ModelRegistry
-from eliotbot.history import HistoryStore
-from eliotbot.label_models import reliability_binary, train_label_models
-from eliotbot.schemas.market import AnalysisRequest, FactorPoint
-from eliotbot.schemas.wave import LevelCondition
-from eliotbot.settlement import SettlementStore
-from eliotbot.visualization.brief_formatter import brief_html, brief_markdown, publish_brief
+from elliottwaver.brief import attach_previous, build_brief
+from elliottwaver.cli.main import app
+from elliottwaver.config import Settings
+from elliottwaver.data.demo import demo_bundle
+from elliottwaver.data.periods import as_weekly
+from elliottwaver.data.snapshots import SnapshotStore
+from elliottwaver.errors import InputError
+from elliottwaver.evaluation.calibration import bootstrap_reliability
+from elliottwaver.evaluation.decisions import evaluate_protocol, merge_evaluations
+from elliottwaver.evaluation.outcomes import close_band, first_touch, outcome_window
+from elliottwaver.forecast import ModelRegistry
+from elliottwaver.history import HistoryStore
+from elliottwaver.label_models import reliability_binary, train_label_models
+from elliottwaver.schemas.market import AnalysisRequest, FactorPoint
+from elliottwaver.schemas.wave import LevelCondition
+from elliottwaver.settlement import SettlementStore
+from elliottwaver.visualization.brief_formatter import brief_html, brief_markdown, publish_brief
 from scripts.label_wave_cases import blind_html, export_brief_cases, score_labels
 from scripts.train_forecasts import DEFAULT_RELEASE, _annotate_reliability
 
@@ -310,7 +310,7 @@ def test_watchlist_reports_invalid_and_unavailable_without_losing_good_symbols(
     tmp_path,
     monkeypatch,
 ):
-    import eliotbot.cli.main as cli
+    import elliottwaver.cli.main as cli
 
     run = build_brief(_request(bundle, -1), bundle, Settings(), include_weekly=False)
     from dataclasses import replace
@@ -404,7 +404,7 @@ def test_human_briefs_show_frozen_cutoff_valid_forecast_and_omissions(
     capsys,
     monkeypatch,
 ):
-    from eliotbot.cli.console_render import render_brief
+    from elliottwaver.cli.console_render import render_brief
 
     monkeypatch.setenv("COLUMNS", "160")
     request = _request(bundle, -1).model_copy(update={"top_k": 15})

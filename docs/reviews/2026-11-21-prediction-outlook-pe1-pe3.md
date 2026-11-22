@@ -27,7 +27,7 @@
   - 同根推进/目标/停止按 `AMBIGUOUS_SAME_BAR`；缺数据、右删失和到期分别记录。
 - `evaluate_briefs.py` 的决策行记录 `outlook`，评估网格为每张已发行卡生成新事件行；`ADVANCE_FIRST_*` 和 `OUTLOOK_TARGET_FIRST_*` 已接入 `summary.json` 的事件统计。
 - 快速协议验证：`ADVANCE_FIRST_5D_V1` 在完成结构上为 `UNDEFINED_EVENT`，`OUTLOOK_TARGET_FIRST_5D_V1` 可在观察窗内得到 `TARGET_FIRST`。
-- 正式入口 `eliot brief 000016.SH --offline --snapshot abfd7531... --config config.advanced.example.yaml --json` 返回 `outlook.status=AVAILABLE`、5 个日线观察期、主备 case 和事件状态。
+- 正式入口 `elliottwaver brief 000016.SH --offline --snapshot abfd7531... --config config.advanced.example.yaml --json` 返回 `outlook.status=AVAILABLE`、5 个日线观察期、主备 case 和事件状态。
 
 ## 验证
 

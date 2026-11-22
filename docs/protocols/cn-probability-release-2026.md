@@ -16,7 +16,7 @@
 
 ## 复现
 
-先确认协议引用的快照仍在 `.cache/eliotbot`。协议的文件 SHA-256 为 `89381795c908e7e599450aac8356486332efbc658e75ec4d20e67f5dbd785cf0`。
+先确认协议引用的快照仍在 `.cache/eliotbot`。该协议为冻结历史文件，`cache_root` 保留旧目录以维持 SHA-256；如已迁移到 `.cache/elliottwaver`，复制协议后修改 `cache_root` 再运行。协议的文件 SHA-256 为 `89381795c908e7e599450aac8356486332efbc658e75ec4d20e67f5dbd785cf0`。
 
 ```bash
 PROTOCOL=docs/protocols/cn-probability-release-2026.json
@@ -24,7 +24,7 @@ RUN=reports/cn-probability-release-2026
 .venv/bin/python scripts/evaluate_briefs.py --protocol "$PROTOCOL" --output-dir "$RUN/evaluation"
 .venv/bin/python scripts/train_forecasts.py \
   --protocol "$PROTOCOL" --decisions "$RUN/evaluation" --output-dir "$RUN/models"
-.venv/bin/eliot support-matrix --model-summary "$RUN/models/summary.json"
+.venv/bin/elliottwaver support-matrix --model-summary "$RUN/models/summary.json"
 ```
 
 本机运行按单标的分批并行。每批只改协议中的 `samples`，使用 `merge_evaluations.py` 按原完整协议合并，保留生成各批结果的源码指纹。见[使用手册的分批评估示例](../USER_GUIDE.md#48-离线评估与概率研究)。

@@ -1,12 +1,12 @@
-# EliotBot 短期预测增强实施设计
+# ElliottWaver 短期预测增强实施设计
 
-对应[产品路线图 PE-1 至 PE-6](ROADMAP.md#预测能力增强路线图)。范围为现有沪深个股和指数、美股个股和 ETF 的日线与周线。继续用 `eliot brief` 自动选周期、选窗和数浪，用 `watchlist` 扫自选，用 `settle` 核对实际走势。当前目标是增强**每个候选成立时的短期推演**，并验证波浪证据能否提高可测量的方向及事件预测能力。实现无需扩展行情市场、分钟线或图形界面。
+对应[产品路线图 PE-1 至 PE-6](ROADMAP.md#预测能力增强路线图)。范围为现有沪深个股和指数、美股个股和 ETF 的日线与周线。继续用 `elliottwaver brief` 自动选周期、选窗和数浪，用 `watchlist` 扫自选，用 `settle` 核对实际走势。当前目标是增强**每个候选成立时的短期推演**，并验证波浪证据能否提高可测量的方向及事件预测能力。实现无需扩展行情市场、分钟线或图形界面。
 
 用户会看到三类信息。候选权重衡量当前数浪的相对支持度。短期推演说明接下来可能处在哪一浪、看什么信号以及触发后看哪里。获批概率用于有明确定义的价格事件，按市场、资产、周期、事件及候选位置审批。各候选的事件可能同时发生或同时失败，概率独立解读。当前已有目标区、失效价、回放及模型注册流程。历史指数 20 日目标实验尚未证明优于价格基线，本设计为新事件独立留证。 [现有分析设计](WAVE_ANALYSIS_DESIGN.md) · [概率历史复验](reviews/2026-11-20-cn-index-probability-recheck.md)
 
 ## PE-1　浪阶段、信号与目标
 
-在 [projector.py](../src/eliotbot/engine/projector.py) 增加 `project_with_gates(...)`，返回现有三项投影和有类型的条件角色。每个角色在产出条件时显式赋值，与原条件序号一一对应。继续用原 `project(...)` 签名给既有调用者返回三元组。 [AnalysisContext](../src/eliotbot/service.py) 增加按候选 ID 索引的投影元数据，随既有排序和截断对齐。保持既有 `WaveScenario`、`result_digest`、候选排序、`next_leg_bias` 及旧事件口径。在 [templates.py](../src/eliotbot/engine/templates.py) 中由 `template.labels[len(candidate.completed)]` 定位进行中的浪，奇数位置同模板方向，偶数位置反向。完整模板没有当前浪标签。
+在 [projector.py](../src/elliottwaver/engine/projector.py) 增加 `project_with_gates(...)`，返回现有三项投影和有类型的条件角色。每个角色在产出条件时显式赋值，与原条件序号一一对应。继续用原 `project(...)` 签名给既有调用者返回三元组。 [AnalysisContext](../src/elliottwaver/service.py) 增加按候选 ID 索引的投影元数据，随既有排序和截断对齐。保持既有 `WaveScenario`、`result_digest`、候选排序、`next_leg_bias` 及旧事件口径。在 [templates.py](../src/elliottwaver/engine/templates.py) 中由 `template.labels[len(candidate.completed)]` 定位进行中的浪，奇数位置同模板方向，偶数位置反向。完整模板没有当前浪标签。
 
 | 模板和阶段 | `current_leg_direction` | 价格证据和目标安排 |
 | --- | --- | --- |
@@ -28,7 +28,7 @@
 
 ## PE-2　发行数据与终端
 
-在 `schemas/outlook.py` 定义严格契约，在 [Brief](../src/eliotbot/schemas/brief.py) 增加可缺省、值为 `None` 时不序列化的 `outlook`。保持外层 schema 版本，新增内层版本 `"1.0"`。旧档案按原字段验摘要，新增对象进入新档案的 `brief_digest`。在 [build_brief](../src/eliotbot/brief.py) 选完主备卡后构造推演，附加预测前把推演冻结。建议以新模块 `outlook.py` 承担产品契约构造，使核心引擎仍可离线调用。结构如下。
+在 `schemas/outlook.py` 定义严格契约，在 [Brief](../src/elliottwaver/schemas/brief.py) 增加可缺省、值为 `None` 时不序列化的 `outlook`。保持外层 schema 版本，新增内层版本 `"1.0"`。旧档案按原字段验摘要，新增对象进入新档案的 `brief_digest`。在 [build_brief](../src/elliottwaver/brief.py) 选完主备卡后构造推演，附加预测前把推演冻结。建议以新模块 `outlook.py` 承担产品契约构造，使核心引擎仍可离线调用。结构如下。
 
 | 类型 | 发行字段与约束 |
 | --- | --- |
@@ -37,9 +37,9 @@
 | `OutlookCondition` | `role` 为 `ADVANCE`、`CURRENT_EVIDENCE`、`INVALIDATION` 或 `STAGE_EXIT`，携带 `LevelCondition` 和可选原条件序号。索引检查同一候选且值一致。自有的浪 3 退出写明确规则名。条件必须可从首观察期开始计算，价格坐标须与 `Brief.price_coordinate_id` 相同。 |
 | `OutlookEvent` | `event_id`、`state`（`DEFINED` 或 `UNDEFINED`）、可选 `reason`。理由代码至少包含 `NO_ADVANCE_GATE`、`NO_STOP`、`NO_VALID_TARGET`、`OUTLOOK_UNAVAILABLE`。推进事件需要推进条件和停止条件。目标事件需要可用目标及停止条件，`AFTER_ADVANCE` 另需推进条件。 |
 
-复用 [交易日历](../src/eliotbot/data/calendar.py) 的会话起止时刻。日线选择发行时刻及之后开盘的 5 个交易会话，周线选择发行时刻及之后开始的 2 个完整交易周。会话结束日须严格晚于 `market_asof`。周三从上个完整周发行时，已经开始的当周跳过，下一交易周是第一期。休市不计数，节假日提前收盘的交易周以排定最后一场为准。找不到完整日历时，推演保留解释，事件未定义。旧 `outcome_dates` 供原事件继续使用。若分析为 `UNCLEAR` 且有卡片，显示各自条件和方向分歧，抑制总方向判断。对于 `STALE_DATA`、`INSUFFICIENT_DATA`、`SEARCH_LIMITED`，显示对应限制，停止发行新可核销事件和概率，保留诊断。
+复用 [交易日历](../src/elliottwaver/data/calendar.py) 的会话起止时刻。日线选择发行时刻及之后开盘的 5 个交易会话，周线选择发行时刻及之后开始的 2 个完整交易周。会话结束日须严格晚于 `market_asof`。周三从上个完整周发行时，已经开始的当周跳过，下一交易周是第一期。休市不计数，节假日提前收盘的交易周以排定最后一场为准。找不到完整日历时，推演保留解释，事件未定义。旧 `outcome_dates` 供原事件继续使用。若分析为 `UNCLEAR` 且有卡片，显示各自条件和方向分歧，抑制总方向判断。对于 `STALE_DATA`、`INSUFFICIENT_DATA`、`SEARCH_LIMITED`，显示对应限制，停止发行新可核销事件和概率，保留诊断。
 
-终端用同一份推演渲染主备候选。显示期限、当前浪方向、推进或当前证据、条件目标、阶段退出和硬失效。重要条件带最高／最低／收盘字段及比较符。最多沿用当前三张卡。展示价格的小数位须保留必要的比较精度，严格边界可直接使用原条件数值的十进制表示。候选质量、权重和获批概率分别标示。首屏分别对比已知的当前腿方向和候选的条件方向，后者取目标方向，缺目标时取推进方向。有分歧时注明发生在当前腿还是后续条件，逐条展示成立条件。历史回放保留已有模式和截止时间。Markdown 共用角色名称，JSON 为事实源，旧报告继续走旧排版。更新受影响的 Markdown 渲染身份，避免复用缺少新内容的旧版本产物。 [终端渲染](../src/eliotbot/cli/console_render.py) · [简报渲染](../src/eliotbot/visualization/brief_formatter.py)
+终端用同一份推演渲染主备候选。显示期限、当前浪方向、推进或当前证据、条件目标、阶段退出和硬失效。重要条件带最高／最低／收盘字段及比较符。最多沿用当前三张卡。展示价格的小数位须保留必要的比较精度，严格边界可直接使用原条件数值的十进制表示。候选质量、权重和获批概率分别标示。首屏分别对比已知的当前腿方向和候选的条件方向，后者取目标方向，缺目标时取推进方向。有分歧时注明发生在当前腿还是后续条件，逐条展示成立条件。历史回放保留已有模式和截止时间。Markdown 共用角色名称，JSON 为事实源，旧报告继续走旧排版。更新受影响的 Markdown 渲染身份，避免复用缺少新内容的旧版本产物。 [终端渲染](../src/elliottwaver/cli/console_render.py) · [简报渲染](../src/elliottwaver/visualization/brief_formatter.py)
 
 终端示意，价格为合成样例。
 
@@ -58,7 +58,7 @@
 
 ## PE-3　事件注册、结算与回放一致
 
-在 [evaluation/events.py](../src/eliotbot/evaluation/events.py) 为新增事件建立不可变 `EventSpec` 注册表。字段为 ID、周期、期限、单位、作用域、核销器、成功标签和训练可用标签。新增分支从同一注册表查找，避免现有按前缀和后缀推断导致 2 周被识别成 5 周。现有事件 ID、已生成标签和模型保持原行为。
+在 [evaluation/events.py](../src/elliottwaver/evaluation/events.py) 为新增事件建立不可变 `EventSpec` 注册表。字段为 ID、周期、期限、单位、作用域、核销器、成功标签和训练可用标签。新增分支从同一注册表查找，避免现有按前缀和后缀推断导致 2 周被识别成 5 周。现有事件 ID、已生成标签和模型保持原行为。
 
 | 事件 ID | 期限和作用域 | 观测目标 |
 | --- | --- | --- |
@@ -66,15 +66,15 @@
 | `OUTLOOK_TARGET_FIRST_5D_V1`、`OUTLOOK_TARGET_FIRST_2W_V1` | 同上，每张已发行卡 | 第一个已启用目标早于退出或硬失效。成功标签为 `TARGET_FIRST`。 |
 | `CLOSE_BAND_2W_V1` | 2 完整周，每个标的一个事件 | 截止周排定末交易会话的收盘，相对发行收盘加减 1 倍发行时的周 ATR 分类为 `UP`、`RANGE`、`DOWN`。严格越过边界才记上涨或下跌。日线沿用 `CLOSE_BAND_5D_V1` 的现有定义。 |
 
-在 [outcomes.py](../src/eliotbot/evaluation/outcomes.py) 实现 `evaluate_outlook_event(spec, issued, window)`，返回既有状态、触发期和观测值，并附激活期、触发条件角色、原始行情证据 ID。按发布时排定顺序扫描各期，周期 OHLC 仅使用完整且到达的观测，周线首达以周 K 为观测分辨率。执行规则如下。
+在 [outcomes.py](../src/elliottwaver/evaluation/outcomes.py) 实现 `evaluate_outlook_event(spec, issued, window)`，返回既有状态、触发期和观测值，并附激活期、触发条件角色、原始行情证据 ID。按发布时排定顺序扫描各期，周期 OHLC 仅使用完整且到达的观测，周线首达以周 K 为观测分辨率。执行规则如下。
 
 1. 当前浪证据只作解释。推进事件只检查 `ADVANCE` 与停止条件。目标为 `ACTIVE` 时第一期即可观察。目标为 `AFTER_ADVANCE` 时先等待信号，信号出现后的**下一期**开始观察目标，两阶段共用同一个到期日。等信号期间单独碰到目标不计入事件。区间相交或朝目标方向跳空越过整段，按现有 `target_hit` 判触及。
 2. 先遇硬失效或阶段退出分别记录 `INVALIDATED_FIRST` 或 `STAGE_EXIT_FIRST`。同一期内既碰所需信号或已启用目标，又触发停止，记 `AMBIGUOUS_SAME_BAR`。等待阶段推进与目标同一期触及也记同根先后不明。若同一期只触发两种停止，记录所有已触发条件并归类为硬失效。发出最终标签之后，后续期不改变该快照的首次结果。
 3. 可观察的前缀内缺所需行情时记 `INCOMPLETE_DATA`，停止向后猜测先后。尚未到达的后缀记 `RIGHT_CENSORED`。所有需要的期完整且未触发才记 `EXPIRED`。事件未定义使用 `UNDEFINED_EVENT`，不能转换为失败标签。周线目标与推进要求完整周 OHLC，2 周收盘只需到期周排定的末交易会话收盘。
 4. 核销观测只使用已结束 K 线且 `usable_at <=` 核销截止时刻。若某期缺数据且之后已有合格的观测，用 `INCOMPLETE_DATA`，否则按冻结行情最后覆盖的日期区分缺口或尚未覆盖。周线依据冻结的成员会话和完整性计算，不能把包含尚未到达日报的派生周 K 当作可用。若核销日历与发行的会话安排冲突，返回 `SETTLEMENT_CALENDAR_MISMATCH` 诊断并保留待核状态，待受控修订复核。
-5. 复用 [SettlementStore](../src/eliotbot/settlement.py) 验证发行快照。沪深价格按发行口径复权，日线先转换再聚为周线。Alpaca `provider_all` 的后续修订先经 `provider_price_scale` 验证并换回发行坐标。无法验证则记 `PRICE_BASIS_UNVERIFIED`。核销存原快照上的 bar ID，周线可查回成员日线；换算后的数值单独保留。复用核销主键 `(brief_digest, event_id, scenario_id 或 symbol)` 及修订流水。
+5. 复用 [SettlementStore](../src/elliottwaver/settlement.py) 验证发行快照。沪深价格按发行口径复权，日线先转换再聚为周线。Alpaca `provider_all` 的后续修订先经 `provider_price_scale` 验证并换回发行坐标。无法验证则记 `PRICE_BASIS_UNVERIFIED`。核销存原快照上的 bar ID，周线可查回成员日线；换算后的数值单独保留。复用核销主键 `(brief_digest, event_id, scenario_id 或 symbol)` 及修订流水。
 
-为新事件建立共用的核销上下文构造函数，供线上 `settle` 和决策回放使用。它负责把发行观察窗、行情截止、坐标桥接和状态交给核销器。使用了某个冻结报告的事件回放直接复用其发行对象，网格回放先走 `build_brief` 生成同样的对象。新候选事件行从**已发布卡片**派生，旧事件继续原有行生成路径。可用的推演在核销和评估两端均记录卡片上的 `UNDEFINED_EVENT` 及原因。推演整体不可用时，只在决策级记录原因。每行至少记录 `decision_id`、`scenario_id`、`structure_key`、`slot`、`event_id`、`outlook_version`、`due_date`、`label_available_at`、状态、命中期及行情证据。线上和回放对同一报告、后续快照与截止时刻的结果逐字段比较。 [决策回放代码](../src/eliotbot/evaluation/decisions.py)
+为新事件建立共用的核销上下文构造函数，供线上 `settle` 和决策回放使用。它负责把发行观察窗、行情截止、坐标桥接和状态交给核销器。使用了某个冻结报告的事件回放直接复用其发行对象，网格回放先走 `build_brief` 生成同样的对象。新候选事件行从**已发布卡片**派生，旧事件继续原有行生成路径。可用的推演在核销和评估两端均记录卡片上的 `UNDEFINED_EVENT` 及原因。推演整体不可用时，只在决策级记录原因。每行至少记录 `decision_id`、`scenario_id`、`structure_key`、`slot`、`event_id`、`outlook_version`、`due_date`、`label_available_at`、状态、命中期及行情证据。线上和回放对同一报告、后续快照与截止时刻的结果逐字段比较。 [决策回放代码](../src/elliottwaver/evaluation/decisions.py)
 
 ## PE-4　历史实验、基线与有效样本
 
@@ -82,7 +82,7 @@
 
 - **样本单位**。收盘事件每标的每决策一行。候选事件按 `PRIMARY`、`ALTERNATE_1`、`ALTERNATE_2` 分别建立训练与测试行，每个位置每标的每次决策最多一行。备选缺位或事件未定义计入发行覆盖诊断。模型特征只来自发行时数据。训练/校准样本要求预定到期和所需行情均已在对应数据段可用，含提前触发事件。测试同样只评估已成熟样本。
 - **先达标签**。新二元模型估计“在当前 K 线分辨率下能明确判定为先到”的概率。明确先到为 `YES`，明确先失效、先退出、到期未触发及同根先后不明归 `NO`。同根歧义仍独立统计，终端用“明确先到”注明模型口径。缺行情、样本未成熟、口径不明和事件未定义全部排除，并分开列出分母。收盘事件沿用现有三个互斥类别。
-- **四组同样本对照**。A 为训练段频率，B 为现有动量基线，C 为价格与 ATR 基线。C 对候选事件使用同一发行门槛、目标、启用模式和停止条件的价格几何，使用 `(边界 - 发行收盘) / 发行 ATR` 及明确的缺失标志。区域宽度以 ATR 归一化，方向、比较类型和期数为显式字段。D 用 C 加波浪特征，固定模板、亚型、阶段、方向、质量、覆盖率、子浪证据、日周关系和换窗稳定性。波浪模型由 [features.py](../src/eliotbot/evaluation/features.py) 定义可冻结的特征版本 `"4"`，旧版本继续按自身顺序取值。缺证据有独立状态，非有限 ATR 不生成概率。
+- **四组同样本对照**。A 为训练段频率，B 为现有动量基线，C 为价格与 ATR 基线。C 对候选事件使用同一发行门槛、目标、启用模式和停止条件的价格几何，使用 `(边界 - 发行收盘) / 发行 ATR` 及明确的缺失标志。区域宽度以 ATR 归一化，方向、比较类型和期数为显式字段。D 用 C 加波浪特征，固定模板、亚型、阶段、方向、质量、覆盖率、子浪证据、日周关系和换窗稳定性。波浪模型由 [features.py](../src/elliottwaver/evaluation/features.py) 定义可冻结的特征版本 `"4"`，旧版本继续按自身顺序取值。缺证据有独立状态，非有限 ATR 不生成概率。
 - **训练与评估方法**。复用现有软最大模型和温度校准。训练段决定模型参数和标准化，校准段决定温度，独立测试只评分一次。任何特征组合或模型选择在开发段结束，锁定协议和参数后再纳入独立前向观察。按日期块重采样，同日所有标的一起抽取，块长至少覆盖持有期造成的决策重叠。报告事件及候选位置的有效分母、日期／标的／块数、正负或各类别数、歧义和缺失率、支持档覆盖、Brier、log loss 和相对三条基线的配对区间。列一张按浪型、阶段、市场及方向分解的诊断表，样本不足时直接标明。
 - **可追溯性**。复用 `decisions.jsonl`、`events.parquet`、`summary.json` 和 `manifest.json`。记录协议、输入与代码摘要、训练/校准与测试范围、标签期限、模型参数冻结时刻、已评分的留出标识。过去的冻结数据回放继续明确标记为 `FROZEN_DATA_REPLAY`。批准流程要求测试决策发生在模型、基线及协议冻结之后。需要验证当时数据版本的场景，额外保留实际决策时取得的快照。
 
@@ -101,14 +101,14 @@
 .venv/bin/python scripts/train_forecasts.py freeze --protocol DEV.json --decisions reports/prediction/dev --output reports/prediction/candidate.json
 .venv/bin/python scripts/evaluate_briefs.py --protocol HOLDOUT.json --output-dir reports/prediction/holdout
 .venv/bin/python scripts/train_forecasts.py score --candidate reports/prediction/candidate.json --holdout reports/prediction/holdout --output-dir reports/prediction/model
-.venv/bin/eliot support-matrix --model-summary reports/prediction/model/model.json
+.venv/bin/elliottwaver support-matrix --model-summary reports/prediction/model/model.json
 ```
 
 ## PE-5　概率批准、选择与发布
 
 [训练入口](../scripts/train_forecasts.py) 的现有默认发布门槛作为下限。独立测试至少 50 个可分类成熟事件、10 个不同决策日和 5 个标的。每个支持档至少 50 个事件、10 个决策日、2 个占用时间块，可靠性误差区间落在 ±0.10 内。支持档覆盖率至少 50%。波浪模型相对频率、动量、匹配价格几何组的 Brier 和 log loss 改善，其配对 95% 区间下限均须大于零。协议须预先写明所有门槛，失败时保存原因。减少样本或扩大范围需形成新协议并重新评估。对于在支持范围内但特定状态证据不足的决策，不显示对应数字。
 
-在 [forecast.py](../src/eliotbot/forecast.py) 把新事件及特征契约接入 `validate_model`、概率展示和注册表。新增模型作用域字段 `outlook_version` 与 `outlook_slot`（收盘事件用 `SYMBOL`）。一份新模型只含一个事件和一个候选位置，使用现有模型摘要与记录格式。增加按事件、候选位置取 `as_of` 时最新合法模型的查询接口，沿用原注册批准、撤回、回退流程和损坏检测。旧模型查询继续兼容原入口。新查询批量扫描注册记录再筛选，确保一个新事件获批后，已有的其他事件仍能展示。备选模型不得跨位置套用，现有事件模型也不得跨语义套用。批准时同时验证冻结标识和留出期确已结束。
+在 [forecast.py](../src/elliottwaver/forecast.py) 把新事件及特征契约接入 `validate_model`、概率展示和注册表。新增模型作用域字段 `outlook_version` 与 `outlook_slot`（收盘事件用 `SYMBOL`）。一份新模型只含一个事件和一个候选位置，使用现有模型摘要与记录格式。增加按事件、候选位置取 `as_of` 时最新合法模型的查询接口，沿用原注册批准、撤回、回退流程和损坏检测。旧模型查询继续兼容原入口。新查询批量扫描注册记录再筛选，确保一个新事件获批后，已有的其他事件仍能展示。备选模型不得跨位置套用，现有事件模型也不得跨语义套用。批准时同时验证冻结标识和留出期确已结束。
 
 `forecasts_for_brief` 使用已发行的 `outlook` 和与回放相同的特征构造函数。标的、行情口径、资产类型、时间周期、引擎、配置和事件位置须符合批准信息。概率按角色附到对应的 `BriefForecast`，无批准、缺特征或预测值落在未支持档位时输出状态和原因。收盘事件显示上涨／区间内／下跌三个概率，保留各自的到期日。候选事件在对应卡片显示“5 日内价格信号明确先到”等描述。若旧 5 日收盘事件与新推演的观察日不同，按旧定义单列。显式指定模型用于历史研究时保留回顾性标记。`support-matrix` 补充新期限、事件位置、模型适用范围及证据状态。普通用户命令无需新增参数。
 

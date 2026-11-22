@@ -1,4 +1,4 @@
-# `eliot brief` A 首版验收记录
+# `elliottwaver brief` A 首版验收记录
 
 日期 2026-11-19。范围是 A 组“收盘摘要与自动选窗”的首版：单页摘要、自动周期、主选/备选、条件/目标、父级/子浪证据和数据警告。B–G 未纳入。
 
@@ -6,7 +6,7 @@
 
 ## 已实现
 
-- 新增 `eliot brief SYMBOL`，Typer 和 argparse fallback 同时注册。
+- 新增 `elliottwaver brief SYMBOL`，Typer 和 argparse fallback 同时注册。
 - 新增 `Brief` 严格契约：窗口、卡片、问题、概率状态。
 - 新增 `build_brief` 与 `AnalysisService.analyze_prepared`，避免摘要路径重复准备输入。
 - 新增 `publish_brief`：`brief.json`、`daily.json`、`report.md`、`index.html`、`daily.html`、`manifest.json`。
@@ -55,7 +55,7 @@ reports/CN/600519.SH/brief/2026-03-31/<brief_digest>/
 .venv/bin/python -m pytest tests -q
 .venv/bin/ruff check src tests scripts
 .venv/bin/ruff format --check src tests scripts
-.venv/bin/eliot brief 600519.SH --offline \
+.venv/bin/elliottwaver brief 600519.SH --offline \
   --snapshot 8378a32d2ce12a8419cb853ad4c6558aa4644f11aae7302c3319d14530d87f8d \
   --output-dir reports/brief-check --format html,md
 ```

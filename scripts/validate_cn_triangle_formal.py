@@ -22,11 +22,11 @@ from experiment_cn_triangle_20261118 import (
     _settings,
 )
 
-from eliotbot import ENGINE_VERSION
-from eliotbot.data.periods import as_weekly
-from eliotbot.schemas.market import AnalysisRequest
-from eliotbot.service import AnalysisService
-from eliotbot.util import atomic_write, digest
+from elliottwaver import ENGINE_VERSION
+from elliottwaver.data.periods import as_weekly
+from elliottwaver.schemas.market import AnalysisRequest
+from elliottwaver.service import AnalysisService
+from elliottwaver.util import atomic_write, digest
 
 CASES = [
     ("000001.SH", "1d", date(2023, 8, 18)),

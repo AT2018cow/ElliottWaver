@@ -30,7 +30,7 @@ data:
   delayed_access_buffer_minutes: 20
   cache_ttl_seconds: 21600
 cache:
-  directory: .cache/eliotbot
+  directory: .cache/elliottwaver
 output:
   directory: reports
   formats: [html, md]

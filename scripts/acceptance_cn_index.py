@@ -15,17 +15,17 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
-from eliotbot.config import DataConfig, Settings, load_settings
-from eliotbot.data.quality import missing_intervals
-from eliotbot.data.router import route_symbol
-from eliotbot.data.sina_provider import SinaProvider, _sina_worker_body
-from eliotbot.data.snapshots import SnapshotStore
-from eliotbot.data.workflow import fetch_bundle
-from eliotbot.errors import DataError, InputError
-from eliotbot.evaluation.replay import replay
-from eliotbot.schemas.market import AnalysisRequest
-from eliotbot.service import AnalysisService, prepare_bundle
-from eliotbot.util import atomic_write, canonical_json, digest
+from elliottwaver.config import DataConfig, Settings, load_settings
+from elliottwaver.data.quality import missing_intervals
+from elliottwaver.data.router import route_symbol
+from elliottwaver.data.sina_provider import SinaProvider, _sina_worker_body
+from elliottwaver.data.snapshots import SnapshotStore
+from elliottwaver.data.workflow import fetch_bundle
+from elliottwaver.errors import DataError, InputError
+from elliottwaver.evaluation.replay import replay
+from elliottwaver.schemas.market import AnalysisRequest
+from elliottwaver.service import AnalysisService, prepare_bundle
+from elliottwaver.util import atomic_write, canonical_json, digest
 
 AS_OF = datetime(2024, 1, 12, 15, 30, tzinfo=ZoneInfo("Asia/Shanghai"))
 DAYS = [date(2024, 1, day) for day in (2, 3, 4, 5, 8, 9, 10, 11, 12)]
@@ -107,7 +107,7 @@ def provider_contracts() -> dict:
             "version": importlib.metadata.version("akshare"),
         }
 
-    with tempfile.TemporaryDirectory(prefix="eliot-cn-cache-", dir="/tmp") as temporary:
+    with tempfile.TemporaryDirectory(prefix="elliottwaver-cn-cache-", dir="/tmp") as temporary:
         settings = Settings(cache={"directory": temporary}, analysis={"history_years": 1})
         provider = SinaProvider(settings.data, fetcher=fetcher)
         index = fetch_bundle(
@@ -301,7 +301,7 @@ def live_smoke() -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--live", action="store_true")
-    parser.add_argument("--cache-root", type=Path, default=Path(".cache/eliotbot"))
+    parser.add_argument("--cache-root", type=Path, default=Path(".cache/elliottwaver"))
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     checks = (

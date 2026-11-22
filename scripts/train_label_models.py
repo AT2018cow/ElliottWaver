@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
-from eliotbot.label_models import train_label_models
+from elliottwaver.label_models import train_label_models
 
 
 def main() -> int:

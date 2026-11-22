@@ -1,4 +1,4 @@
-# EliotBot 详细实现方案
+# ElliottWaver 详细实现方案
 
 编制日期：2026-11-16。依据：[原始设计](../DESIGN.md)及公开行情接口文档与通用实现经验。
 
@@ -101,10 +101,10 @@ flowchart TD
 沿用原设计包名和分层，补上输入快照、日历、复权和评估模块；采用 `src` 布局以避免测试误导入工作目录中的同名包。
 
 ```text
-EliotBot/
+ElliottWaver/
 ├── DESIGN.md / README.md / docs/IMPLEMENTATION_PLAN.md
 ├── pyproject.toml / uv.lock / config.example.yaml / .env.example
-├── src/eliotbot/
+├── src/elliottwaver/
 │   ├── config.py / errors.py / service.py
 │   ├── schemas/       # market.py, wave.py, report.py, provenance.py
 │   ├── data/          # base.py, router.py, calendar.py, quality.py
@@ -269,7 +269,7 @@ analysis_OHLC(t) = raw_OHLC(t) × F(t; a)
 analysis_OHLC(a) = raw_OHLC(a)
 ```
 
-这是 EliotBot 明确定义的基准日复权坐标。因子方向、是否与供应商原生 qfq 等价须用 fixture 和抽样确认，不混用未经验证的其他因子。分钟 OHLC 使用所属 session 的 `F(t; a)`，周线从复权后的日线聚合，保留 float64。
+这是 ElliottWaver 明确定义的基准日复权坐标。因子方向、是否与供应商原生 qfq 等价须用 fixture 和抽样确认，不混用未经验证的其他因子。分钟 OHLC 使用所属 session 的 `F(t; a)`，周线从复权后的日线聚合，保留 float64。
 
 因子按生效日期做向前延续；先取行情日期与因子日期并集再填充，避免丢失非交易日生效事件。首个行情日前没有可用因子时，返回缺证据，不能从未来向后填充；确认没有公司行为且依据完整时才可按已验证约定设为 1。
 
@@ -590,15 +590,15 @@ JSON / Markdown / 图表共享同一 `scenario_id`、点位和得分，图表 bu
 ```bash
 # 将变量替换为下方离线示例对应的 AAPL 快照 ID
 SNAPSHOT_ID='替换为对应股票快照的完整ID'
-eliot analyze 600519
-eliot analyze AAPL --feed sip --format html,md
-eliot analyze BRK.B --as-of 2026-11-13 --top-k 3
-eliot analyze sz300750 --anchor 2025-04-09 --format html,png,md
-eliot analyze AAPL --offline --snapshot "$SNAPSHOT_ID"
-eliot data fetch 600519 --start 2021-01-01 --end 2026-11-13
-eliot data inspect "$SNAPSHOT_ID"
-eliot replay "$SNAPSHOT_ID" --start 2024-01-01 --end 2025-12-31 --output reports/replay.jsonl
-eliot doctor --market US
+elliottwaver analyze 600519
+elliottwaver analyze AAPL --feed sip --format html,md
+elliottwaver analyze BRK.B --as-of 2026-11-13 --top-k 3
+elliottwaver analyze sz300750 --anchor 2025-04-09 --format html,png,md
+elliottwaver analyze AAPL --offline --snapshot "$SNAPSHOT_ID"
+elliottwaver data fetch 600519 --start 2021-01-01 --end 2026-11-13
+elliottwaver data inspect "$SNAPSHOT_ID"
+elliottwaver replay "$SNAPSHOT_ID" --start 2024-01-01 --end 2025-12-31 --output reports/replay.jsonl
+elliottwaver doctor --market US
 ```
 
 M6 再启用 `--timeframe 60m/1w`、分钟辅助开关与 BJ 能力；不接受未实现选项后静默回退日线。`--as-of` 与 `--end` 冲突时先明确请求规则并报错；CLI 纯日期表示该市场会话的完整报告，按 profile 换算聚合结束和可用时间，不能一律当作常规收盘时刻；带偏移的时间戳按精确时点解释。请求尚未完成的会话时明确返回 provisional 或数据尚不可用，不修改请求日期掩盖差异。
@@ -756,7 +756,7 @@ data:
   max_requests_per_second: 2
   max_concurrent_symbols: 4
 cache:
-  directory: .cache/eliotbot
+  directory: .cache/elliottwaver
   snapshot_schema: 1
 output:
   directory: reports

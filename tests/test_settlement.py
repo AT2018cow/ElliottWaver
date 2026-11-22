@@ -3,16 +3,16 @@ from dataclasses import replace
 
 from typer.testing import CliRunner
 
-from eliotbot.brief import build_brief
-from eliotbot.cli.main import app
-from eliotbot.config import Settings
-from eliotbot.data.demo import demo_bundle
-from eliotbot.data.snapshots import SnapshotStore
-from eliotbot.schemas.brief import BriefForecast
-from eliotbot.schemas.market import AnalysisRequest
-from eliotbot.settlement import SettlementStore, support_matrix
-from eliotbot.util import digest
-from eliotbot.visualization.brief_formatter import publish_brief
+from elliottwaver.brief import build_brief
+from elliottwaver.cli.main import app
+from elliottwaver.config import Settings
+from elliottwaver.data.demo import demo_bundle
+from elliottwaver.data.snapshots import SnapshotStore
+from elliottwaver.schemas.brief import BriefForecast
+from elliottwaver.schemas.market import AnalysisRequest
+from elliottwaver.settlement import SettlementStore, support_matrix
+from elliottwaver.util import digest
+from elliottwaver.visualization.brief_formatter import publish_brief
 
 
 def _run_and_publish(tmp_path):
@@ -30,13 +30,13 @@ def _run_and_publish(tmp_path):
         check_windows=False,
     )
     path = publish_brief(run, tmp_path / "reports", formats=("md",))
-    snapshot = SnapshotStore(tmp_path / ".cache/eliotbot").save(run.source)
+    snapshot = SnapshotStore(tmp_path / ".cache/elliottwaver").save(run.source)
     return bundle, run, path, snapshot
 
 
 def test_register_and_settle_is_idempotent_and_preserves_initial(tmp_path):
     bundle, run, path, _snapshot = _run_and_publish(tmp_path)
-    store = SettlementStore(tmp_path / ".cache/eliotbot")
+    store = SettlementStore(tmp_path / ".cache/elliottwaver")
     inserted = store.register_brief(run.brief, path)
     assert inserted >= 2
     assert store.register_brief(run.brief, path) == 0
@@ -65,7 +65,7 @@ def test_register_and_settle_is_idempotent_and_preserves_initial(tmp_path):
 
 def test_revised_settlement_adds_revision_and_keeps_initial(tmp_path):
     bundle, run, path, _snapshot = _run_and_publish(tmp_path)
-    store = SettlementStore(tmp_path / ".cache/eliotbot")
+    store = SettlementStore(tmp_path / ".cache/elliottwaver")
     store.register_brief(run.brief, path)
     store.settle_brief(run.brief, path, bundle)
 
@@ -107,7 +107,7 @@ def test_revised_settlement_adds_revision_and_keeps_initial(tmp_path):
             ),
         }
     )
-    revised_snapshot = SnapshotStore(tmp_path / ".cache/eliotbot").save(revised_bundle)
+    revised_snapshot = SnapshotStore(tmp_path / ".cache/elliottwaver").save(revised_bundle)
     store.settle_brief(run.brief, path, revised_bundle)
 
     row = next(
@@ -136,7 +136,7 @@ def test_censored_then_mature_advances_only_pending(tmp_path):
             "raw_bars": bundle.raw_bars[: decision_index + 1],
         }
     )
-    store = SettlementStore(tmp_path / ".cache/eliotbot")
+    store = SettlementStore(tmp_path / ".cache/elliottwaver")
     store.register_brief(run.brief, path)
     store.settle_brief(run.brief, path, truncated)
     row = next(
@@ -176,7 +176,7 @@ def test_model_probabilities_are_not_rewritten_by_settlement(tmp_path):
     identity = digest(brief.model_dump(mode="json", exclude={"brief_digest", "generated_at"}))
     brief = brief.model_copy(update={"brief_digest": identity})
     path = publish_brief(replace(run, brief=brief), tmp_path / "reports", formats=("md",))
-    store = SettlementStore(tmp_path / ".cache/eliotbot")
+    store = SettlementStore(tmp_path / ".cache/elliottwaver")
     store.register_brief(brief, path)
     store.settle_brief(brief, path, bundle)
     row = next(
@@ -227,7 +227,7 @@ def test_support_matrix_marks_model_status_and_reasons():
 
 def test_settle_and_support_matrix_cli(tmp_path):
     _bundle, _run, _path, _snapshot = _run_and_publish(tmp_path)
-    cache = tmp_path / ".cache/eliotbot"
+    cache = tmp_path / ".cache/elliottwaver"
     result = CliRunner().invoke(
         app,
         [

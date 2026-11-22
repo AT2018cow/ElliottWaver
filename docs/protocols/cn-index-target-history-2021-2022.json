@@ -2,7 +2,7 @@
   "protocol_version": "1",
   "protocol_id": "cn-index-target-v3-2021-2022-history",
   "feature_version": "3",
-  "cache_root": ".cache/eliotbot",
+  "cache_root": ".cache/elliottwaver",
   "samples": [
     {
       "asset_type": "INDEX",

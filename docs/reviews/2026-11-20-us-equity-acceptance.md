@@ -19,7 +19,7 @@
 .venv/bin/ruff check src tests scripts
 .venv/bin/ruff format --check src tests scripts
 .venv/bin/python -m pip check
-.venv/bin/eliot doctor --market US
+.venv/bin/elliottwaver doctor --market US
 ```
 
 结果：
@@ -30,7 +30,7 @@
 
 ## US-01 资产身份与响应
 
-修改 `src/eliotbot/data/alpaca_provider.py`：
+修改 `src/elliottwaver/data/alpaca_provider.py`：
 
 - 资产响应必须包含非空 `id`、`class=us_equity`，且 `symbol` 经 `route_symbol()` 规范化后等于请求的 `provider_symbol`。
 - 不一致时抛出 `ASSET_IDENTITY_MISMATCH`，错误信息只含请求代码、返回代码和错误类别；K 线请求次数为零。
@@ -83,7 +83,7 @@
 
 ### 真实 AAPL 结算
 
-使用真实 AAPL SIP 快照 `cff55390639d…d3b1d3`，在同一价格坐标 `ccd7e1dd6eec…` 上运行 `eliot settle`：
+使用真实 AAPL SIP 快照 `cff55390639d…d3b1d3`，在同一价格坐标 `ccd7e1dd6eec…` 上运行 `elliottwaver settle`：
 
 | 决策日 | 报告摘要 | 结果 |
 | --- | --- | --- |
@@ -121,13 +121,13 @@
 ### 真实请求命令
 
 ```bash
-.venv/bin/eliot data fetch AAPL --timeframe 1d --feed sip --config reports/us-acceptance/config.yaml
-.venv/bin/eliot data fetch BRK.B --timeframe 1d --feed sip --config reports/us-acceptance/config.yaml
-.venv/bin/eliot data fetch SPY --timeframe 1d --feed sip --config reports/us-acceptance/config.yaml
-.venv/bin/eliot data fetch SPY --timeframe 1w --feed sip --config reports/us-acceptance/config.yaml
-.venv/bin/eliot data fetch AAPL --timeframe 1d --feed iex --config reports/us-acceptance/config.yaml
-.venv/bin/eliot brief AAPL --offline --snapshot <AAPL-SIP> --feed sip --config reports/us-acceptance/config.yaml
-.venv/bin/eliot analyze AAPL --offline --snapshot <AAPL-SIP> --feed sip --config reports/us-acceptance/config.yaml
+.venv/bin/elliottwaver data fetch AAPL --timeframe 1d --feed sip --config reports/us-acceptance/config.yaml
+.venv/bin/elliottwaver data fetch BRK.B --timeframe 1d --feed sip --config reports/us-acceptance/config.yaml
+.venv/bin/elliottwaver data fetch SPY --timeframe 1d --feed sip --config reports/us-acceptance/config.yaml
+.venv/bin/elliottwaver data fetch SPY --timeframe 1w --feed sip --config reports/us-acceptance/config.yaml
+.venv/bin/elliottwaver data fetch AAPL --timeframe 1d --feed iex --config reports/us-acceptance/config.yaml
+.venv/bin/elliottwaver brief AAPL --offline --snapshot <AAPL-SIP> --feed sip --config reports/us-acceptance/config.yaml
+.venv/bin/elliottwaver analyze AAPL --offline --snapshot <AAPL-SIP> --feed sip --config reports/us-acceptance/config.yaml
 ```
 
 SIP 与 IEX 的 AAPL 快照不同：SIP 收盘 352.45、成交量 34,378,520；IEX 收盘 352.30、成交量 983,549。两者缓存、快照 ID、价格坐标和报告身份均分离。

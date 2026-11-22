@@ -7,16 +7,16 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
-from eliotbot import ENGINE_VERSION
-from eliotbot.config import large_degree_settings, load_settings, long_term_settings
-from eliotbot.data.snapshots import SnapshotStore
-from eliotbot.evaluation.replay import replay
-from eliotbot.schemas.market import AnalysisRequest
-from eliotbot.service import AnalysisService, prepare_bundle
-from eliotbot.timeframes import normalize_timeframe
-from eliotbot.util import atomic_write, canonical_json, digest
-from eliotbot.visualization.chart_builder import svg_chart
-from eliotbot.visualization.report_formatter import publish_report
+from elliottwaver import ENGINE_VERSION
+from elliottwaver.config import large_degree_settings, load_settings, long_term_settings
+from elliottwaver.data.snapshots import SnapshotStore
+from elliottwaver.evaluation.replay import replay
+from elliottwaver.schemas.market import AnalysisRequest
+from elliottwaver.service import AnalysisService, prepare_bundle
+from elliottwaver.timeframes import normalize_timeframe
+from elliottwaver.util import atomic_write, canonical_json, digest
+from elliottwaver.visualization.chart_builder import svg_chart
+from elliottwaver.visualization.report_formatter import publish_report
 
 
 def main():

@@ -1,4 +1,4 @@
-# EliotBot 0.5.1 实现与验收状态
+# ElliottWaver 0.6.0 实现与验收状态
 
 更新于 2026-11-22。安装、日常操作和研究流程见[中文使用手册](USER_GUIDE.md)。目标规格见[详细实现方案](IMPLEMENTATION_PLAN.md)和[收盘分析与概率评估实施设计](WAVE_ANALYSIS_DESIGN.md)。
 
@@ -19,10 +19,10 @@
 | 浪型 | 普通涨/跌推动、ABC 锯齿、三角形、平台、楔形和双锯齿 WXY。父级上下文用端点和浪段规则认证。子浪使用更细尺度拐点和同一套浪段规则。已完成收敛三角形使用经典整组门槛：至少四腿锯齿族、复杂腿最多一条；E 腿嵌套只标记 `PROVISIONAL`。 |
 | 评分与点位 | 分项证据、缺失状态、质量/覆盖/相对权重、Top-K 未展示权重、带方向条件、第五浪上限、合法目标带；完成态含 38.2%–100% 回撤目标，低分但硬规则通过的结构以 `EXCLUDED_STRUCTURE` 显式列出；第五浪同时比较浪 5/浪 1 与浪 5/浪 3，含 2.618/4.236 扩展位；按 K 线跨度标注浪级并提示 `MIXED_DEGREE_SCENARIOS` |
 | 产物 | 单周期分析支持 Rich、JSON、Markdown、Plotly HTML、SVG/PNG 备选渲染，完整写入后更新对应周期/feed 的 latest。收盘摘要支持终端、JSON、HTML 和 Markdown，显示数据模式、截止时刻及候选规则证据，使用独立的摘要索引。 |
-| 收盘摘要 | `eliot brief` 首屏用中文显示主备浪型、当前浪、观察期限、目标区及改变判断的条件。「核对依据」集中展示分析范围、子浪与规则状态。默认日线及完整周线背景，长跨度自动选择周线。`--format json` 保留终端文字并只保存 JSON 文件。真实行情概率当前为 `UNCALIBRATED`。 |
+| 收盘摘要 | `elliottwaver brief` 首屏用中文显示主备浪型、当前浪、观察期限、目标区及改变判断的条件。「核对依据」集中展示分析范围、子浪与规则状态。默认日线及完整周线背景，长跨度自动选择周线。`--format json` 保留终端文字并只保存 JSON 文件。真实行情概率当前为 `UNCALIBRATED`。 |
 | 短期预测增强 | PE-1 至 PE-6 核心：`project_with_gates` 条件角色、`BriefOutlook` 5 会话/2 周观察窗、推进/目标事件注册与评估、特征版本 4、A/B/C/D 对照、`freeze`/`score`、新事件模型作用域、按卡片概率展示、核销回放和终端/HTML/JSON 一致性；P-08 四标的（CN 个股/指数、US 个股/ETF）的 brief/watchlist/history/settle/support-matrix 全流程已通过；独立验收 PO-01 至 PO-09 已修复：推演条件语义、目标硬边界、发行/回放/核销共用冻结观察窗、训练/评分样本作用域、冻结与留出封存、标签语义、批量模型选择、终端精度和旧分析兼容；历史 holdout 已覆盖目标先达、推进和 2 周收盘事件，均正式记录为 INSUFFICIENT_EVIDENCE；旧评分产物只作回顾性研究留存，不用于批准。[实施记录](reviews/2026-11-21-prediction-outlook-protocols.md) · [独立验收修复](reviews/2026-11-21-prediction-outlook-review-followup.md) |
-| 历史与自选 | `eliot history` 查询已发布摘要，原摘要记录上次判断及变化，区分 `CONFIG_CHANGED`、`DATA_REVISED` 和 `NOT_COMPARABLE`。`eliot watchlist` 批量生成 JSON 摘要，支持有限重试、有界并发、模型注册表回退和单标的失败隔离。 |
-| 结算与支持矩阵 | `eliot settle` 使用本地快照，按 `(brief_digest,event_id,scope)` 去重并增量结算，行情修订追加版本，保留最初观察。`eliot support-matrix` 列出资产类型、周期和事件，传入训练汇总后显示该汇总中的支持状态和原因。 |
+| 历史与自选 | `elliottwaver history` 查询已发布摘要，原摘要记录上次判断及变化，区分 `CONFIG_CHANGED`、`DATA_REVISED` 和 `NOT_COMPARABLE`。`elliottwaver watchlist` 批量生成 JSON 摘要，支持有限重试、有界并发、模型注册表回退和单标的失败隔离。 |
+| 结算与支持矩阵 | `elliottwaver settle` 使用本地快照，按 `(brief_digest,event_id,scope)` 去重并增量结算，行情修订追加版本，保留最初观察。`elliottwaver support-matrix` 列出资产类型、周期和事件，传入训练汇总后显示该汇总中的支持状态和原因。 |
 | 离线评估 | `scripts/evaluate_briefs.py` 输出日线/周线 decisions/events/summary/manifest；支持收盘区间、确认或推进先达、目标先达事件；summary 按标的、资产类型、周期、浪型和期限分解，并包含已确认拐点改写数、极值至确认 K 线数、相邻主选切换率、预测覆盖、确认延迟和搜索截断；`scripts/merge_evaluations.py` 可合并单样本分批结果 |
 | 多浪级引擎 | `engine_profile=hierarchical_v1` 显式启用 `hierarchical-rules-v3`。递归子浪选择按实际可证明的深度排序，历史日周关系也遵循请求深度。摘要包含日周关联与历史触发证据，评估使用正式摘要的首选结构键和比较模式。 [修复复验](reviews/2026-11-21-wave-engine-followup-repair.md) |
 | 概率研究 | 30 只沪深个股和 7 个指数的 2026 留出检验中，8 项日线事件均未获批。修正训练入口后，指数 20 日目标先达的价格基线对照与校准均未过。2023–2025 开发期已完成滚动校准、目标几何和失效审计；C 按 A 参照入选，但相对含目标几何的价格基线无增量，波浪结构增益未建立。没有新增独立前向留出，状态为研究完成、待新留出，未注册模型。[留出重算](reviews/2026-11-20-cn-index-probability-recheck.md) · [开发期验收](reviews/2026-11-19-cn-index-target-accuracy.md) · [前向验收](protocols/cn-index-target-forward.md) |
@@ -32,7 +32,7 @@
 
 ## 验证结果
 
-以下为 `v0.5.1` 发布验收结果。
+以下为 `v0.5.1` 发布验收结果；0.6.0 为更名版本，功能与 0.5.1 相同。
 
 ```text
 python -m pytest tests -q              524 passed
@@ -43,7 +43,7 @@ pip check                             No broken requirements found
 
 测试在 Python 3.12 / Linux 环境执行。告警来自 `exchange_calendars` 调用 NumPy 的 timedelta 弃用接口。实际安装版本记录在 [requirements.lock](../requirements.lock)。
 
-安装 0.5.1 wheel 后复验 `eliot --version`、中美市场的 `eliot doctor` 和离线演示。
+0.5.1 wheel 的复验使用当时的 `eliot` 命令；0.6.0 更名后对应命令为 `elliottwaver --version`、`elliottwaver doctor` 和 `elliottwaver demo`。
 
 ### v0.5.0 发布验收
 
@@ -57,7 +57,7 @@ pip check                             No broken requirements found
 
 测试包含手算 ATR/EMA、拆股因子方向、非交易日因子、同价不同日期保留、拐点确认前不可用、逐前缀不变性、涨跌两向的浪 5 百分比失效位和三角形 E 浪净回撤、影线合并违规、缺特征不增权、父级包含/精确腿/进行中父腿、5-3-5 子浪认证、区间外拐点不影响深度 2、分页与权限错误、快照篡改、导出中断、CLI 离线一致、事件同根歧义、时区等价、集合竞价、指数路由/无复权 provider/日线→周线/快照往返/分钟线拒绝及各主周期。美股另覆盖资产代码错配、分页尾页、raw/all 对齐、DST、假期、提前收盘、完整周、内部缺日、SIP/IEX 分缓存、离线入口和回放。
 
-真实行情验证使用 **2026-11-16 已完成行情**。下列统计来自 v3 的[个股多周期](validation_20261118_ext5_v3.json)、[沪深京指数](validation_20261118_cn_index_v3.json)和[长历史](validation_20261118_long_history_v3.json)记录。当前 v6 的三角形结构认证、复权修复和同批小回放见[修复与决策](reviews/2026-11-18-cn-triangle-classic-v6.md)。原始快照和大图保存在本地 `.cache/live-smoke/`、`.cache/eliotbot/` 和 `reports/`。
+真实行情验证使用 **2026-11-16 已完成行情**。下列统计来自 v3 的[个股多周期](validation_20261118_ext5_v3.json)、[沪深京指数](validation_20261118_cn_index_v3.json)和[长历史](validation_20261118_long_history_v3.json)记录。当前 v6 的三角形结构认证、复权修复和同批小回放见[修复与决策](reviews/2026-11-18-cn-triangle-classic-v6.md)。原始快照和大图保存在本地 `.cache/live-smoke/`、`.cache/elliottwaver/` 和 `reports/`。
 
 | 股票 / 周期 | 根数 | 输入起始 | 数据截止 | 分析状态 |
 | --- | ---: | --- | --- | --- |
@@ -131,7 +131,7 @@ pip check                             No broken requirements found
 
 ## 复现
 
-首先使用 `eliot data fetch` 在本地保存快照。然后可用以下脚本对明确指定的快照重新生成证据和报告，全程不联网：
+首先使用 `elliottwaver data fetch` 在本地保存快照。然后可用以下脚本对明确指定的快照重新生成证据和报告，全程不联网：
 
 ```bash
 .venv/bin/python scripts/validate_snapshots.py \

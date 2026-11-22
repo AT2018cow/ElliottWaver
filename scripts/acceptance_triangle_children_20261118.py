@@ -8,15 +8,15 @@ from pathlib import Path
 
 from acceptance_parent_subwave_20261118 import candidate, fixture
 
-from eliotbot import ENGINE_VERSION
-from eliotbot.engine.indicators import calculate
-from eliotbot.engine.parents import attach_parent_context
-from eliotbot.engine.rules import check_pattern
-from eliotbot.engine.scorer import score
-from eliotbot.engine.subwaves import certify_subwaves
-from eliotbot.engine.templates import TRIANGLE, allowed_child_templates
-from eliotbot.engine.zigzag import ZigZagResult
-from eliotbot.util import atomic_write, digest
+from elliottwaver import ENGINE_VERSION
+from elliottwaver.engine.indicators import calculate
+from elliottwaver.engine.parents import attach_parent_context
+from elliottwaver.engine.rules import check_pattern
+from elliottwaver.engine.scorer import score
+from elliottwaver.engine.subwaves import certify_subwaves
+from elliottwaver.engine.templates import TRIANGLE, allowed_child_templates
+from elliottwaver.engine.zigzag import ZigZagResult
+from elliottwaver.util import atomic_write, digest
 
 OUTER = ((0, 100), (100, 180), (220, 110), (320, 166), (430, 125), (520, 154))
 INNER_E = ((430, 125), (446, 144), (460, 135), (485, 150), (500, 130), (520, 154))
@@ -93,9 +93,9 @@ def main() -> int:
         "--output", type=Path, default=Path("reports/triangle-children-review.json")
     )
     args = parser.parse_args()
-    import eliotbot
+    import elliottwaver
 
-    src = Path(eliotbot.__file__).resolve().parents[1]
+    src = Path(elliottwaver.__file__).resolve().parents[1]
     record = {
         "engine_version": ENGINE_VERSION,
         "source_sha256": digest(

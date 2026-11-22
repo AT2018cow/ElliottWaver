@@ -4,10 +4,10 @@ import argparse
 import json
 from pathlib import Path
 
-from eliotbot.config import load_settings
-from eliotbot.data.snapshots import SnapshotStore
-from eliotbot.schemas.brief import Brief
-from eliotbot.settlement import SettlementStore
+from elliottwaver.config import load_settings
+from elliottwaver.data.snapshots import SnapshotStore
+from elliottwaver.schemas.brief import Brief
+from elliottwaver.settlement import SettlementStore
 
 
 def main() -> int:

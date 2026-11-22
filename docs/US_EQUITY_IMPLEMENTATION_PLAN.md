@@ -1,4 +1,4 @@
-# EliotBot 美股日用版实施与验收计划
+# ElliottWaver 美股日用版实施与验收计划
 
 实施基线为 `v0.1.0`。首版交付是用 Alpaca 的已完成美股日线和完整周线，对上市股票及 ETF 生成可复核的艾略特波浪分析。日线默认附周线背景，报告展示起点、主备浪型、确认、硬失效、阶段退出和目标区。验收以数据身份、时点与规则是否正确为准。事件概率按现有独立研究流程处理。
 
@@ -18,12 +18,12 @@
 
 ## 当前代码与已核对的缺口
 
-下文包内 Python 路径相对于 `src/eliotbot/`。测试、脚本和文档的路径相对于仓库根目录。
+下文包内 Python 路径相对于 `src/elliottwaver/`。测试、脚本和文档的路径相对于仓库根目录。
 
 - `data/alpaca_provider.py` 已调用 Alpaca Market Data v2，显式传 `feed`、`adjustment`、`asof`、`start/end`，读取全部分页并拒绝重复 token。现有 `tests/test_alpaca_contract.py` 覆盖 raw/all 和 RTH 聚合。真实账户联调仍缺证据。
 - **已复现**资产身份错配。用假响应令 `GET /v2/assets/AAPL` 返回 `symbol=MSFT` 及 MSFT 行情，当前 `AlpacaProvider.fetch` 生成 `canonical_symbol=AAPL`、`provider_symbol=MSFT`、`identity_verified=True` 的 bundle。US-01 首先修复此路径。
 - `data/workflow.py`、`service.py` 和 `cli/main.py` 已共用取数、分析和摘要入口。`watchlist` 用 `--config` 选择美股 feed。现有工程能力不作为本轮真实美股验收的证明。
-- 可参考同类美股扫描器对目标会话与 SIP 访问截止的检查，以及提前收盘边界。EliotBot 继续复用 `exchange_calendars` 和现有 provider、快照及交易日工具。
+- 可参考同类美股扫描器对目标会话与 SIP 访问截止的检查，以及提前收盘边界。ElliottWaver 继续复用 `exchange_calendars` 和现有 provider、快照及交易日工具。
 
 ## US-01　核对资产身份和 Alpaca 响应
 
@@ -85,11 +85,11 @@ python3 -m venv .venv
 .venv/bin/python -m pytest tests -q
 .venv/bin/ruff check src tests scripts
 .venv/bin/ruff format --check src tests scripts
-.venv/bin/eliot doctor --market US
+.venv/bin/elliottwaver doctor --market US
 US_SMOKE_CONFIG=reports/us-acceptance/config.yaml
-.venv/bin/eliot data fetch AAPL --timeframe 1d --feed sip --config "$US_SMOKE_CONFIG"
-.venv/bin/eliot brief BRK.B --feed sip --config "$US_SMOKE_CONFIG" --output-dir reports/us-acceptance
-.venv/bin/eliot brief SPY --timeframe 1w --feed sip --config "$US_SMOKE_CONFIG" --output-dir reports/us-acceptance
+.venv/bin/elliottwaver data fetch AAPL --timeframe 1d --feed sip --config "$US_SMOKE_CONFIG"
+.venv/bin/elliottwaver brief BRK.B --feed sip --config "$US_SMOKE_CONFIG" --output-dir reports/us-acceptance
+.venv/bin/elliottwaver brief SPY --timeframe 1w --feed sip --config "$US_SMOKE_CONFIG" --output-dir reports/us-acceptance
 ```
 
 将 fetch 返回的 AAPL 快照 ID 交给 `data inspect`、`brief --offline --snapshot` 和同窗的 `analyze --offline`。为 AAPL、BRK.B 和 SPY 保存有效快照 ID 与 HTML 摘要。对一只标的单独请求 IEX 并保留结果或权限证据。IEX 的可用范围按实际结果标注。用手算核对一个原生日 OHLC、一个完整周 OHLC、一个带规则证据的候选、一个结果不明确的案例或冻结反例。读取已发布的事件报告时使用 `read_brief_report` 核验文件和身份。

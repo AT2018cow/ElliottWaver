@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
-from eliotbot.evaluation.decisions import merge_evaluations
+from elliottwaver.evaluation.decisions import merge_evaluations
 
 
 def main() -> int:

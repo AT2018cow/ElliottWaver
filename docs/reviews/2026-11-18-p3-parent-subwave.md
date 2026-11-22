@@ -67,7 +67,7 @@ ew-rules-v3/zigzag-v1/score-v2/subwave-v3/projection-v4/report-v4/search-v2/0.1.
 
 ```bash
 .venv/bin/python scripts/validate_snapshots.py \
-  --cache-root .cache/eliotbot \
+  --cache-root .cache/elliottwaver \
   --long-term --allow-gaps \
   --case sse_long:6f21546d3f70ccc998a0c08eccec30b56b30a70df37c31237e6ad79f29e47ec6:1w \
   --output docs/validation_20261118_long_history_v3.json \

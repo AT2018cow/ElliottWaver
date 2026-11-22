@@ -15,21 +15,21 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
-from eliotbot import ENGINE_VERSION
-from eliotbot.config import load_settings
-from eliotbot.data.snapshots import SnapshotStore
-from eliotbot.engine.indicators import calculate
-from eliotbot.engine.matcher import Candidate, SearchBudget, search
-from eliotbot.engine.parents import attach_parent_context
-from eliotbot.engine.rules import check_pattern
-from eliotbot.engine.scorer import score
-from eliotbot.engine.subwaves import certify_subwaves
-from eliotbot.engine.templates import IMPULSE, ZIGZAG, PatternTemplate
-from eliotbot.engine.zigzag import ZigZagResult
-from eliotbot.schemas.market import AnalysisRequest, Bar
-from eliotbot.schemas.wave import PivotPoint
-from eliotbot.service import AnalysisService
-from eliotbot.util import atomic_write, digest
+from elliottwaver import ENGINE_VERSION
+from elliottwaver.config import load_settings
+from elliottwaver.data.snapshots import SnapshotStore
+from elliottwaver.engine.indicators import calculate
+from elliottwaver.engine.matcher import Candidate, SearchBudget, search
+from elliottwaver.engine.parents import attach_parent_context
+from elliottwaver.engine.rules import check_pattern
+from elliottwaver.engine.scorer import score
+from elliottwaver.engine.subwaves import certify_subwaves
+from elliottwaver.engine.templates import IMPULSE, ZIGZAG, PatternTemplate
+from elliottwaver.engine.zigzag import ZigZagResult
+from elliottwaver.schemas.market import AnalysisRequest, Bar
+from elliottwaver.schemas.wave import PivotPoint
+from elliottwaver.service import AnalysisService
+from elliottwaver.util import atomic_write, digest
 
 
 def fixture(
@@ -223,7 +223,7 @@ def frozen_check() -> dict[str, Any]:
     case = next(item for item in evidence["cases"] if item["label"] == "szcomp_day")
     settings = load_settings()
     assert settings.computation_hash == evidence["config_hash"]
-    bundle = SnapshotStore(Path(".cache/eliotbot")).load(case["source_snapshot_id"])
+    bundle = SnapshotStore(Path(".cache/elliottwaver")).load(case["source_snapshot_id"])
     request = AnalysisRequest(
         symbol=case["symbol"],
         timeframe=case["timeframe"],
@@ -237,7 +237,7 @@ def frozen_check() -> dict[str, Any]:
         captured.extend(found)
         return found, budget
 
-    with patch("eliotbot.service.search", side_effect=capture):
+    with patch("elliottwaver.service.search", side_effect=capture):
         result = AnalysisService(settings).analyze_bundle(request, bundle)
     assert result.input_snapshot_id == case["analyzed_snapshot_id"]
     by_id = {item.key: item for item in captured}

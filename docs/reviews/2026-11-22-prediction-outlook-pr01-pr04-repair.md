@@ -1,6 +1,6 @@
 # 短期预测增强 PR-01 至 PR-04 修复
 
-对应[独立复验](2026-11-22-prediction-outlook-independent-recheck.md)中的四项问题。保持 `eliot brief` 的日常入口和原分析摘要契约。
+对应[独立复验](2026-11-22-prediction-outlook-independent-recheck.md)中的四项问题。保持 `elliottwaver brief` 的日常入口和原分析摘要契约。
 
 | 编号 | 修复及复验 |
 | --- | --- |

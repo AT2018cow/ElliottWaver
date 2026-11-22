@@ -11,11 +11,11 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parents[1] / "scripts"))
 from train_forecasts import train
 
-from eliotbot import ENGINE_VERSION
-from eliotbot.config import Settings
-from eliotbot.evaluation.features import FEATURE_VERSION
-from eliotbot.forecast import ModelRegistry, load_model
-from eliotbot.util import digest
+from elliottwaver import ENGINE_VERSION
+from elliottwaver.config import Settings
+from elliottwaver.evaluation.features import FEATURE_VERSION
+from elliottwaver.forecast import ModelRegistry, load_model
+from elliottwaver.util import digest
 
 
 def _write_model(path, approved_model, **options):

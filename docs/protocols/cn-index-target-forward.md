@@ -30,7 +30,7 @@ CANDIDATE=docs/protocols/cn-index-target-frozen-2026.json
   --candidate "$CANDIDATE" \
   --holdout reports/index-target-forward/evaluation \
   --output-dir reports/index-target-forward/scored
-.venv/bin/eliot support-matrix \
+.venv/bin/elliottwaver support-matrix \
   --model-summary reports/index-target-forward/scored/model.json
 ```
 

@@ -1,10 +1,10 @@
 from datetime import timedelta
 
-from eliotbot.brief import build_brief, compare_decisions
-from eliotbot.config import Settings
-from eliotbot.data.demo import demo_bundle
-from eliotbot.schemas.market import AnalysisRequest
-from eliotbot.schemas.wave import LevelCondition, WaveStructure
+from elliottwaver.brief import build_brief, compare_decisions
+from elliottwaver.config import Settings
+from elliottwaver.data.demo import demo_bundle
+from elliottwaver.schemas.market import AnalysisRequest
+from elliottwaver.schemas.wave import LevelCondition, WaveStructure
 
 
 def _run(*, advanced=True):

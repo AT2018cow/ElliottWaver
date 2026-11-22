@@ -2,10 +2,10 @@ from datetime import timedelta
 
 import pytest
 
-from eliotbot.data.snapshots import SnapshotStore
-from eliotbot.errors import DataError, InputError
-from eliotbot.schemas.market import AnalysisRequest
-from eliotbot.service import AnalysisService
+from elliottwaver.data.snapshots import SnapshotStore
+from elliottwaver.errors import DataError, InputError
+from elliottwaver.schemas.market import AnalysisRequest
+from elliottwaver.service import AnalysisService
 
 
 def test_parquet_snapshot_roundtrip_and_analysis_parity(tmp_path, bundle):

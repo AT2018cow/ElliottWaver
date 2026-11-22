@@ -5,26 +5,26 @@ from datetime import timedelta
 import pytest
 from typer.testing import CliRunner
 
-from eliotbot.brief import build_brief
-from eliotbot.cli.main import app
-from eliotbot.config import Settings
-from eliotbot.data.adjustment import adjust_to_basis
-from eliotbot.data.demo import demo_bundle
-from eliotbot.data.periods import as_weekly
-from eliotbot.data.snapshots import SnapshotStore
-from eliotbot.engine.indicators import calculate
-from eliotbot.errors import DataError
-from eliotbot.evaluation.decisions import _decision_bars
-from eliotbot.evaluation.features import decision_features
-from eliotbot.evaluation.outcomes import close_band, first_touch, outcome_window
-from eliotbot.forecast import ModelRegistry
-from eliotbot.history import HistoryStore
-from eliotbot.schemas.market import AnalysisRequest, FactorPoint
-from eliotbot.schemas.wave import LevelCondition
-from eliotbot.service import AnalysisService, prepare_bundle
-from eliotbot.settlement import SettlementStore
-from eliotbot.util import digest
-from eliotbot.visualization.brief_formatter import publish_brief
+from elliottwaver.brief import build_brief
+from elliottwaver.cli.main import app
+from elliottwaver.config import Settings
+from elliottwaver.data.adjustment import adjust_to_basis
+from elliottwaver.data.demo import demo_bundle
+from elliottwaver.data.periods import as_weekly
+from elliottwaver.data.snapshots import SnapshotStore
+from elliottwaver.engine.indicators import calculate
+from elliottwaver.errors import DataError
+from elliottwaver.evaluation.decisions import _decision_bars
+from elliottwaver.evaluation.features import decision_features
+from elliottwaver.evaluation.outcomes import close_band, first_touch, outcome_window
+from elliottwaver.forecast import ModelRegistry
+from elliottwaver.history import HistoryStore
+from elliottwaver.schemas.market import AnalysisRequest, FactorPoint
+from elliottwaver.schemas.wave import LevelCondition
+from elliottwaver.service import AnalysisService, prepare_bundle
+from elliottwaver.settlement import SettlementStore
+from elliottwaver.util import digest
+from elliottwaver.visualization.brief_formatter import publish_brief
 
 
 def _request(bundle, day=None, **kw):
@@ -285,7 +285,7 @@ def test_features_use_all_scenarios_regardless_of_top_k_and_anchor_details(bundl
 def test_settlement_binds_probabilities_to_issuing_candidate(bundle, tmp_path):
     from dataclasses import replace
 
-    from eliotbot.schemas.brief import BriefForecast
+    from elliottwaver.schemas.brief import BriefForecast
 
     run = build_brief(_request(bundle, bundle.bars[-25]), bundle, Settings())
     primary, alternate = run.brief.cards[:2]

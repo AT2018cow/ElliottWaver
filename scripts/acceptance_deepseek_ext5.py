@@ -12,21 +12,21 @@ import subprocess
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from eliotbot import ENGINE_VERSION
-from eliotbot.config import load_settings
-from eliotbot.data.demo import demo_bundle
-from eliotbot.data.snapshots import SnapshotStore
-from eliotbot.engine.indicators import calculate
-from eliotbot.engine.matcher import Candidate
-from eliotbot.engine.projector import project
-from eliotbot.engine.rules import check_pattern
-from eliotbot.engine.scorer import score
-from eliotbot.engine.templates import IMPULSE, ZIGZAG, PatternTemplate
-from eliotbot.schemas.market import AnalysisRequest, Bar
-from eliotbot.schemas.wave import PivotPoint
-from eliotbot.service import AnalysisService
-from eliotbot.util import atomic_write, canonical_json, digest
-from eliotbot.visualization.report_formatter import markdown_report
+from elliottwaver import ENGINE_VERSION
+from elliottwaver.config import load_settings
+from elliottwaver.data.demo import demo_bundle
+from elliottwaver.data.snapshots import SnapshotStore
+from elliottwaver.engine.indicators import calculate
+from elliottwaver.engine.matcher import Candidate
+from elliottwaver.engine.projector import project
+from elliottwaver.engine.rules import check_pattern
+from elliottwaver.engine.scorer import score
+from elliottwaver.engine.templates import IMPULSE, ZIGZAG, PatternTemplate
+from elliottwaver.schemas.market import AnalysisRequest, Bar
+from elliottwaver.schemas.wave import PivotPoint
+from elliottwaver.service import AnalysisService
+from elliottwaver.util import atomic_write, canonical_json, digest
+from elliottwaver.visualization.report_formatter import markdown_report
 
 
 def fixture(
@@ -104,6 +104,24 @@ def root_commit() -> str:
     return subprocess.check_output(
         ["git", "rev-list", "--max-parents=0", "HEAD"], text=True
     ).strip()
+
+
+def baseline_path(baseline: str, relative: str) -> tuple[str, str]:
+    """Find a source path and package name in the baseline tree across renames."""
+    packages = subprocess.check_output(
+        ["git", "ls-tree", "--name-only", f"{baseline}:src"], text=True
+    ).splitlines()
+    for package in packages:
+        path = f"src/{package}/{relative}"
+        probe = subprocess.run(
+            ["git", "cat-file", "-e", f"{baseline}:{path}"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        if probe.returncode == 0:
+            return path, package
+    raise FileNotFoundError(f"baseline source not found: {relative}")
 
 
 def run(output: Path, validation: Path) -> int:
@@ -371,9 +389,11 @@ def run(output: Path, validation: Path) -> int:
     # Record the policy change separately; consistency with v2 is not proof that
     # v2 is statistically better, or that it implements the original v1 table.
     baseline_namespace = {"__name__": "ext5_baseline_scorer"}
-    baseline_source = subprocess.check_output(
-        ["git", "show", f"{baseline}:src/eliotbot/engine/scorer.py"]
-    ).decode()
+    scorer_path, baseline_package = baseline_path(baseline, "engine/scorer.py")
+    baseline_source = subprocess.check_output(["git", "show", f"{baseline}:{scorer_path}"]).decode()
+    # The root commit predates the 0.6.0 package rename; its imports still use
+    # the historical package name. The imported contracts are otherwise identical.
+    baseline_source = baseline_source.replace(f"from {baseline_package}", "from elliottwaver")
     exec(compile(baseline_source, f"{baseline}:scorer.py", "exec"), baseline_namespace)
     policy_bars, policy_candidate = fixture([100, 120, 112, 146, 137.976, 170.336], 1)
     policy_indicators = calculate(policy_bars)
@@ -409,7 +429,9 @@ def run(output: Path, validation: Path) -> int:
     names = [
         name
         for name in names
-        if not name.startswith("docs/reviews/") and name != "scripts/acceptance_deepseek_ext5.py"
+        if Path(name).is_file()
+        and not name.startswith("docs/reviews/")
+        and name != "scripts/acceptance_deepseek_ext5.py"
     ]
     names.append("docs/validation_20261117_ext5.json")
     names.append(str(validation))

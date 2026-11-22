@@ -14,7 +14,7 @@ PE-5 采用“正式记录 INSUFFICIENT_EVIDENCE + 用真实评分模型走 brie
 使用与训练一致的配置运行正式入口：
 
 ```bash
-.venv/bin/eliot brief 600036.SH --offline \
+.venv/bin/elliottwaver brief 600036.SH --offline \
   --snapshot b2243746e0528404e410da64bb9d44fb261761a393853f97aebc240a6eb79e81 \
   --config <matching-cn-config> \
   --model reports/prediction/outlook/review-score3-cn-target/model.json \

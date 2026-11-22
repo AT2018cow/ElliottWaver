@@ -5,14 +5,14 @@ from zoneinfo import ZoneInfo
 
 from typer.testing import CliRunner
 
-from eliotbot.cli.main import app
-from eliotbot.config import Settings
-from eliotbot.data.calendar import load_calendar
-from eliotbot.data.periods import expected_starts
-from eliotbot.data.router import route_symbol
-from eliotbot.data.snapshots import SnapshotStore
-from eliotbot.schemas.market import AnalysisRequest
-from eliotbot.service import AnalysisService
+from elliottwaver.cli.main import app
+from elliottwaver.config import Settings
+from elliottwaver.data.calendar import load_calendar
+from elliottwaver.data.periods import expected_starts
+from elliottwaver.data.router import route_symbol
+from elliottwaver.data.snapshots import SnapshotStore
+from elliottwaver.schemas.market import AnalysisRequest
+from elliottwaver.service import AnalysisService
 
 
 def test_sina_1m_auction_excludes_only_two_noncontinuous_slots():
@@ -68,7 +68,7 @@ def test_analyze_explicit_zero_overrides_configured_subwave_depth(tmp_path, monk
     monkeypatch.chdir(tmp_path)
     config = tmp_path / "analysis.yaml"
     config.write_text("search:\n  max_subwave_depth: 1\n")
-    source = SnapshotStore(tmp_path / ".cache/eliotbot").save(bundle)
+    source = SnapshotStore(tmp_path / ".cache/elliottwaver").save(bundle)
     args = [
         "analyze",
         "AAPL",
@@ -99,7 +99,7 @@ def test_allow_gaps_replay_matches_cli_analysis_and_records_policy(tmp_path, mon
             "raw_bars": bundle.raw_bars[:210] + bundle.raw_bars[211:],
         }
     )
-    source = SnapshotStore(tmp_path / ".cache/eliotbot").save(gapped)
+    source = SnapshotStore(tmp_path / ".cache/elliottwaver").save(gapped)
     last = gapped.bars[-1]
     runner = CliRunner()
     analyzed = runner.invoke(

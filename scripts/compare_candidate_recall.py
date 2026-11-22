@@ -20,10 +20,10 @@ sys.path.insert(0, str(ROOT / "tests"))
 from conftest import make_pivots  # noqa: E402
 from test_exhaustive_search import _reference  # noqa: E402
 
-from eliotbot.config import SearchConfig  # noqa: E402
-from eliotbot.engine.matcher import search  # noqa: E402
-from eliotbot.engine.zigzag import ZigZagResult  # noqa: E402
-from eliotbot.util import canonical_json  # noqa: E402
+from elliottwaver.config import SearchConfig  # noqa: E402
+from elliottwaver.engine.matcher import search  # noqa: E402
+from elliottwaver.engine.zigzag import ZigZagResult  # noqa: E402
+from elliottwaver.util import canonical_json  # noqa: E402
 
 _PIVOTS = [100, 120, 110, 150, 132, 160, 145, 175, 158, 190, 172, 205, 188, 220]
 

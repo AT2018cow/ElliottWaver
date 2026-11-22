@@ -2,9 +2,9 @@ from datetime import UTC, date, datetime, time, timedelta
 
 import pytest
 
-from eliotbot.data.demo import demo_bundle
-from eliotbot.schemas.market import Bar
-from eliotbot.schemas.wave import PivotPoint
+from elliottwaver.data.demo import demo_bundle
+from elliottwaver.schemas.market import Bar
+from elliottwaver.schemas.wave import PivotPoint
 
 
 @pytest.fixture
@@ -50,10 +50,10 @@ def make_pivots(prices, *, developing=False):
 @pytest.fixture
 def approved_model():
     """Return a synthetic model with complete release metadata for registry tests."""
-    from eliotbot import ENGINE_VERSION
-    from eliotbot.config import Settings
-    from eliotbot.evaluation.features import FEATURE_VERSION, event_feature_order
-    from eliotbot.util import digest
+    from elliottwaver import ENGINE_VERSION
+    from elliottwaver.config import Settings
+    from elliottwaver.evaluation.features import FEATURE_VERSION, event_feature_order
+    from elliottwaver.util import digest
 
     def build(*, name="fixture", engine=ENGINE_VERSION):
         order = event_feature_order("CLOSE_BAND_5D_V1")

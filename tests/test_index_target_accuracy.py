@@ -15,14 +15,14 @@ import train_forecasts
 from compare_index_target import _label_available, _rolling_states
 from train_forecasts import _label
 
-from eliotbot.evaluation.calibration import rolling_logit_offset
-from eliotbot.evaluation.features import (
+from elliottwaver.evaluation.calibration import rolling_logit_offset
+from elliottwaver.evaluation.features import (
     TARGET_FEATURES,
     event_feature_order,
     feature_vector,
     target_geometry,
 )
-from eliotbot.schemas.wave import PriceZone
+from elliottwaver.schemas.wave import PriceZone
 
 
 def _scenario(low=100.0, high=104.0):
@@ -240,8 +240,8 @@ def test_compare_rejects_mismatched_versions_or_provenance(
 
 
 def test_main_training_pipeline_preserves_candidate_geometry(monkeypatch, tmp_path):
-    from eliotbot import ENGINE_VERSION
-    from eliotbot.config import Settings
+    from elliottwaver import ENGINE_VERSION
+    from elliottwaver.config import Settings
 
     event_id = "TARGET_FIRST_20D_V1"
     snapshot = "a" * 64
@@ -304,7 +304,7 @@ def test_main_training_pipeline_preserves_candidate_geometry(monkeypatch, tmp_pa
 
 
 def test_audit_replays_exact_wave_five_and_counts_only_decided_outcomes(monkeypatch, tmp_path):
-    from eliotbot.evaluation import decisions as evaluation
+    from elliottwaver.evaluation import decisions as evaluation
 
     decision = {
         "symbol": "000300.SH",
@@ -548,11 +548,11 @@ def test_rolling_offset_is_case_date_level_not_row_level():
 
 
 def test_evaluation_manifest_records_feature_version_and_target_columns(tmp_path):
-    from eliotbot.data.demo import demo_bundle
-    from eliotbot.data.snapshots import SnapshotStore
-    from eliotbot.errors import InputError
-    from eliotbot.evaluation.decisions import evaluate_protocol, read_evaluation_manifest
-    from eliotbot.evaluation.features import event_feature_order
+    from elliottwaver.data.demo import demo_bundle
+    from elliottwaver.data.snapshots import SnapshotStore
+    from elliottwaver.errors import InputError
+    from elliottwaver.evaluation.decisions import evaluate_protocol, read_evaluation_manifest
+    from elliottwaver.evaluation.features import event_feature_order
 
     bundle = demo_bundle()
     snapshot = SnapshotStore(tmp_path / "cache").save(bundle)

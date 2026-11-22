@@ -10,12 +10,12 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
-from eliotbot import ENGINE_VERSION
-from eliotbot.config import Settings
-from eliotbot.evaluation.calibration import binary_logit_affine
-from eliotbot.evaluation.features import FEATURE_VERSION, event_feature_order
-from eliotbot.forecast import ModelRegistry, load_model
-from eliotbot.util import canonical_json, digest
+from elliottwaver import ENGINE_VERSION
+from elliottwaver.config import Settings
+from elliottwaver.evaluation.calibration import binary_logit_affine
+from elliottwaver.evaluation.features import FEATURE_VERSION, event_feature_order
+from elliottwaver.forecast import ModelRegistry, load_model
+from elliottwaver.util import canonical_json, digest
 from scripts.review_wave_cases import _pattern_checks
 from scripts.train_forecasts import DEFAULT_RELEASE
 

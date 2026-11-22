@@ -28,7 +28,7 @@ V3 的两项模型损失低于 V2。V3 价格组也加入相同的目标几何�
 
 ## 程序验证
 
-305 项测试通过，Ruff、依赖和差异检查通过。使用 `000333.SZ` 和 `000016.SH` 的冻结行情跑 `eliot brief --offline`，均返回 `OK`。默认支持矩阵显示 `UNCALIBRATED`。
+305 项测试通过，Ruff、依赖和差异检查通过。使用 `000333.SZ` 和 `000016.SH` 的冻结行情跑 `elliottwaver brief --offline`，均返回 `OK`。默认支持矩阵显示 `UNCALIBRATED`。
 
 ## 复现
 

@@ -12,31 +12,31 @@ import pyarrow.parquet as pq
 import pytest
 from conftest import make_bar, make_pivots
 
-from eliotbot.brief import build_brief
-from eliotbot.cli.console_render import render_outlook
-from eliotbot.config import Settings
-from eliotbot.data.demo import demo_bundle
-from eliotbot.data.periods import as_weekly
-from eliotbot.engine.matcher import Candidate
-from eliotbot.engine.projector import _filter_zones, project, project_with_gates
-from eliotbot.engine.templates import FLAT, IMPULSE, TRIANGLE, WXY, ZIGZAG
-from eliotbot.evaluation.events import EVENT_SPECS, condition_hit
-from eliotbot.evaluation.features import event_feature_order
-from eliotbot.evaluation.outcomes import (
+from elliottwaver.brief import build_brief
+from elliottwaver.cli.console_render import render_outlook
+from elliottwaver.config import Settings
+from elliottwaver.data.demo import demo_bundle
+from elliottwaver.data.periods import as_weekly
+from elliottwaver.engine.matcher import Candidate
+from elliottwaver.engine.projector import _filter_zones, project, project_with_gates
+from elliottwaver.engine.templates import FLAT, IMPULSE, TRIANGLE, WXY, ZIGZAG
+from elliottwaver.evaluation.events import EVENT_SPECS, condition_hit
+from elliottwaver.evaluation.features import event_feature_order
+from elliottwaver.evaluation.outcomes import (
     OutcomeWindow,
     close_band,
     evaluate_outlook_event,
     outlook_window,
 )
-from eliotbot.forecast import ModelRegistry, validate_model
-from eliotbot.outlook import _case, _periods, build_outlook
-from eliotbot.schemas.market import AnalysisRequest
-from eliotbot.schemas.outlook import OutlookCase, OutlookCondition, OutlookPeriod
-from eliotbot.schemas.wave import LevelCondition, PriceZone
-from eliotbot.service import engine_rules_version
-from eliotbot.settlement import event_specs
-from eliotbot.util import digest
-from eliotbot.visualization.brief_text import condition_text, price_text
+from elliottwaver.forecast import ModelRegistry, validate_model
+from elliottwaver.outlook import _case, _periods, build_outlook
+from elliottwaver.schemas.market import AnalysisRequest
+from elliottwaver.schemas.outlook import OutlookCase, OutlookCondition, OutlookPeriod
+from elliottwaver.schemas.wave import LevelCondition, PriceZone
+from elliottwaver.service import engine_rules_version
+from elliottwaver.settlement import event_specs
+from elliottwaver.util import digest
+from elliottwaver.visualization.brief_text import condition_text, price_text
 from scripts import train_forecasts
 
 _AS_OF = datetime(2026, 1, 1, tzinfo=UTC)
@@ -1082,8 +1082,8 @@ def test_brief_keeps_an_old_model_alongside_new_outlook_models(approved_model):
 
 
 def test_replay_event_features_read_the_frozen_window_state():
-    from eliotbot.engine.indicators import calculate
-    from eliotbot.evaluation.decisions import _event_rows
+    from elliottwaver.engine.indicators import calculate
+    from elliottwaver.evaluation.decisions import _event_rows
 
     bundle = demo_bundle("AAPL")
     run = build_brief(
@@ -1127,7 +1127,7 @@ def test_build_brief_resolves_window_state_before_forecasting(monkeypatch):
         captured.update(kwargs)
         return ()
 
-    monkeypatch.setattr("eliotbot.brief.forecasts_for_brief", capture)
+    monkeypatch.setattr("elliottwaver.brief.forecasts_for_brief", capture)
     bundle = demo_bundle("AAPL")
     run = build_brief(
         AnalysisRequest(symbol="AAPL", as_of=bundle.as_of),

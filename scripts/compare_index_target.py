@@ -22,11 +22,11 @@ from train_forecasts import (
     forecast_evidence,
 )
 
-from eliotbot.data.snapshots import SnapshotStore
-from eliotbot.evaluation.calibration import rolling_logit_offset
-from eliotbot.evaluation.decisions import read_evaluation_manifest
-from eliotbot.evaluation.features import TARGET_FEATURES, event_feature_order
-from eliotbot.util import atomic_write, canonical_json, digest
+from elliottwaver.data.snapshots import SnapshotStore
+from elliottwaver.evaluation.calibration import rolling_logit_offset
+from elliottwaver.evaluation.decisions import read_evaluation_manifest
+from elliottwaver.evaluation.features import TARGET_FEATURES, event_feature_order
+from elliottwaver.util import atomic_write, canonical_json, digest
 
 START = date(2023, 1, 1)
 DEVELOPMENT_END = date(2025, 12, 31)
@@ -199,7 +199,7 @@ def _load_target_rows(directory, manifest):
         for sample in protocol["samples"]
         if sample["symbol"] in symbols
     }
-    store = SnapshotStore(Path(protocol.get("cache_root", ".cache/eliotbot")))
+    store = SnapshotStore(Path(protocol.get("cache_root", ".cache/elliottwaver")))
     due_times = {}
     rows = {}
     all_events = {}

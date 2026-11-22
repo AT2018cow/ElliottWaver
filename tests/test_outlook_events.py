@@ -2,10 +2,10 @@ from datetime import UTC, date, datetime
 
 from conftest import make_bar
 
-from eliotbot.evaluation.events import EVENT_SPECS
-from eliotbot.evaluation.outcomes import OutcomeWindow, evaluate_outlook_event
-from eliotbot.schemas.outlook import OutlookCase, OutlookCondition
-from eliotbot.schemas.wave import LevelCondition, PriceZone
+from elliottwaver.evaluation.events import EVENT_SPECS
+from elliottwaver.evaluation.outcomes import OutcomeWindow, evaluate_outlook_event
+from elliottwaver.schemas.outlook import OutlookCase, OutlookCondition
+from elliottwaver.schemas.wave import LevelCondition, PriceZone
 
 _AS_OF = datetime(2026, 1, 1, tzinfo=UTC)
 

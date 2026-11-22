@@ -4,32 +4,32 @@ from dataclasses import replace
 import pyarrow.parquet as pq
 import pytest
 
-from eliotbot.brief import _select_cards, attach_previous, build_brief
-from eliotbot.config import Settings
-from eliotbot.data.demo import demo_bundle
-from eliotbot.data.snapshots import SnapshotStore
-from eliotbot.engine.indicators import calculate
-from eliotbot.errors import InputError
-from eliotbot.evaluation.decisions import (
+from elliottwaver.brief import _select_cards, attach_previous, build_brief
+from elliottwaver.config import Settings
+from elliottwaver.data.demo import demo_bundle
+from elliottwaver.data.snapshots import SnapshotStore
+from elliottwaver.engine.indicators import calculate
+from elliottwaver.errors import InputError
+from elliottwaver.evaluation.decisions import (
     _confirmed_pivots,
     _pivot_rewrite_counts,
     _structure_stats,
     evaluate_protocol,
     merge_evaluations,
 )
-from eliotbot.forecast import ModelRegistry
-from eliotbot.schemas.market import AnalysisRequest
-from eliotbot.schemas.wave import LevelCondition
-from eliotbot.service import prepare_bundle
+from elliottwaver.forecast import ModelRegistry
+from elliottwaver.schemas.market import AnalysisRequest
+from elliottwaver.schemas.wave import LevelCondition
+from elliottwaver.service import prepare_bundle
 
 
 def test_evaluate_protocol_writes_decisions_events_and_summary(bundle, tmp_path):
     request = AnalysisRequest(symbol="AAPL", as_of=bundle.as_of)
     prepared = prepare_bundle(request, bundle)
-    snapshot_id = SnapshotStore(tmp_path / ".cache/eliotbot").save(prepared)
+    snapshot_id = SnapshotStore(tmp_path / ".cache/elliottwaver").save(prepared)
     protocol = {
         "protocol_version": "1",
-        "cache_root": str(tmp_path / ".cache/eliotbot"),
+        "cache_root": str(tmp_path / ".cache/elliottwaver"),
         "samples": [
             {
                 "symbol": "AAPL",
@@ -195,7 +195,7 @@ def test_replay_uses_published_comparison_mode_and_primary_key(
         built.append(replace(run, brief=brief, result=result))
         return built[-1]
 
-    monkeypatch.setattr("eliotbot.evaluation.decisions.build_brief", control_count)
+    monkeypatch.setattr("elliottwaver.evaluation.decisions.build_brief", control_count)
     output = tmp_path / "evaluation"
     evaluate_protocol(protocol_path, output)
     first, second = [
@@ -345,11 +345,11 @@ def test_protocol_rejects_invalid_snapshot_id(tmp_path):
 def test_protocol_id_stabilizes_decision_ids_across_subsets(bundle, tmp_path):
     request = AnalysisRequest(symbol="AAPL", as_of=bundle.as_of)
     prepared = prepare_bundle(request, bundle)
-    snapshot_id = SnapshotStore(tmp_path / ".cache/eliotbot").save(prepared)
+    snapshot_id = SnapshotStore(tmp_path / ".cache/elliottwaver").save(prepared)
     base = {
         "protocol_version": "1",
         "protocol_id": "stable-protocol",
-        "cache_root": str(tmp_path / ".cache/eliotbot"),
+        "cache_root": str(tmp_path / ".cache/elliottwaver"),
         "samples": [
             {
                 "symbol": "AAPL",
@@ -395,10 +395,10 @@ def _write_close_model(path, approved_model):
 
 
 def _model_protocol(bundle, tmp_path):
-    snapshot_id = SnapshotStore(tmp_path / ".cache/eliotbot").save(bundle)
+    snapshot_id = SnapshotStore(tmp_path / ".cache/elliottwaver").save(bundle)
     protocol = {
         "protocol_version": "1",
-        "cache_root": str(tmp_path / ".cache/eliotbot"),
+        "cache_root": str(tmp_path / ".cache/elliottwaver"),
         "samples": [
             {
                 "symbol": "AAPL",
@@ -497,10 +497,10 @@ def test_forced_model_without_approval_time_is_fully_retrospective(
 
 def test_evaluate_weekly_grid_and_breakdowns(tmp_path):
     bundle = demo_bundle(timeframe="1w")
-    snapshot_id = SnapshotStore(tmp_path / ".cache/eliotbot").save(bundle)
+    snapshot_id = SnapshotStore(tmp_path / ".cache/elliottwaver").save(bundle)
     protocol = {
         "protocol_version": "1",
-        "cache_root": str(tmp_path / ".cache/eliotbot"),
+        "cache_root": str(tmp_path / ".cache/elliottwaver"),
         "samples": [
             {
                 "symbol": "AAPL",

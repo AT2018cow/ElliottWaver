@@ -2,19 +2,19 @@ from datetime import UTC, date, datetime, timedelta
 
 import pytest
 
-from eliotbot.config import DataConfig
-from eliotbot.data.alpaca_provider import AlpacaProvider
-from eliotbot.data.calendar import (
+from elliottwaver.config import DataConfig
+from elliottwaver.data.alpaca_provider import AlpacaProvider
+from elliottwaver.data.calendar import (
     Session,
     TradingCalendar,
     bar_window,
     latest_analyzable,
     load_calendar,
 )
-from eliotbot.data.http import HTTPClient
-from eliotbot.data.resample import weekly_bars
-from eliotbot.data.router import route_symbol
-from eliotbot.errors import SourceError
+from elliottwaver.data.http import HTTPClient
+from elliottwaver.data.resample import weekly_bars
+from elliottwaver.data.router import route_symbol
+from elliottwaver.errors import SourceError
 
 
 class FakeHTTP:

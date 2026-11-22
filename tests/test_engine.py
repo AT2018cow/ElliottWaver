@@ -2,20 +2,20 @@ import numpy as np
 import pytest
 from conftest import make_bar, make_pivots
 
-from eliotbot.config import SearchConfig, Settings
-from eliotbot.engine.degree import wave_degree
-from eliotbot.engine.indicators import calculate, ema
-from eliotbot.engine.matcher import Candidate, search
-from eliotbot.engine.parents import attach_parent_context
-from eliotbot.engine.projector import project
-from eliotbot.engine.rules import check_pattern
-from eliotbot.engine.scorer import score, weight_scenarios
-from eliotbot.engine.subwaves import (
+from elliottwaver.config import SearchConfig, Settings
+from elliottwaver.engine.degree import wave_degree
+from elliottwaver.engine.indicators import calculate, ema
+from elliottwaver.engine.matcher import Candidate, search
+from elliottwaver.engine.parents import attach_parent_context
+from elliottwaver.engine.projector import project
+from elliottwaver.engine.rules import check_pattern
+from elliottwaver.engine.scorer import score, weight_scenarios
+from elliottwaver.engine.subwaves import (
     SubwaveCertification,
     certify_subwaves,
     classify_triangle_legs,
 )
-from eliotbot.engine.templates import (
+from elliottwaver.engine.templates import (
     DIAGONAL,
     FLAT,
     IMPULSE,
@@ -24,11 +24,11 @@ from eliotbot.engine.templates import (
     ZIGZAG,
     allowed_child_templates,
 )
-from eliotbot.engine.zigzag import ZigZagResult, extract
-from eliotbot.evaluation.events import condition_hit
-from eliotbot.schemas.market import AnalysisRequest
-from eliotbot.schemas.wave import PivotPoint, SubwaveLegEvidence
-from eliotbot.service import AnalysisService
+from elliottwaver.engine.zigzag import ZigZagResult, extract
+from elliottwaver.evaluation.events import condition_hit
+from elliottwaver.schemas.market import AnalysisRequest
+from elliottwaver.schemas.wave import PivotPoint, SubwaveLegEvidence
+from elliottwaver.service import AnalysisService
 
 
 def test_indicator_initialization_is_independently_derived():
@@ -277,8 +277,8 @@ def test_unknown_scoring_profile_fails_closed():
 
 
 def test_analysis_service_passes_selected_scoring_profile(bundle, monkeypatch):
-    import eliotbot.service as service_module
-    from eliotbot.config import Settings
+    import elliottwaver.service as service_module
+    from elliottwaver.config import Settings
 
     observed = []
 
@@ -295,7 +295,7 @@ def test_analysis_service_passes_selected_scoring_profile(bundle, monkeypatch):
 
 
 def test_excluded_structure_is_reported(bundle):
-    from eliotbot.config import Settings
+    from elliottwaver.config import Settings
 
     result = AnalysisService(
         Settings(scoring={"min_quality": 99, "min_coverage": 0})
@@ -335,7 +335,7 @@ def test_deterministic_results_and_topk_mass(bundle):
 
 
 def test_search_budget_is_global_and_visible(bundle):
-    from eliotbot.config import Settings
+    from elliottwaver.config import Settings
 
     settings = Settings(search={"max_expansions": 1})
     result = AnalysisService(settings).analyze_bundle(
@@ -936,8 +936,8 @@ def test_subwave_certification_requires_impulse_in_third_wave(third_is_diagonal)
 
 
 def test_subwave_evidence_is_available_when_enabled(bundle, monkeypatch):
-    import eliotbot.service as service_module
-    from eliotbot.schemas.wave import SubwaveLegEvidence
+    import elliottwaver.service as service_module
+    from elliottwaver.schemas.wave import SubwaveLegEvidence
 
     monkeypatch.setattr(
         service_module,

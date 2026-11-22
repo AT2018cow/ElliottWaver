@@ -16,12 +16,12 @@ from label_wave_cases import (
     score_labels,
 )
 
-from eliotbot.brief import build_brief
-from eliotbot.config import Settings
-from eliotbot.data.snapshots import SnapshotStore
-from eliotbot.schemas.market import AnalysisRequest
-from eliotbot.util import digest
-from eliotbot.visualization.brief_formatter import publish_brief
+from elliottwaver.brief import build_brief
+from elliottwaver.config import Settings
+from elliottwaver.data.snapshots import SnapshotStore
+from elliottwaver.schemas.market import AnalysisRequest
+from elliottwaver.util import digest
+from elliottwaver.visualization.brief_formatter import publish_brief
 
 
 def test_export_removes_hidden_fields(tmp_path):
@@ -61,12 +61,12 @@ def test_export_brief_cases_from_published_brief(bundle, tmp_path):
     )
     reports = tmp_path / "reports"
     publish_brief(run, reports, formats=("md",))
-    SnapshotStore(tmp_path / ".cache/eliotbot").save(run.source)
+    SnapshotStore(tmp_path / ".cache/elliottwaver").save(run.source)
 
     result = export_brief_cases(
         reports,
         tmp_path / "cases.json",
-        cache_root=tmp_path / ".cache/eliotbot",
+        cache_root=tmp_path / ".cache/elliottwaver",
         bar_window=30,
         html_path=tmp_path / "blind.html",
     )
@@ -106,13 +106,13 @@ def test_export_brief_cases_dedupes_and_limits(bundle, tmp_path):
     )
     reports = tmp_path / "reports"
     path = publish_brief(run, reports, formats=("md",))
-    SnapshotStore(tmp_path / ".cache/eliotbot").save(run.source)
+    SnapshotStore(tmp_path / ".cache/elliottwaver").save(run.source)
     shutil.copytree(path, reports / "copy")
 
     result = export_brief_cases(
         reports,
         tmp_path / "cases.json",
-        cache_root=tmp_path / ".cache/eliotbot",
+        cache_root=tmp_path / ".cache/elliottwaver",
         bar_window=30,
         max_per_stratum=1,
     )
@@ -445,7 +445,7 @@ def _published_brief(bundle, tmp_path):
         check_windows=False,
     )
     path = publish_brief(run, tmp_path / "reports", formats=("md",))
-    SnapshotStore(tmp_path / ".cache/eliotbot").save(run.source)
+    SnapshotStore(tmp_path / ".cache/elliottwaver").save(run.source)
     return run, path
 
 
@@ -482,7 +482,7 @@ def test_export_includes_no_candidate_case(bundle, tmp_path):
     result = export_brief_cases(
         reports,
         tmp_path / "no-candidate.json",
-        cache_root=tmp_path / ".cache/eliotbot",
+        cache_root=tmp_path / ".cache/elliottwaver",
         bar_window=30,
     )
     case = next(item for item in result["cases"] if item["case_type"] == "NO_CANDIDATE")
@@ -512,7 +512,7 @@ def test_export_includes_excluded_structure_case(bundle, tmp_path):
     result = export_brief_cases(
         reports,
         tmp_path / "excluded.json",
-        cache_root=tmp_path / ".cache/eliotbot",
+        cache_root=tmp_path / ".cache/elliottwaver",
         bar_window=30,
     )
     case = next(
@@ -543,7 +543,7 @@ def test_export_stratifies_by_ambiguity(bundle, tmp_path):
     result = export_brief_cases(
         reports,
         tmp_path / "ambiguous.json",
-        cache_root=tmp_path / ".cache/eliotbot",
+        cache_root=tmp_path / ".cache/elliottwaver",
         bar_window=30,
     )
     cards = [item for item in result["cases"] if item["case_type"] == "CANDIDATE"]
@@ -566,17 +566,17 @@ def test_direction_labels_use_future_bars(bundle, tmp_path):
         check_windows=False,
     )
     publish_brief(run, tmp_path / "reports", formats=("md",))
-    SnapshotStore(tmp_path / ".cache/eliotbot").save(run.source)
+    SnapshotStore(tmp_path / ".cache/elliottwaver").save(run.source)
     cases = export_brief_cases(
         tmp_path / "reports",
         tmp_path / "cases.json",
-        cache_root=tmp_path / ".cache/eliotbot",
+        cache_root=tmp_path / ".cache/elliottwaver",
         bar_window=30,
     )
     result = direction_labels(
         tmp_path / "cases.json",
         tmp_path / "directions.json",
-        cache_root=tmp_path / ".cache/eliotbot",
+        cache_root=tmp_path / ".cache/elliottwaver",
         horizon=5,
     )
     assert result["cases"]

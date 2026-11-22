@@ -7,16 +7,16 @@ from datetime import date
 
 from typer.testing import CliRunner
 
-from eliotbot.brief import BriefRun, attach_previous, build_brief
-from eliotbot.cli.main import app
-from eliotbot.config import Settings
-from eliotbot.data.snapshots import SnapshotStore
-from eliotbot.errors import SourceError
-from eliotbot.history import HistoryStore, base_lineage_key, lineage_key
-from eliotbot.schemas.market import AnalysisRequest, FactorPoint
-from eliotbot.service import prepare_bundle
-from eliotbot.util import digest
-from eliotbot.visualization.brief_formatter import publish_brief
+from elliottwaver.brief import BriefRun, attach_previous, build_brief
+from elliottwaver.cli.main import app
+from elliottwaver.config import Settings
+from elliottwaver.data.snapshots import SnapshotStore
+from elliottwaver.errors import SourceError
+from elliottwaver.history import HistoryStore, base_lineage_key, lineage_key
+from elliottwaver.schemas.market import AnalysisRequest, FactorPoint
+from elliottwaver.service import prepare_bundle
+from elliottwaver.util import digest
+from elliottwaver.visualization.brief_formatter import publish_brief
 
 
 def _run(bundle):
@@ -32,7 +32,7 @@ def _run(bundle):
 def test_history_register_query_and_idempotence(bundle, tmp_path):
     run = _run(bundle)
     path = publish_brief(run, tmp_path / "reports", formats=("md",))
-    store = HistoryStore(tmp_path / ".cache/eliotbot")
+    store = HistoryStore(tmp_path / ".cache/elliottwaver")
     store.register(run.brief, path)
     store.register(run.brief, path)
 
@@ -48,7 +48,7 @@ def test_history_register_query_and_idempotence(bundle, tmp_path):
 def test_history_migrates_old_base_lineage(bundle, tmp_path):
     run = _run(bundle)
     path = publish_brief(run, tmp_path / "reports", formats=("md",))
-    root = tmp_path / ".cache/eliotbot"
+    root = tmp_path / ".cache/elliottwaver"
     root.mkdir(parents=True)
     with sqlite3.connect(root / "history.sqlite3") as db:
         db.execute(
@@ -258,7 +258,7 @@ def test_history_previous_finds_config_change(bundle, tmp_path):
         base.brief.model_copy(update={"market_asof": date(2025, 1, 2), "config_hash": "config-b"}),
         "second",
     )
-    store = HistoryStore(tmp_path / ".cache/eliotbot")
+    store = HistoryStore(tmp_path / ".cache/elliottwaver")
     store.register(first_brief, first_path)
     store.register(second_brief, second_path)
 
@@ -290,7 +290,7 @@ def test_attach_previous_missing_source_is_not_comparable(bundle):
 
 
 def test_watchlist_dedupes_and_isolates_failures(bundle, tmp_path, monkeypatch):
-    import eliotbot.cli.main as cli
+    import elliottwaver.cli.main as cli
 
     run = _run(bundle)
     output = tmp_path / "out"
@@ -319,7 +319,7 @@ def test_brief_cli_reports_config_change(bundle, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     request = AnalysisRequest(symbol="AAPL", as_of=bundle.as_of)
     prepared = prepare_bundle(request, bundle)
-    snapshot_id = SnapshotStore(tmp_path / ".cache/eliotbot").save(prepared)
+    snapshot_id = SnapshotStore(tmp_path / ".cache/elliottwaver").save(prepared)
     common = [
         "brief",
         "AAPL",
@@ -362,7 +362,7 @@ def test_brief_cli_reports_config_change(bundle, tmp_path, monkeypatch):
 
 
 def test_watchlist_retries_transient_failure(bundle, tmp_path, monkeypatch):
-    import eliotbot.cli.main as cli
+    import elliottwaver.cli.main as cli
 
     run = _run(bundle)
     output = tmp_path / "out"
@@ -399,7 +399,7 @@ def test_watchlist_retries_transient_failure(bundle, tmp_path, monkeypatch):
 
 
 def test_watchlist_passes_model_registry_to_workers(bundle, tmp_path, monkeypatch):
-    import eliotbot.cli.main as cli
+    import elliottwaver.cli.main as cli
 
     run = _run(bundle)
     output = tmp_path / "out"
@@ -431,7 +431,7 @@ def test_watchlist_passes_model_registry_to_workers(bundle, tmp_path, monkeypatc
 
 
 def test_watchlist_uses_bounded_concurrency(bundle, tmp_path, monkeypatch):
-    import eliotbot.cli.main as cli
+    import elliottwaver.cli.main as cli
 
     run = _run(bundle)
     output = tmp_path / "out"
@@ -467,7 +467,7 @@ def test_history_cli_reads_published_brief(bundle, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     run = _run(bundle)
     path = publish_brief(run, tmp_path / "reports", formats=("md",))
-    store = HistoryStore(tmp_path / ".cache/eliotbot")
+    store = HistoryStore(tmp_path / ".cache/elliottwaver")
     store.register(run.brief, path)
 
     result = CliRunner().invoke(app, ["history", "AAPL", "--json"])

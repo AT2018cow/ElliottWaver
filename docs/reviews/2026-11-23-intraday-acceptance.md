@@ -1,6 +1,6 @@
 # 小时线与分钟线验收记录
 
-日期：2026-11-23。回归基线：`v0.6.0`（`ca1dc3b`）。本轮实现提交：`8f8bb7d`（`Add intraday brief, history, settlement and evaluation support`）；后续 `e439632`（文档与旧快照兼容回归）、`fc3f844`（Massive 美股指数）、`ab47f42`（源块缓存与尾段刷新）、`c38103a`（盘中父子腿映射）和 `383a7bf`（源块刷新加固）。
+日期：2026-11-23。回归基线：`v0.6.0`（`ca1dc3b`）。本轮实现提交：`8f8bb7d`（`Add intraday brief, history, settlement and evaluation support`）；后续 `e439632`（文档与旧快照兼容回归）、`fc3f844`（Massive 美股指数）、`ab47f42`（源块缓存与尾段刷新）、`c38103a`（盘中父子腿映射）、`383a7bf`（源块刷新加固）、`9b8dcb4`（Tencent/Yahoo 免费指数源）和 `b178172`（完全免费无 Key 组合、BaoStock、可靠性处理）。
 
 范围：沪深个股、沪深主要指数、美股个股和 ETF 的 `1m/5m/15m/30m/60m`，`1h` 归一为 `60m`。原生美股指数按 IN-07 独立处理。本文区分“已离线验证”“已用真实快照验证”“因凭证或接口未取得而阻塞”。
 

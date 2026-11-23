@@ -101,6 +101,12 @@ class Provenance(Contract):
     session_profile: str
     calendar_version: str
     parser_version: str = "1"
+    source_timeframe: str = ""
+    aggregation: str = ""
+    coverage_start: date | None = None
+    coverage_end: date | None = None
+    coverage_reason: str = ""
+    asset_id: str = ""
     fetched_at: AwareDatetime
     requested_start: date
     requested_end: date
@@ -182,7 +188,22 @@ class MarketDataBundle(Contract):
 
     @property
     def snapshot_id(self) -> str:
-        return digest(self)
+        # Keep content identity stable for snapshots written before the
+        # provenance coverage fields were introduced. Default-valued new
+        # fields are omitted; non-default values still participate.
+        payload = self.model_dump(mode="json")
+        provenance = payload.get("provenance", {})
+        for key in (
+            "source_timeframe",
+            "aggregation",
+            "coverage_start",
+            "coverage_end",
+            "coverage_reason",
+            "asset_id",
+        ):
+            if not provenance.get(key):
+                provenance.pop(key, None)
+        return digest(payload)
 
 
 class AnalysisRequest(Contract):
@@ -193,6 +214,7 @@ class AnalysisRequest(Contract):
     start: date | None = None
     end: date | None = None
     anchor: date | None = None
+    anchor_at: AwareDatetime | None = None
     feed: Literal["sip", "iex"] | None = None
     top_k: int | None = Field(None, ge=1, le=20)
     allow_stale: bool = False
@@ -208,12 +230,20 @@ class AnalysisRequest(Contract):
     def normalize_period(cls, value):
         return normalize_timeframe(value)
 
+    @field_validator("anchor_at")
+    @classmethod
+    def utc_anchor(cls, value):
+        return value.astimezone(UTC) if value is not None else None
+
     @model_validator(mode="after")
     def valid_range(self):
         if self.start and self.end and self.start > self.end:
             raise ValueError("start cannot follow end")
-        if self.anchor and self.start and self.anchor < self.start:
+        anchor_day = self.anchor_at.date() if self.anchor_at else self.anchor
+        if self.anchor and self.anchor_at and self.anchor != self.anchor_at.date():
+            raise ValueError("anchor date and timestamp disagree")
+        if anchor_day and self.start and anchor_day < self.start:
             raise ValueError("anchor cannot precede start")
-        if self.anchor and self.end and self.anchor > self.end:
+        if anchor_day and self.end and anchor_day > self.end:
             raise ValueError("anchor cannot follow end")
         return self

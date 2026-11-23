@@ -265,6 +265,21 @@ class AlpacaProvider:
                 adjustment="provider_all",
                 price_coordinate_id=coordinate,
                 basis_date=target,
+                source_timeframe="1m"
+                if timeframe == "1m"
+                else "5m"
+                if timeframe.endswith("m")
+                else "1d",
+                aggregation="none"
+                if timeframe in {"1m", "1d"}
+                else f"{'1m' if timeframe == '1m' else '5m'}->{timeframe}",
+                coverage_start=bars[0].session_date if bars else None,
+                coverage_end=bars[-1].session_date if bars else None,
+                coverage_reason=(
+                    "REQUESTED_START_BEFORE_PROVIDER_COVERAGE"
+                    if bars and start < bars[0].session_date
+                    else ""
+                ),
                 session_profile=profile,
                 calendar_version=calendar.version,
                 fetched_at=observed,

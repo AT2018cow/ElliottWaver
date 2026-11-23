@@ -132,7 +132,7 @@ elliottwaver analyze 600519 --timeframe 1d
 | 深证指数 | `SZ399*` | `399001.SZ`、`399006.SZ` |
 | 北证指数 | `BJ899*` | `899050.BJ` |
 
-`SZ000*` 仍是深市个股，`SH688*` / `SH689*` 仍是科创板个股。`SH880*` 同花顺行业指数当前不接入。指数目前只支持日线和周线；指数分钟线尚未启用。
+`SZ000*` 仍是深市个股，`SH688*` / `SH689*` 仍是科创板个股。`SH880*` 同花顺行业指数当前不接入。指数默认只支持日线和周线；配置 `data.cn_index_intraday_feed: tushare-cn-index` 并提供 `TUSHARE_TOKEN` 后，才开放指数分钟线。未配置时请求指数分钟线返回 `INDEX_INTRADAY_UNSUPPORTED`。
 
 当前线上范围为沪深 A 股、沪深京指数与美股个股；北交所个股尚未接通，港股尚未实现。
 
@@ -146,7 +146,7 @@ elliottwaver analyze 600519 --timeframe 1d
 | 5 分钟 | `5m` | `elliottwaver analyze 600519 --timeframe 5m` |
 | 1 分钟 | `1m` | `elliottwaver analyze 600519 --timeframe 1m` |
 
-表格中的短命令需要先激活虚拟环境。月线和 4 小时线不能作为当前主分析周期。指数只支持 `1d` 和 `1w`；请求指数分钟线会返回 `INDEX_INTRADAY_UNSUPPORTED`。
+表格中的短命令需要先激活虚拟环境。月线和 4 小时线不能作为当前主分析周期。指数默认只支持 `1d` 和 `1w`；配置 Tushare 指数分钟源后可请求 `1m/5m/15m/30m/60m`。沪深个股默认使用新浪分钟源，也可配置 `data.cn_equity_intraday_feed: tushare-cn-equity`。
 
 每次调用分析一个主周期。A 股小时线不跨午休；美股分钟/小时线从常规交易时段（RTH）开盘对齐，收市前可能保留不足整小时的尾段。周线先对日线进行复权，再聚合完整交易周，尚未结束的周不会纳入。
 
@@ -306,16 +306,24 @@ A 股老指数/老股票原始数据可到 1990/1991 年；引擎日历从 **199
 .venv/bin/elliottwaver brief 600519 --timeframe 1d --no-weekly --no-window-check --format json --json
 ```
 
-默认 `--timeframe auto` 选择日线。输入原生周线快照，或 `--start` 到截止时刻超过 5 × 365 天时，自动选周线。显式指定 `--timeframe 1d` 或 `--timeframe 1w` 可锁定周期。`--start` 设置搜索下界，`--anchor YYYY-MM-DD` 指定起浪日。需要更细周期或 `--long-term` 等搜索预设时，使用前文的 `analyze` 示例。
+默认 `--timeframe auto` 选择日线。输入原生周线快照，或 `--start` 到截止时刻超过 5 × 365 天时，自动选周线。输入盘中快照时，自动采用该快照的分钟周期。显式指定 `--timeframe 1d`、`1w` 或 `1m/5m/15m/30m/60m` 可锁定周期，`1h` 等价于 `60m`。`--start` 设置搜索下界，`--anchor YYYY-MM-DD` 指定起浪日；盘中还可使用带时区的精确锚点。需要 `--long-term` 等搜索预设时，使用前文的 `analyze` 示例。
+
+盘中示例：
+
+```bash
+.venv/bin/elliottwaver brief 600519.SH --timeframe 60m --format json
+.venv/bin/elliottwaver brief AAPL --timeframe 5m --feed sip --format json
+.venv/bin/elliottwaver brief AAPL --offline --snapshot "$SNAPSHOT_ID" --format json
+```
 
 打开摘要后按下面的顺序阅读。
 
-1. **先看当前判断。** 首屏显示主备浪型、当前浪和后续观察期限。日线观察发行后的 5 个完整交易日，周线观察 2 个完整交易周。目标可以立即观察，也可能要等推进信号。报告列明看最高价、最低价还是收盘价，以及等于边界时是否触发。触发价保留比较精度，标有「约」的目标区仅在显示时简化，小数边界可查 JSON。
+1. **先看当前判断。** 首屏显示主备浪型、当前浪和后续观察期限。日线观察发行后的 5 个完整交易日，周线观察 2 个完整交易周，盘中观察发行后尚未开始的 5 根主周期 K 线。盘中首屏同时显示市场当地时间、决策截止和最后一根已完成 K 线的可用时刻。目标可以立即观察，也可能要等推进信号。报告列明看最高价、最低价还是收盘价，以及等于边界时是否触发。触发价保留比较精度，标有「约」的目标区仅在显示时简化，小数边界可查 JSON。
 2. **再看何时重新数浪。** 「失效条件」满足后会否定当前候选或浪段。「需重新数浪」表示阶段退出，需要更新当前判断。证据不足、行情过期或日历不全时，摘要会说明短期观察为何不可用。日周方向、换起点复核和上一次的判断变化用中文显示。
 3. **需要时查看核对依据。** 这里有决策截止时间、分析范围、起点来源、子浪证据和评分。质量分衡量形态吻合程度，证据覆盖率是可用评分证据的比例，候选权重表示本次候选之间的相对支持度。概率模型的证据不足时，报告会说明概率尚未校准。 [概率研究与结果解读](#48-离线评估与概率研究)
 4. **核对原始字段。** 显式指定快照、`--as-of` 或 `--end` 的人读报告显示「使用已保存行情回放」，JSON 的模式为 `FROZEN_DATA_REPLAY`。事件 ID、状态码、未展示候选及完整搜索诊断可从 `brief.json` 和 `daily.json` 查到。只需要终端和 JSON 时，可以加 `--format json`。
 
-短期事件包括 `ADVANCE_FIRST_5D_V1`、`OUTLOOK_TARGET_FIRST_5D_V1` 及周线对应版本，周线另可核销 `CLOSE_BAND_2W_V1`。没有 `outlook` 字段的旧报告保持原事件清单。发行、离线回放和 `settle` 使用同一组冻结交易期、价格坐标和观测截止；周中发行只从下一个完整周开始计算，日线发行跳过发行时已经开盘的会话。
+短期事件包括 `ADVANCE_FIRST_5D_V1`、`OUTLOOK_TARGET_FIRST_5D_V1`、周线对应版本，以及盘中 `ADVANCE_FIRST_{1M,5M,15M,30M,60M}_5B_V1` 和 `OUTLOOK_TARGET_FIRST_*_5B_V1`。周线另可核销 `CLOSE_BAND_2W_V1`。没有 `outlook` 字段的旧报告保持原事件清单；旧盘中报告若带周线 `2W` 观察窗，结算返回「旧观察窗与主周期不匹配」。发行、离线回放和 `settle` 使用同一组冻结交易期、价格坐标和观测截止；周中发行只从下一个完整周开始计算，日线发行跳过发行时已经开盘的会话，盘中发行只取 `start_at >= issued_at` 的主周期时隙。
 
 `--no-weekly` 和 `--no-window-check` 分别关闭摘要的周线背景和换窗复核。主周期候选的终端摘要有规则状态计数，网页可展开「规则复核」，Markdown 列出各规则和实测值。规则状态沿用当次分析的 `PASS / FAIL / PENDING`，分别表示通过、违反和证据不足。结构化规则字段位于同目录的 `daily.json`。导出文件和目录见[找到并查看报告](#5-找到并查看报告)。
 
@@ -326,11 +334,12 @@ A 股老指数/老股票原始数据可到 1990/1991 年；引擎日历从 **199
 ```bash
 .venv/bin/elliottwaver history 600519
 .venv/bin/elliottwaver history 600519 --mode frozen --json
+.venv/bin/elliottwaver history AAPL --timeframe 5m --mode frozen --json
 ```
 
-查询返回最近 50 条匹配记录。JSON 数组中每条记录的 `path` 指向原报告目录。生成摘要时若用了自定义缓存，查询时也要传同一个 `--config`。报告移走或校验失败时，历史结果显示 `UNREADABLE`。
+查询返回最近 50 条匹配记录。`--timeframe` 可按主周期筛选；盘中记录按最后一根已完成 K 线的时刻排序，并显示市场当地时间。JSON 数组中每条记录的 `path` 指向原报告目录。生成摘要时若用了自定义缓存，查询时也要传同一个 `--config`。报告移走或校验失败时，历史结果显示 `UNREADABLE`。
 
-`brief.json` 中的 `previous` 记录同模式的上一次较早判断。常见结果有 `FIRST_RECORD`（首次）、`SAME_COUNT`（维持）、`ALTERNATE_PROMOTED`（备选升为主选）、`STAGE_ADVANCED`（浪段推进）和 `COUNT_CHANGED`（结构改变）。配置或引擎版本变化显示 `CONFIG_CHANGED`。周期、feed、复权口径变化或没有可比较的行情时显示 `NOT_COMPARABLE`。`DATA_REVISED` 只计算截至上次决策的重叠 K 线和因子修订。JSON 另保留 `structure_change`、`revision_count` 和 `factor_revision_count`。
+`brief.json` 中的 `previous` 记录同模式的上一次较早判断。盘中报告按最后一根已完成 K 线选择前一份记录，因此同一天的两份判断也能比较；重复生成同一根 K 线时沿用此前合格记录。常见结果有 `FIRST_RECORD`（首次）、`SAME_COUNT`（维持）、`ALTERNATE_PROMOTED`（备选升为主选）、`STAGE_ADVANCED`（浪段推进）和 `COUNT_CHANGED`（结构改变）。配置或引擎版本变化显示 `CONFIG_CHANGED`。周期、feed、复权口径变化或没有可比较的行情时显示 `NOT_COMPARABLE`。`DATA_REVISED` 只计算截至上次决策的重叠 K 线和因子修订。JSON 另保留 `previous_last_bar_end_at`、`structure_change`、`revision_count` 和 `factor_revision_count`。
 
 ### 4.7 自选批量
 
@@ -358,7 +367,7 @@ OUTCOME_SNAPSHOT_ID='替换为新下载行情的完整snapshot_id'
 目录参数会递归读取报告，也可以传一份报告的 `brief.json`。结算只读取缓存，省略 `--snapshot` 时使用每份报告自己的源快照。替代快照应与报告的标的、周期、feed 和复权口径相容，并覆盖所需到期日。周线报告也可使用由日线快照派生的周线行情。混合标的或口径先按报告分别结算。使用自定义缓存时，传同一份 `--config` 或传 `--cache-root` 指向存放快照的目录。
 
 - 查看 `records[].status` 和 `records[].latest.outcome`。进入 `SETTLED` 后可读实际标签。尚未覆盖必要行情时显示 `RIGHT_CENSORED`，应有交易会话缺数据时显示 `INCOMPLETE_DATA`。行情补齐后以新快照重跑。
-- 结算使用报告发行时的收盘价、ATR、候选边界和预定会话。短期触价事件使用截止时已可用的完整 K 线。周线触价要求冻结名单内的每场会话齐备，周线收盘只取排定末场的收盘。结算快照与发行的会话安排冲突时，短期事件显示 `SETTLEMENT_CALENDAR_MISMATCH` 并保留待核。美股换用修订的复权快照时，无法确认价格换算比例会显示 `PRICE_BASIS_UNVERIFIED`。
+- 结算使用报告发行时的收盘价、ATR、候选边界和预定会话。短期触价事件使用截止时已可用的完整 K 线。周线触价要求冻结名单内的每场会话齐备，周线收盘只取排定末场的收盘。盘中事件按冻结的 5 个精确时隙逐根核销，结果记录触发 K 线的 `bar_id`、起止时刻和价格口径；同根触及目标与失效时保留 `AMBIGUOUS_SAME_BAR`，前面有未知缺口时先记 `INCOMPLETE_DATA`。结算快照与发行的会话安排冲突时，短期事件显示 `SETTLEMENT_CALENDAR_MISMATCH` 并保留待核。美股换用修订的复权快照时，无法确认价格换算比例会显示 `PRICE_BASIS_UNVERIFIED`。
 - 每个 `brief_digest + event_id + scope` 只算一次。同一判断导出为多个格式时会去重。行情修订后保留 `initial`，更新 `latest` 和 `latest_revision`。路径无效、没有报告或有报告/快照处理失败时，退出码为非零。
 
 ### 4.7.2 支持矩阵
@@ -395,6 +404,10 @@ PROTOCOL=docs/protocols/roadmap-repair-2026-heldout-smoke.json
 | `TARGET_FIRST_20D_V1` / `TARGET_FIRST_8W_V1` | 候选在同一期限内，是否在失效前先到达主目标区 |
 | `ADVANCE_FIRST_5D_V1` / `ADVANCE_FIRST_2W_V1` | 候选在短期观察期内，是否在硬失效或阶段退出前满足推进条件 |
 | `OUTLOOK_TARGET_FIRST_5D_V1` / `OUTLOOK_TARGET_FIRST_2W_V1` | 候选在短期观察期内，是否在硬失效或阶段退出前到达可观察的主目标区 |
+| `ADVANCE_FIRST_{1M,5M,15M,30M,60M}_5B_V1` | 盘中候选在冻结的 5 根主周期 K 线内，是否先满足推进条件 |
+| `OUTLOOK_TARGET_FIRST_{1M,5M,15M,30M,60M}_5B_V1` | 盘中候选在同一 5 根窗口内，是否先到达可观察目标区 |
+
+盘中协议在 `samples[].source_timeframe` 写分钟周期，`grid.cadence` 使用 `EVERY_BAR`，`grid.step` 选择每隔多少根 K 线生成一个决策点。`events.parquet` 额外保留 `decision_at`、`due_at`、`period_starts`、`period_ends`、`trigger_bar_id`、`trigger_start_at` 和 `trigger_end_at`。评估、回放和结算使用同一个盘中观察窗解析器。
 
 事件的期限、价格坐标和候选条件在决策时冻结。触价事件若在同一根 K 线上同时达到目标和失效边界，会标记 `AMBIGUOUS_SAME_BAR`。评估可以使用后来取得的冻结快照，`DECISION_TIME` 表示按模型批准时间选模，研究结果仍是冻结数据回放。
 
@@ -636,7 +649,13 @@ HTML 包含 K 线、成交量、MACD 三个面板。可以通过图上方的下�
 
 `--end` 限制纳入的交易日期；`--as-of` 控制数据当时是否已经可用。`--start` 影响锚点搜索范围，程序仍可保留更早数据用于指标预热和图表展示，因此不应把它当成严格的下载或显示起点。
 
-高级用法：`--anchor YYYY-MM-DD` 将起浪日期限定为该日。该日期必须有可用 K 线；如果没有匹配的合法当前计数，会出现 `EXPLICIT_ANCHOR_UNMATCHED`。分钟周期当前也只接受日期锚点，不能指定某一分钟。
+高级用法：`--anchor YYYY-MM-DD` 将起浪日期限定为该日。该日期必须有可用 K 线；如果没有匹配的合法当前计数，会出现 `EXPLICIT_ANCHOR_UNMATCHED`。盘中还可传入带时区的精确开始时刻，匹配 K 线的 `start_at`：
+
+```bash
+.venv/bin/elliottwaver analyze AAPL --timeframe 5m --anchor '2024-01-05T13:35:00-05:00'
+```
+
+指定时刻对应的 K 线必须已可用；否则返回明确的锚点错误。日期锚点仍按交易日期匹配，精确时间锚点不会退化为同日任意一根 K 线。
 
 用现在下载的历史行情运行上述命令，结果属于冻结数据回放。供应商历史数据与复权因子可能已经修订，不能据此声称复现了当时真实可取得的数据版本。
 
@@ -663,7 +682,7 @@ SNAPSHOT_ID='替换为刚才返回的完整snapshot_id'
 
 默认快照目录为 `.cache/elliottwaver/`。快照文件及元数据会校验 SHA256，不要直接修改其中的文件。
 
-`analyze --offline` 默认沿用快照周期和截止时间。`brief` 默认自动选择日线或周线，分钟快照请用 `analyze` 或显式传入匹配的周期。标的和 feed 必须匹配快照。日线快照可以派生周线，小时或分钟分析需要对应周期的快照。
+`analyze --offline` 默认沿用快照周期和截止时间。`brief` 在明确给出盘中快照时自动采用该快照的主周期；没有盘中快照时仍按日线/周线自动选择。标的和 feed 必须匹配快照。日线快照可以派生周线；盘中背景按固定配对从同一底层行情派生，主分析需要对应周期的快照。
 
 若通过配置修改了缓存目录，取数、分析、历史查询和回放时都传同一份 `--config`。验收时使用的 `.cache/live-smoke/` 与默认缓存是两个目录。
 

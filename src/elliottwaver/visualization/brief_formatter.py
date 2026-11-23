@@ -29,6 +29,7 @@ from elliottwaver.visualization.brief_text import (
     diagnostic_text,
     feed_text,
     forecast_row,
+    market_time_text,
     mode_text,
     omission_text,
     outlook_heading,
@@ -39,7 +40,7 @@ from elliottwaver.visualization.brief_text import (
 )
 from elliottwaver.visualization.chart_builder import PLOTLY_RENDER_VERSION, render_html
 
-BRIEF_TEXT_RENDER_VERSION = "brief-render-v5"
+BRIEF_TEXT_RENDER_VERSION = "brief-render-v6"
 
 
 def rule_evidence(scenario: WaveScenario) -> tuple[str, ...]:
@@ -188,6 +189,21 @@ def _window_details(brief: Brief) -> tuple[str, ...]:
         f"决策截止 {brief.as_of.isoformat()}",
         f"分析范围 {window.start} 至 {window.end} · {window.bar_count} 根 K 线",
     ]
+    if window.start_at is not None and window.end_at is not None:
+        lines.append(
+            f"精确范围 {market_time_text(window.start_at, brief.symbol)} 至 "
+            f"{market_time_text(window.end_at, brief.symbol)}"
+        )
+    if brief.last_bar_end_at is not None:
+        available = (
+            market_time_text(brief.last_bar_available_at, brief.symbol)
+            if brief.last_bar_available_at is not None
+            else "未记录"
+        )
+        lines.append(
+            f"最后一根已完成 K 线 {market_time_text(brief.last_bar_end_at, brief.symbol)}"
+            f" · 可用 {available}"
+        )
     if window.primary_pattern_start:
         lines.append(f"首选浪形起始于 {window.primary_pattern_start}")
     if (comparison := brief.window_comparison) and comparison.alternate_start:
@@ -208,8 +224,9 @@ def _md_items(lines: tuple[str, ...]) -> list[str]:
 
 def brief_markdown(brief: Brief, result: AnalysisResult | None = None) -> str:
     scenarios = {item.scenario_id: item for item in result.scenarios} if result else {}
+    title = "盘中简报" if brief.timeframe.endswith("m") else "收盘摘要"
     lines = [
-        f"# {brief.symbol} · 收盘摘要",
+        f"# {brief.symbol} · {title}",
         "",
         f"{timeframe_text(brief.timeframe)} · 行情截至 {brief.market_asof} · {status_text(brief.status)}",
         f"{mode_text(brief.mode)} · {feed_text(brief.feed)} · {adjustment_text(brief.adjustment)}",
@@ -220,7 +237,7 @@ def brief_markdown(brief: Brief, result: AnalysisResult | None = None) -> str:
         lines += [f"## {heading}", ""]
     for title, content in summary_cards(brief):
         lines += [f"### {title}", "", *_md_items(content), ""]
-    if not brief.cards and brief.outlook is None:
+    if not brief.cards:
         lines += ["当前没有达到规则和证据要求的候选。", ""]
     lines += [*_md_items(comparison_text(brief)), "", forecast_message(brief.forecast_status), ""]
     if brief.retrospective:
@@ -285,7 +302,7 @@ def brief_html(brief: Brief, result: AnalysisResult | None = None) -> str:
         f"<section class='card'><h3>{html.escape(title)}</h3>{_item_list(lines)}</section>"
         for title, lines in summary_cards(brief)
     )
-    if not cards and brief.outlook is None:
+    if not cards:
         cards = "<p>当前没有达到规则和证据要求的候选。</p>"
     comparisons = "".join(f"<p>{html.escape(line)}</p>" for line in comparison_text(brief))
     retrospective = "<p>模型结果为回顾性重算。</p>" if brief.retrospective else ""

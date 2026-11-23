@@ -201,6 +201,7 @@ class SearchDiagnostics(Contract):
     cache_hits: int = Field(0, ge=0, exclude_if=lambda value: value == 0)
     truncation_reason: str | None = Field(None, exclude_if=lambda value: value is None)
     anchors: tuple[date, ...] = ()
+    anchor_times: tuple[AwareDatetime, ...] = Field((), exclude_if=lambda value: not value)
     pivot_counts: dict[str, int] = Field(default_factory=dict)
 
 

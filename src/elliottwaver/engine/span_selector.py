@@ -22,6 +22,26 @@ def select_anchor_details(
     bundle: MarketDataBundle, request: AnalysisRequest, config: AnalysisConfig
 ) -> tuple[tuple[BriefAnchor, ...], tuple[str, ...]]:
     bars = bundle.bars
+    if request.anchor_at:
+        match = next(
+            (
+                bar
+                for bar in bars
+                if bar.start_at == request.anchor_at and bar.usable_at <= request.as_of
+            ),
+            None,
+        )
+        if match is None:
+            from elliottwaver.errors import InputError
+
+            raise InputError("Explicit anchor timestamp must identify an available bar start")
+        return (
+            BriefAnchor(
+                date=match.session_date,
+                at=match.start_at,
+                origin="EXPLICIT",
+            ),
+        ), ()
     if request.anchor:
         if request.anchor not in {b.session_date for b in bars}:
             from elliottwaver.errors import InputError
@@ -35,18 +55,27 @@ def select_anchor_details(
             next((i for i, b in enumerate(bars) if b.session_date >= request.start), len(bars) - 1),
         )
     if bundle.timeframe == "1d":
-        weekly = weekly_bars(bars, bundle.sessions)
+        background = weekly_bars(bars, bundle.sessions)
     elif bundle.timeframe == "1w":
-        weekly = weekly_bars(bundle.daily_context, bundle.sessions, monthly=True)
+        background = weekly_bars(bundle.daily_context, bundle.sessions, monthly=True)
+    elif bundle.timeframe.endswith("m"):
+        background = bundle.auxiliary or bundle.daily_context
     else:
-        weekly = bundle.daily_context
+        background = bundle.daily_context
+    from elliottwaver.timeframes import BACKGROUND_TIMEFRAMES
+
+    background_label = BACKGROUND_TIMEFRAMES.get(
+        bundle.timeframe, {"1w": "1mo"}.get(bundle.timeframe, "1d")
+    )
     eligible: dict[str, list[BriefAnchor]] = {"LOW": [], "HIGH": []}
-    if len(weekly) >= 15:
-        zz = extract(weekly, calculate(weekly).atr, config.macro_scale, bundle.instrument.tick_size)
+    if len(background) >= 15:
+        zz = extract(
+            background, calculate(background).atr, config.macro_scale, bundle.instrument.tick_size
+        )
         for pivot in zz.confirmed:
             if pivot.confirmed_at is None or pivot.confirmed_at > request.as_of:
                 continue
-            week = weekly[pivot.index]
+            week = background[pivot.index]
             group = [b for b in bars if b.start_at < week.end_at and b.end_at > week.start_at]
             if not group:
                 continue
@@ -61,8 +90,9 @@ def select_anchor_details(
                 eligible[pivot.kind].append(
                     BriefAnchor(
                         date=daily.session_date,
+                        at=daily.start_at,
                         origin="MACRO_LOW" if pivot.kind == "LOW" else "MACRO_HIGH",
-                        background_timeframe={"1d": "1w", "1w": "1mo"}.get(bundle.timeframe, "1d"),
+                        background_timeframe=background_label,
                         confirmed_at=pivot.confirmed_at,
                     )
                 )
@@ -88,9 +118,13 @@ def select_anchor_details(
             )
         ), ()
     fallback = max(earliest, len(bars) - 252)
-    return (BriefAnchor(date=bars[fallback].session_date, origin="FALLBACK"),), (
-        "ANCHOR_FALLBACK: 未找到已确认的合格背景周期锚点，使用明确标记的252根K线窗口",
-    )
+    return (
+        BriefAnchor(
+            date=bars[fallback].session_date,
+            at=bars[fallback].start_at,
+            origin="FALLBACK",
+        ),
+    ), ("ANCHOR_FALLBACK: 未找到已确认的合格背景周期锚点，使用明确标记的252根K线窗口",)
 
 
 def require_history(bars: Sequence[Bar], minimum: int = 60) -> None:

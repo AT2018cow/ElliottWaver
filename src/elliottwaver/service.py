@@ -7,7 +7,7 @@ from uuid import uuid4
 from elliottwaver import ENGINE_VERSION
 from elliottwaver.config import Settings
 from elliottwaver.data.adjustment import adjust_to_basis
-from elliottwaver.data.periods import as_weekly
+from elliottwaver.data.periods import as_weekly, resample_bundle
 from elliottwaver.data.quality import missing_intervals
 from elliottwaver.data.resample import weekly_bars
 from elliottwaver.data.router import route_symbol
@@ -169,6 +169,19 @@ class AnalysisService:
         prepared = prepare_bundle(weekly_request, source)
         return self.analyze_with_context(weekly_request, prepared), prepared
 
+    def background(self, request: AnalysisRequest, source: MarketDataBundle):
+        from elliottwaver.timeframes import BACKGROUND_TIMEFRAMES
+
+        target = BACKGROUND_TIMEFRAMES.get(request.timeframe)
+        if target is None:
+            return None
+        derived = resample_bundle(source, target, as_of=request.as_of)
+        background_request = request.model_copy(
+            update={"timeframe": target, "anchor": None, "anchor_at": None}
+        )
+        prepared = prepare_bundle(background_request, derived)
+        return self.analyze_with_context(background_request, prepared), prepared
+
     def analyze_with_context(
         self,
         request: AnalysisRequest,
@@ -179,11 +192,10 @@ class AnalysisService:
         bars = bundle.bars
         config = self.settings
         advanced = config.analysis.engine_profile == "hierarchical_v1"
-        if advanced and request.timeframe not in {"1d", "1w"}:
-            raise InputError("hierarchical_v1 supports 1d and 1w")
         require_history(bars)
         anchor_details, warnings = select_anchor_details(bundle, request, config.analysis)
         anchors = tuple(sorted({item.date for item in anchor_details}))
+        anchor_values = tuple(item.at or item.date for item in anchor_details)
         warnings = list(bundle.provenance.warnings + warnings)
         if len(bars) > config.analysis.max_analysis_bars:
             warnings.append(
@@ -219,9 +231,9 @@ class AnalysisService:
             search(
                 bars,
                 zigzags,
-                anchors,
+                anchor_values,
                 config.search,
-                exact_anchor=request.anchor is not None,
+                exact_anchor=request.anchor is not None or request.anchor_at is not None,
                 tick_size=bundle.instrument.tick_size,
                 advanced=advanced,
                 budget=shared_budget,
@@ -229,7 +241,7 @@ class AnalysisService:
             if not gaps or request.allow_gaps
             else ([], None)
         )
-        if request.anchor and not candidates:
+        if (request.anchor or request.anchor_at) and not candidates:
             warnings.append("EXPLICIT_ANCHOR_UNMATCHED: 指定锚点没有匹配合法的当前计数")
         parent_links = attach_parent_context(candidates, request.timeframe)
         scenarios = []
@@ -526,6 +538,7 @@ class AnalysisService:
             candidates_found=len(candidates),
             candidates_qualified=len(scenarios),
             anchors=anchors,
+            anchor_times=tuple(item.at for item in anchor_details if item.at),
             pivot_counts={
                 str(scale): len(zz.confirmed)
                 for scale, zz in zip(config.analysis.scales, zigzags, strict=True)

@@ -3,7 +3,7 @@
 from datetime import date
 from typing import Literal
 
-from pydantic import AwareDatetime, Field
+from pydantic import AwareDatetime, Field, model_validator
 
 from elliottwaver.schemas.market import Contract
 from elliottwaver.schemas.wave import LevelCondition, PriceZone
@@ -21,6 +21,12 @@ class OutlookPeriod(Contract):
     end_session: date
     end_at: AwareDatetime
     sessions: tuple[date, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def ordered_interval(self):
+        if self.start_at >= self.end_at:
+            raise ValueError("outlook period must have a positive interval")
+        return self
 
 
 class OutlookCondition(Contract):
@@ -50,11 +56,11 @@ class OutlookCase(Contract):
 
 
 class BriefOutlook(Contract):
-    version: Literal["1.0"] = "1.0"
+    version: Literal["1.0", "1.1"] = "1.0"
     issued_at: AwareDatetime | None = None
     price_coordinate_id: str | None = None
     horizon: int = Field(ge=1)
-    horizon_unit: Literal["SESSIONS", "WEEKS"]
+    horizon_unit: Literal["SESSIONS", "WEEKS", "BARS"]
     periods: tuple[OutlookPeriod, ...]
     status: OutlookStatus
     reason: str | None = None

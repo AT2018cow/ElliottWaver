@@ -1,6 +1,8 @@
 """Shared user-facing wording for terminal and exported briefs."""
 
+from datetime import datetime
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 from elliottwaver.schemas.brief import Brief, BriefAnchor, BriefCard, BriefForecast, BriefPeriod
 from elliottwaver.schemas.outlook import OutlookCase
@@ -165,6 +167,16 @@ def adjustment_text(value: str) -> str:
     }.get(value, value)
 
 
+def _market_zone(symbol: str) -> ZoneInfo:
+    if symbol.endswith((".SH", ".SZ", ".BJ")):
+        return ZoneInfo("Asia/Shanghai")
+    return ZoneInfo("America/New_York")
+
+
+def market_time_text(value: datetime, symbol: str) -> str:
+    return value.astimezone(_market_zone(symbol)).strftime("%Y-%m-%d %H:%M %Z")
+
+
 def anchor_text(anchor: BriefAnchor) -> str:
     background = (
         timeframe_text(anchor.background_timeframe) if anchor.background_timeframe else "背景行情"
@@ -175,11 +187,14 @@ def anchor_text(anchor: BriefAnchor) -> str:
         "MACRO_HIGH": f"从{background}高点选取",
         "MACRO_LOW": f"从{background}低点选取",
     }[anchor.origin]
+    when = anchor.at.isoformat() if anchor.at else str(anchor.date)
     confirmed = f" · {anchor.confirmed_at.isoformat()} 确认" if anchor.confirmed_at else ""
-    return f"{anchor.date} · {origin}{confirmed}"
+    return f"{when} · {origin}{confirmed}"
 
 
 def horizon_text(horizon: int, unit: str) -> str:
+    if unit == "BARS":
+        return f"{horizon} 根主周期 K 线"
     return f"{horizon} 个{'完整交易周' if unit == 'WEEKS' else '交易日'}"
 
 
@@ -188,6 +203,13 @@ def outlook_heading(brief: Brief) -> str | None:
     if outlook is None:
         return None
     if outlook.status == "AVAILABLE" and outlook.periods:
+        if outlook.horizon_unit == "BARS":
+            first = market_time_text(outlook.periods[0].start_at, brief.symbol)
+            last = market_time_text(outlook.periods[-1].end_at, brief.symbol)
+            return (
+                f"短期观察 · 后续 {horizon_text(outlook.horizon, outlook.horizon_unit)}"
+                f" · {first} 至 {last}"
+            )
         return (
             f"短期观察 · 后续 {horizon_text(outlook.horizon, outlook.horizon_unit)}"
             f" · 到期 {outlook.periods[-1].end_session}"
@@ -254,7 +276,7 @@ def summary_cards(brief: Brief) -> tuple[tuple[str, tuple[str, ...]], ...]:
         title = f"{card_role(index)} · {candidate_title(card)}"
         if case := cases.get(card.scenario_id):
             lines = _case_lines(case)
-        elif outlook is None:
+        elif outlook is None or outlook.status != "AVAILABLE" or not outlook.periods:
             lines = (
                 *(condition_text(condition) for condition in card.conditions),
                 *(
@@ -277,12 +299,33 @@ def comparison_text(brief: Brief) -> tuple[str, ...]:
             "UNDETERMINED": "日线或周线的下一段方向未明确",
             "NOT_AVAILABLE": "缺少可对照的周线结果",
         }
-        suffix = (
-            f" · 日线{direction_text(cross.primary_bias)}，周线{direction_text(cross.weekly_bias)}"
-            if cross.state in {"ALIGNED", "CONFLICT"}
-            else ""
-        )
-        lines.append(f"{labels[cross.state]}{suffix}")
+        if cross.background_bias is not None:
+            suffix = (
+                f" · 主周期{direction_text(cross.primary_bias)}，"
+                f"{timeframe_text(cross.background_timeframe)}"
+                f"{direction_text(cross.background_bias)}"
+                if cross.state in {"ALIGNED", "CONFLICT"}
+                else ""
+            )
+        else:
+            suffix = (
+                f" · 日线{direction_text(cross.primary_bias)}，"
+                f"周线{direction_text(cross.weekly_bias)}"
+                if cross.state in {"ALIGNED", "CONFLICT"}
+                else ""
+            )
+        if cross.state == "NOT_AVAILABLE" and brief.timeframe.endswith("m"):
+            lines.append(cross.reason)
+        elif cross.state == "ALIGNED" and cross.background_bias is not None:
+            lines.append(
+                f"主周期与{timeframe_text(cross.background_timeframe)}下一段方向一致{suffix}"
+            )
+        elif cross.state == "CONFLICT" and cross.background_bias is not None:
+            lines.append(
+                f"主周期与{timeframe_text(cross.background_timeframe)}下一段方向有分歧{suffix}"
+            )
+        else:
+            lines.append(f"{labels[cross.state]}{suffix}")
     if (window := brief.window_comparison) and window.state != "NOT_APPLICABLE":
         labels = {
             "SAME_COUNT": "首选数浪一致",

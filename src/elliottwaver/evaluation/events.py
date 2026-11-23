@@ -6,6 +6,7 @@ from typing import Literal
 
 from elliottwaver.schemas.market import Bar, MarketDataBundle
 from elliottwaver.schemas.wave import LevelCondition, WaveScenario
+from elliottwaver.timeframes import Timeframe
 
 
 def condition_hit(condition: LevelCondition, bar: Bar) -> bool:
@@ -28,9 +29,9 @@ class EventOutcome:
 @dataclass(frozen=True)
 class EventSpec:
     event_id: str
-    timeframe: Literal["1d", "1w"]
+    timeframe: Timeframe
     horizon: int
-    unit: Literal["SESSIONS", "WEEKS"]
+    unit: Literal["SESSIONS", "WEEKS", "BARS"]
     scope: Literal["SYMBOL", "CARD"]
     evaluator: Literal["close_band", "advance_first", "target_first"]
     success_label: str
@@ -97,6 +98,19 @@ EVENT_SPECS: dict[str, EventSpec] = {
         "YES",
     ),
 }
+
+INTRADAY_SUFFIX = {"1m": "1M", "5m": "5M", "15m": "15M", "30m": "30M", "60m": "60M"}
+INTRADAY_EVENTS: dict[str, tuple[str, str]] = {}
+for _timeframe, _suffix in INTRADAY_SUFFIX.items():
+    _advance = f"ADVANCE_FIRST_{_suffix}_5B_V1"
+    _target = f"OUTLOOK_TARGET_FIRST_{_suffix}_5B_V1"
+    EVENT_SPECS[_advance] = EventSpec(
+        _advance, _timeframe, 5, "BARS", "CARD", "advance_first", "CONFIRMED_FIRST", "YES"
+    )
+    EVENT_SPECS[_target] = EventSpec(
+        _target, _timeframe, 5, "BARS", "CARD", "target_first", "TARGET_FIRST", "YES"
+    )
+    INTRADAY_EVENTS[_timeframe] = (_advance, _target)
 
 
 def evaluate_event(

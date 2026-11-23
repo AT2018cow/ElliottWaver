@@ -2,6 +2,14 @@ from typing import Literal
 
 Timeframe = Literal["1m", "5m", "15m", "30m", "60m", "1d", "1w"]
 TIMEFRAMES = ("1m", "5m", "15m", "30m", "60m", "1d", "1w")
+BACKGROUND_TIMEFRAMES = {
+    "1m": "5m",
+    "5m": "60m",
+    "15m": "60m",
+    "30m": "60m",
+    "60m": "1d",
+    "1d": "1w",
+}
 
 
 def normalize_timeframe(value: str) -> str:

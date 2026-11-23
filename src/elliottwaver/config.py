@@ -73,6 +73,8 @@ class ScoringConfig(Section):
 
 class DataConfig(Section):
     us_feed: Literal["sip", "iex"] = "sip"
+    cn_equity_intraday_feed: Literal["sina", "tushare-cn-equity"] = "sina"
+    cn_index_intraday_feed: Literal["", "tushare-cn-index"] = ""
     request_timeout_seconds: float = Field(20, gt=0, le=60)
     max_attempts: int = Field(3, ge=1, le=5)
     total_fetch_deadline_seconds: float = Field(120, gt=0, le=600)
@@ -184,6 +186,16 @@ def alpaca_credentials() -> tuple[SecretStr, SecretStr]:
     if not key or not (secret or alias):
         raise InputError("Set ALPACA_API_KEY and ALPACA_API_SECRET in the environment or .env")
     return SecretStr(key), SecretStr(secret or alias)
+
+
+def tushare_token() -> str:
+    from dotenv import dotenv_values
+
+    local = dotenv_values(".env")
+    token = os.environ.get("TUSHARE_TOKEN", local.get("TUSHARE_TOKEN", ""))
+    if not token:
+        raise InputError("Set TUSHARE_TOKEN in the environment or .env")
+    return token
 
 
 def alpaca_asset_endpoint() -> str:

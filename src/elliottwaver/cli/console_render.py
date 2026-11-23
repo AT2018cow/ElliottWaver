@@ -15,6 +15,7 @@ from elliottwaver.visualization.brief_text import (
     diagnostic_text,
     feed_text,
     forecast_row,
+    market_time_text,
     mode_text,
     omission_text,
     outlook_heading,
@@ -80,15 +81,17 @@ def render_outlook(brief: Brief, *, console: Console | None = None) -> None:
         console.print(title, style="bold", markup=False)
         for line in lines:
             console.print(f"  {line}", markup=False)
-    if not brief.cards and brief.outlook is None:
+    if not brief.cards:
         console.print("当前没有达到规则和证据要求的候选。")
 
 
 def render_brief(brief: Brief, result: AnalysisResult | None = None) -> None:
     console = Console()
+    intraday = brief.timeframe.endswith("m")
     console.print(
-        f"{brief.symbol} · 收盘摘要 · {timeframe_text(brief.timeframe)} · "
-        f"行情截至 {brief.market_asof} · {status_text(brief.status)}",
+        f"{brief.symbol} · {'盘中简报' if intraday else '收盘摘要'} · "
+        f"{timeframe_text(brief.timeframe)} · 行情截至 {brief.market_asof} · "
+        f"{status_text(brief.status)}",
         style="bold",
         markup=False,
     )
@@ -96,6 +99,23 @@ def render_brief(brief: Brief, result: AnalysisResult | None = None) -> None:
         f"{mode_text(brief.mode)} · {feed_text(brief.feed)} · {adjustment_text(brief.adjustment)}",
         markup=False,
     )
+    if intraday:
+        console.print(
+            f"市场时间 {market_time_text(brief.as_of, brief.symbol)} · "
+            f"决策截止 {brief.as_of.isoformat()}",
+            markup=False,
+        )
+        if brief.last_bar_end_at is not None:
+            available = (
+                market_time_text(brief.last_bar_available_at, brief.symbol)
+                if brief.last_bar_available_at is not None
+                else "未记录"
+            )
+            console.print(
+                f"最后一根已完成 K 线 {market_time_text(brief.last_bar_end_at, brief.symbol)}"
+                f" · 可用 {available}",
+                markup=False,
+            )
     console.print(f"分析价格 {price_text(brief.latest_price)}", markup=False)
     console.print()
     render_outlook(brief, console=console)

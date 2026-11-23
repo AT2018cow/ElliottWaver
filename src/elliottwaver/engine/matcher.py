@@ -3,7 +3,7 @@
 from collections import deque
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from datetime import date
+from datetime import date, datetime
 from itertools import pairwise
 
 from elliottwaver.config import SearchConfig
@@ -133,10 +133,18 @@ def deduplicate_candidates(
     return kept
 
 
+def _before_anchor(bar: Bar, anchor: date | datetime) -> bool:
+    return bar.start_at < anchor if isinstance(anchor, datetime) else bar.session_date < anchor
+
+
+def _anchor_matches(bar: Bar, anchor: date | datetime) -> bool:
+    return bar.start_at == anchor if isinstance(anchor, datetime) else bar.session_date == anchor
+
+
 def search(
     bars: Sequence[Bar],
     zigzags: Sequence[ZigZagResult],
-    anchors: Sequence[date],
+    anchors: Sequence[date | datetime],
     config: SearchConfig,
     *,
     exact_anchor: bool = False,
@@ -194,7 +202,7 @@ def search(
                     candidate = replace(candidate, scales=scales)
                 found[key] = candidate
 
-    def walk(zz: ZigZagResult, anchor: date) -> Iterator[None]:
+    def walk(zz: ZigZagResult, anchor: date | datetime) -> Iterator[None]:
         pivots = zz.confirmed
         tip = zz.tip
         if tip is None or len(pivots) < 2:
@@ -205,7 +213,7 @@ def search(
             for path in paths:
                 for gap in range(1, config.max_bridge_intervals + 1, 2):
                     previous = path[0] - gap
-                    if previous < 0 or bars[pivots[previous].index].session_date < anchor:
+                    if previous < 0 or _before_anchor(bars[pivots[previous].index], anchor):
                         continue
                     if not budget.take():
                         return
@@ -213,7 +221,7 @@ def search(
                     if _valid_edge(p, q, bars, extrema, budget, advanced):
                         indices = (previous, *path)
                         extended.append(indices)
-                        if not exact_anchor or bars[p.index].session_date == anchor:
+                        if not exact_anchor or _anchor_matches(bars[p.index], anchor):
                             offer(tuple(pivots[i] for i in indices), tip)
                     else:
                         budget.pruned += 1

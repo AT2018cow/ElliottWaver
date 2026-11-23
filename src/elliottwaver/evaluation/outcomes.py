@@ -6,12 +6,16 @@ from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from elliottwaver.data.adjustment import adjust_to_basis
+from elliottwaver.data.calendar import load_calendar
+from elliottwaver.data.periods import intraday_windows
+from elliottwaver.data.quality import missing_intervals
 from elliottwaver.data.resample import weekly_bars
 from elliottwaver.errors import DataError
 from elliottwaver.evaluation.events import EventSpec, condition_hit
 from elliottwaver.schemas.market import Bar, FactorPoint, MarketDataBundle
 from elliottwaver.schemas.outlook import OutlookCase, OutlookPeriod
 from elliottwaver.schemas.wave import PriceZone, WaveScenario
+from elliottwaver.timeframes import minutes
 
 
 @dataclass(frozen=True)
@@ -20,6 +24,9 @@ class Outcome:
     session: date | None = None
     value: float | None = None
     evidence: tuple[str, ...] = ()
+    bar_id: str | None = None
+    start_at: datetime | None = None
+    end_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -31,6 +38,11 @@ class OutcomeWindow:
     period_sessions: tuple[tuple[date, ...], ...] = ()
     calendar_mismatches: frozenset[date] = frozenset()
     price_basis_unverified: bool = False
+    period_starts: tuple[datetime, ...] = ()
+    period_ends: tuple[datetime, ...] = ()
+    observed_at: datetime | None = None
+    mismatch_indices: frozenset[int] = frozenset()
+    incomplete_indices: frozenset[int] = frozenset()
 
     def close_bar(self, horizon: int) -> Bar | None:
         if 0 < horizon <= len(self.dates):
@@ -42,6 +54,18 @@ class OutcomeWindow:
             return Outcome("PRICE_BASIS_UNVERIFIED", day)
         if day in self.calendar_mismatches:
             return Outcome("SETTLEMENT_CALENDAR_MISMATCH", day)
+        return Outcome("INCOMPLETE_DATA" if day <= self.observed_through else "RIGHT_CENSORED", day)
+
+    def missing_index(self, index: int) -> Outcome:
+        day = self.dates[index] if 0 <= index < len(self.dates) else None
+        if self.price_basis_unverified:
+            return Outcome("PRICE_BASIS_UNVERIFIED", day)
+        if index in self.mismatch_indices:
+            return Outcome("SETTLEMENT_CALENDAR_MISMATCH", day)
+        if index in self.incomplete_indices:
+            return Outcome("INCOMPLETE_DATA", day)
+        if day is None:
+            return Outcome("RIGHT_CENSORED")
         return Outcome("INCOMPLETE_DATA" if day <= self.observed_through else "RIGHT_CENSORED", day)
 
 
@@ -253,6 +277,128 @@ def outlook_window(
     )
 
 
+def intraday_outlook_window(
+    bundle: MarketDataBundle,
+    decision: date,
+    periods: tuple[OutlookPeriod, ...],
+    horizon: int,
+    *,
+    issuance_factors: tuple[FactorPoint, ...] | None = None,
+    outcome_as_of: date | datetime | None = None,
+    price_scale: float = 1.0,
+) -> OutcomeWindow:
+    """Observe exact intraday slots frozen by the issuing brief."""
+    selected = tuple(periods[:horizon])
+    cutoff = bundle.as_of
+    if isinstance(outcome_as_of, datetime):
+        cutoff = min(cutoff, outcome_as_of)
+    elif outcome_as_of is not None:
+        next_day = datetime.combine(
+            outcome_as_of + timedelta(days=1), time.min, ZoneInfo(bundle.instrument.timezone)
+        )
+        cutoff = min(cutoff, next_day - timedelta(microseconds=1))
+    dates = tuple(period.end_session for period in selected)
+    period_sessions = tuple(period.sessions for period in selected)
+    starts = tuple(period.start_at for period in selected)
+    ends = tuple(period.end_at for period in selected)
+    observed_through = max(
+        (bar.session_date for bar in bundle.bars if bar.is_final and bar.usable_at <= cutoff),
+        default=decision,
+    )
+    observed_at = max(
+        (bar.usable_at for bar in bundle.bars if bar.is_final and bar.usable_at <= cutoff),
+        default=None,
+    )
+    qfq = bundle.provenance.adjustment == "basis_date_qfq"
+    source = bundle.raw_bars if qfq else bundle.bars
+    wanted = {(period.start_at, period.end_at) for period in selected}
+    eligible = tuple(
+        bar
+        for bar in source
+        if (bar.start_at, bar.end_at) in wanted and bar.is_final and bar.usable_at <= cutoff
+    )
+    if qfq and eligible:
+        factors = bundle.factors
+        if issuance_factors is not None:
+            factors = (
+                *issuance_factors,
+                *(point for point in factors if point.effective_date > decision),
+            )
+        try:
+            eligible = adjust_to_basis(eligible, factors, basis_date=decision)
+        except DataError:
+            missing = (None,) * len(dates)
+            return OutcomeWindow(
+                dates,
+                missing,
+                observed_through,
+                missing,
+                period_sessions,
+                price_basis_unverified=True,
+                period_starts=starts,
+                period_ends=ends,
+                observed_at=observed_at,
+            )
+    if price_scale != 1.0:
+        eligible = tuple(
+            bar.model_copy(
+                update={
+                    field: getattr(bar, field) * price_scale
+                    for field in ("open", "high", "low", "close")
+                }
+            )
+            for bar in eligible
+        )
+    by_start = {bar.start_at: bar for bar in eligible}
+    expected: set[tuple[datetime, datetime]] = set()
+    calendar_ok = True
+    if selected:
+        try:
+            calendar = load_calendar(bundle.instrument, min(dates), max(dates))
+            duration = minutes(bundle.timeframe)
+            if duration is None:
+                raise DataError("intraday timeframe required")
+            for session in calendar.sessions:
+                expected.update(intraday_windows(session, duration))
+        except DataError:
+            calendar_ok = False
+    gaps = {gap for gap in missing_intervals(bundle) if gap < cutoff}
+    bars: list[Bar | None] = []
+    closing: list[Bar | None] = []
+    mismatch_indices: set[int] = set()
+    incomplete_indices: set[int] = set()
+    for index, period in enumerate(selected):
+        if not calendar_ok or (period.start_at, period.end_at) not in expected:
+            mismatch_indices.add(index)
+            bars.append(None)
+            closing.append(None)
+            continue
+        bar = by_start.get(period.start_at)
+        if bar is None or bar.end_at != period.end_at:
+            if observed_at is not None and period.start_at <= observed_at:
+                incomplete_indices.add(index)
+            bars.append(None)
+            closing.append(None)
+            continue
+        if any(gap < period.start_at for gap in gaps):
+            incomplete_indices.add(index)
+        bars.append(bar)
+        closing.append(bar)
+    return OutcomeWindow(
+        dates,
+        tuple(bars),
+        observed_through,
+        tuple(closing),
+        period_sessions,
+        frozenset(dates[index] for index in mismatch_indices),
+        period_starts=starts,
+        period_ends=ends,
+        observed_at=observed_at,
+        mismatch_indices=frozenset(mismatch_indices),
+        incomplete_indices=frozenset(incomplete_indices),
+    )
+
+
 def close_band(window: OutcomeWindow, decision_close: float, atr: float, horizon: int) -> Outcome:
     if horizon < 1 or not math.isfinite(atr) or atr <= 0:
         return Outcome("UNDEFINED_EVENT")
@@ -327,6 +473,22 @@ def _outlook_advance(case: OutlookCase, bar: Bar) -> tuple[bool, tuple[str, ...]
     return bool(hits), tuple(item.condition.reason for item in hits)
 
 
+def _bar_outcome(
+    status: str,
+    day: date,
+    bar: Bar,
+    evidence: tuple[str, ...] = (),
+) -> Outcome:
+    return Outcome(
+        status,
+        day,
+        evidence=evidence,
+        bar_id=bar.bar_id,
+        start_at=bar.start_at,
+        end_at=bar.end_at,
+    )
+
+
 def evaluate_outlook_event(
     spec: EventSpec,
     case: OutlookCase,
@@ -341,17 +503,20 @@ def evaluate_outlook_event(
             return Outcome("UNDEFINED_EVENT")
         if not any(item.role in {"INVALIDATION", "STAGE_EXIT"} for item in case.conditions):
             return Outcome("UNDEFINED_EVENT")
-        for day, bar in zip(window.dates[: spec.horizon], window.bars[: spec.horizon], strict=True):
+        for index, bar in enumerate(window.bars[: spec.horizon]):
+            day = window.dates[index]
             if bar is None:
-                return window.missing(day)
+                return window.missing_index(index)
             stop, stop_evidence = _outlook_stop(case, bar)
             advance, advance_evidence = _outlook_advance(case, bar)
             if stop and advance:
-                return Outcome("AMBIGUOUS_SAME_BAR", day, evidence=stop_evidence + advance_evidence)
+                return _bar_outcome(
+                    "AMBIGUOUS_SAME_BAR", day, bar, stop_evidence + advance_evidence
+                )
             if stop:
-                return Outcome(stop, day, evidence=stop_evidence)
+                return _bar_outcome(stop, day, bar, stop_evidence)
             if advance:
-                return Outcome("CONFIRMED_FIRST", day, evidence=advance_evidence)
+                return _bar_outcome("CONFIRMED_FIRST", day, bar, advance_evidence)
         return _outlook_expiry(window, spec)
     if spec.evaluator == "target_first":
         if case.target is None or not any(
@@ -364,9 +529,10 @@ def evaluate_outlook_event(
             return Outcome("UNDEFINED_EVENT")
         waiting = case.target_mode == "AFTER_ADVANCE"
         target_evidence = (case.target.label,)
-        for day, bar in zip(window.dates[: spec.horizon], window.bars[: spec.horizon], strict=True):
+        for index, bar in enumerate(window.bars[: spec.horizon]):
+            day = window.dates[index]
             if bar is None:
-                return window.missing(day)
+                return window.missing_index(index)
             stop, stop_evidence = _outlook_stop(case, bar)
             advance, advance_evidence = _outlook_advance(case, bar)
             hit = target_hit(
@@ -376,24 +542,24 @@ def evaluate_outlook_event(
             )
             if waiting:
                 if stop and advance:
-                    return Outcome(
-                        "AMBIGUOUS_SAME_BAR", day, evidence=stop_evidence + advance_evidence
+                    return _bar_outcome(
+                        "AMBIGUOUS_SAME_BAR", day, bar, stop_evidence + advance_evidence
                     )
                 if stop:
-                    return Outcome(stop, day, evidence=stop_evidence)
+                    return _bar_outcome(stop, day, bar, stop_evidence)
                 if advance and hit:
-                    return Outcome(
-                        "AMBIGUOUS_SAME_BAR", day, evidence=stop_evidence + target_evidence
+                    return _bar_outcome(
+                        "AMBIGUOUS_SAME_BAR", day, bar, stop_evidence + target_evidence
                     )
                 if advance:
                     waiting = False
                 continue
             if stop and hit:
-                return Outcome("AMBIGUOUS_SAME_BAR", day, evidence=stop_evidence + target_evidence)
+                return _bar_outcome("AMBIGUOUS_SAME_BAR", day, bar, stop_evidence + target_evidence)
             if stop:
-                return Outcome(stop, day, evidence=stop_evidence)
+                return _bar_outcome(stop, day, bar, stop_evidence)
             if hit:
-                return Outcome("TARGET_FIRST", day, evidence=target_evidence)
+                return _bar_outcome("TARGET_FIRST", day, bar, target_evidence)
         return _outlook_expiry(window, spec)
     return Outcome("UNDEFINED_EVENT")
 
@@ -401,6 +567,7 @@ def evaluate_outlook_event(
 def _outlook_expiry(window: OutcomeWindow, spec: EventSpec) -> Outcome:
     if len(window.dates) < spec.horizon or not window.dates:
         return Outcome("RIGHT_CENSORED")
-    if any(bar is None for bar in window.bars[: spec.horizon]):
-        return window.missing(window.dates[min(len(window.dates), spec.horizon) - 1])
+    for index, bar in enumerate(window.bars[: spec.horizon]):
+        if bar is None:
+            return window.missing_index(index)
     return Outcome("EXPIRED", window.dates[spec.horizon - 1])

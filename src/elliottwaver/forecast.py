@@ -42,6 +42,15 @@ CANDIDATE_EVENTS = {
     "OUTLOOK_TARGET_FIRST_5D_V1",
     "OUTLOOK_TARGET_FIRST_2W_V1",
 }
+for _timeframe, _suffix in {
+    "1m": "1M",
+    "5m": "5M",
+    "15m": "15M",
+    "30m": "30M",
+    "60m": "60M",
+}.items():
+    CANDIDATE_EVENTS.add(f"ADVANCE_FIRST_{_suffix}_5B_V1")
+    CANDIDATE_EVENTS.add(f"OUTLOOK_TARGET_FIRST_{_suffix}_5B_V1")
 
 
 def event_horizon(event_id: str) -> int:
@@ -55,6 +64,8 @@ def event_horizon(event_id: str) -> int:
 
 
 def _horizon_unit(event_id: str) -> str:
+    if event_id.endswith("5B_V1"):
+        return "BARS"
     return "WEEKS" if event_id.endswith("W_V1") else "SESSIONS"
 
 
@@ -84,8 +95,8 @@ def validate_model(model: dict, *, operational: bool = False) -> dict:
     if new_outlook_events or new_close_event:
         if len(models) != 1:
             raise ValueError("MODEL_INVALID: a new outlook model must contain exactly one event")
-        if scope.get("outlook_version") != "1.0":
-            raise ValueError("MODEL_INVALID: new outlook model requires outlook_version 1.0")
+        if scope.get("outlook_version") not in {"1.0", "1.1"}:
+            raise ValueError("MODEL_INVALID: new outlook model requires outlook_version 1.0/1.1")
         if new_close_event:
             if scope.get("outlook_slot") != "SYMBOL":
                 raise ValueError("MODEL_INVALID: close event requires outlook_slot SYMBOL")
@@ -673,6 +684,7 @@ def forecasts_for_brief(
             if (result.timeframe, _horizon_unit(event_id)) not in {
                 ("1d", "SESSIONS"),
                 ("1w", "WEEKS"),
+                *((timeframe, "BARS") for timeframe in ("1m", "5m", "15m", "30m", "60m")),
             }:
                 continue
             new_event = event_id.startswith(("ADVANCE_FIRST_", "OUTLOOK_TARGET_FIRST_"))

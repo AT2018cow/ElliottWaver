@@ -13,12 +13,13 @@ from elliottwaver.data.router import route_symbol
 from elliottwaver.data.snapshots import SnapshotStore
 from elliottwaver.engine.indicators import calculate
 from elliottwaver.errors import DataError
-from elliottwaver.evaluation.events import EVENT_SPECS
+from elliottwaver.evaluation.events import EVENT_SPECS, INTRADAY_EVENTS
 from elliottwaver.evaluation.outcomes import (
     Outcome,
     close_band,
     evaluate_outlook_event,
     first_touch,
+    intraday_outlook_window,
     outcome_window,
     outlook_window,
 )
@@ -68,9 +69,28 @@ SUPPORT_TESTS = (
     "tests/test_settlement.py",
 )
 
+for _timeframe, (_advance, _target) in INTRADAY_EVENTS.items():
+    EVENT_ROWS[_timeframe] = ()
+    CANDIDATE_EVENTS[_timeframe] = ((_advance, 5, "BARS"), (_target, 5, "BARS"))
+
 
 def event_specs(brief: Brief) -> list[tuple[str, str, int, str]]:
     """Return (event_id, scope, horizon, unit) for one issued brief."""
+    if brief.timeframe in INTRADAY_EVENTS:
+        outlook = brief.outlook
+        if outlook is None:
+            return []
+        if outlook.version != "1.1" or outlook.horizon_unit != "BARS":
+            raise DataError("SETTLEMENT_WINDOW_TIMEFRAME_MISMATCH: 旧观察窗与主周期不匹配")
+        if outlook.status != "AVAILABLE":
+            return []
+        case_ids = {case.scenario_id for case in outlook.cases}
+        return [
+            (event_id, card.scenario_id, horizon, unit)
+            for card in brief.cards
+            if card.scenario_id in case_ids
+            for event_id, horizon, unit in CANDIDATE_EVENTS[brief.timeframe]
+        ]
     if brief.timeframe not in EVENT_ROWS:
         raise DataError(f"Unsupported settlement timeframe: {brief.timeframe}")
     available = brief.outlook is not None and brief.outlook.status == "AVAILABLE"
@@ -161,6 +181,9 @@ class SettlementStore:
             }
             if "evidence" not in revision_columns:
                 db.execute("ALTER TABLE settlement_revisions ADD COLUMN evidence TEXT")
+            for column in ("bar_id", "trigger_start_at", "trigger_end_at"):
+                if column not in revision_columns:
+                    db.execute(f"ALTER TABLE settlement_revisions ADD COLUMN {column} TEXT")
             db.execute(
                 "CREATE INDEX IF NOT EXISTS settlement_symbol "
                 "ON settlements(symbol, market_asof, event_id)"
@@ -258,6 +281,9 @@ class SettlementStore:
                         "value",
                         "evidence",
                         "source_hash",
+                        "bar_id",
+                        "trigger_start_at",
+                        "trigger_end_at",
                     )
                 )
                 if same:
@@ -277,8 +303,8 @@ class SettlementStore:
                 (brief_digest, event_id, scope, revision, status, outcome, session,
                  value, settlement_snapshot_id, settlement_input_snapshot_id,
                  price_coordinate_id, evidence, source_hash, settled_at, is_initial,
-                 supersedes_revision)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 supersedes_revision, bar_id, trigger_start_at, trigger_end_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     *key,
@@ -295,6 +321,9 @@ class SettlementStore:
                     now,
                     is_initial,
                     supersedes,
+                    observation["bar_id"],
+                    observation["trigger_start_at"],
+                    observation["trigger_end_at"],
                 ),
             )
             db.execute(
@@ -366,8 +395,12 @@ class SettlementStore:
                 and brief.outlook.price_coordinate_id != brief.price_coordinate_id
             ):
                 raise DataError("SETTLEMENT_ISSUANCE_MISMATCH")
-            if brief.outlook.issued_at is not None and brief.outlook.issued_at != brief.as_of:
-                raise DataError("SETTLEMENT_ISSUANCE_MISMATCH")
+            if brief.outlook.issued_at is not None:
+                if brief.timeframe in INTRADAY_EVENTS:
+                    if brief.outlook.issued_at < brief.as_of:
+                        raise DataError("SETTLEMENT_ISSUANCE_MISMATCH")
+                elif brief.outlook.issued_at != brief.as_of:
+                    raise DataError("SETTLEMENT_ISSUANCE_MISMATCH")
         scenarios = {scenario.scenario_id: scenario for scenario in result.scenarios}
         for event_id, scope, horizon, _unit in event_specs(brief):
             if price_scale is None:
@@ -378,14 +411,24 @@ class SettlementStore:
                     ("ADVANCE_FIRST_", "OUTLOOK_TARGET_FIRST_")
                 )
                 if frozen_event and brief.outlook is not None:
-                    window = outlook_window(
-                        source_bundle,
-                        brief.market_asof,
-                        brief.outlook.periods,
-                        horizon,
-                        issuance_factors=issuance_factors,
-                        price_scale=price_scale,
-                    )
+                    if brief.timeframe in INTRADAY_EVENTS:
+                        window = intraday_outlook_window(
+                            source_bundle,
+                            brief.market_asof,
+                            brief.outlook.periods,
+                            horizon,
+                            issuance_factors=issuance_factors,
+                            price_scale=price_scale,
+                        )
+                    else:
+                        window = outlook_window(
+                            source_bundle,
+                            brief.market_asof,
+                            brief.outlook.periods,
+                            horizon,
+                            issuance_factors=issuance_factors,
+                            price_scale=price_scale,
+                        )
                 else:
                     window = outcome_window(
                         source_bundle,
@@ -451,6 +494,9 @@ class SettlementStore:
                 "price_coordinate_id": brief.price_coordinate_id,
                 "evidence": (canonical_json(list(outcome.evidence)) if outcome.evidence else None),
                 "source_hash": _source_hash(bar for bar in used if bar is not None),
+                "bar_id": outcome.bar_id,
+                "trigger_start_at": outcome.start_at.isoformat() if outcome.start_at else None,
+                "trigger_end_at": outcome.end_at.isoformat() if outcome.end_at else None,
             }
             self._record(observation)
         return self.rows(brief_digest=brief.brief_digest)

@@ -216,6 +216,15 @@ class SinaProvider:
                 price_coordinate_id=digest(["sina-index", target, "none"]),
                 factor_hash="",
                 parser_version=f"sina-index-v1/akshare/{payload['version']}",
+                source_timeframe="1d",
+                aggregation="none",
+                coverage_start=adjusted[0].session_date if adjusted else None,
+                coverage_end=adjusted[-1].session_date if adjusted else None,
+                coverage_reason=(
+                    "REQUESTED_START_BEFORE_PROVIDER_COVERAGE"
+                    if adjusted and start < adjusted[0].session_date
+                    else ""
+                ),
                 session_profile="cn_exchange_session",
                 calendar_version=calendar.version,
                 fetched_at=observed,
@@ -297,6 +306,15 @@ class SinaProvider:
                 price_coordinate_id=digest(["sina", target, factor_hash]),
                 factor_hash=factor_hash,
                 parser_version=f"sina-v2/akshare/{payload['version']}",
+                source_timeframe=timeframe,
+                aggregation="none",
+                coverage_start=adjusted[0].session_date if adjusted else None,
+                coverage_end=adjusted[-1].session_date if adjusted else None,
+                coverage_reason=(
+                    "REQUESTED_START_BEFORE_PROVIDER_COVERAGE"
+                    if adjusted and start < adjusted[0].session_date
+                    else ""
+                ),
                 session_profile="cn_sina_1m_auction_sparse_v1"
                 if timeframe == "1m"
                 else "cn_exchange_session",

@@ -9,6 +9,8 @@ from datetime import UTC, date, datetime
 from zoneinfo import ZoneInfo
 
 from elliottwaver.data.adjustment import provider_price_scale
+from elliottwaver.data.periods import resample_bundle
+from elliottwaver.data.quality import missing_intervals
 from elliottwaver.engine.indicators import calculate
 from elliottwaver.engine.matcher import SearchBudget
 from elliottwaver.engine.timeframe_link import link_timeframes
@@ -184,9 +186,21 @@ def _window(
     result: AnalysisResult, prepared: MarketDataBundle, details: tuple[BriefAnchor, ...]
 ) -> BriefWindow:
     anchors = result.diagnostics.anchors
-    start = min(anchors) if anchors else prepared.bars[0].session_date
-    end = result.market_asof
-    bar_count = sum(1 for bar in prepared.bars if start <= bar.session_date <= end)
+    intraday = result.timeframe.endswith("m")
+    anchor_times = tuple(detail.at for detail in details if detail.at)
+    if intraday:
+        start_at = min(anchor_times) if anchor_times else prepared.bars[0].start_at
+        end_at = prepared.bars[-1].end_at
+        zone = ZoneInfo(prepared.instrument.timezone)
+        start = start_at.astimezone(zone).date()
+        end = prepared.bars[-1].session_date
+        bar_count = sum(1 for bar in prepared.bars if start_at <= bar.start_at <= end_at)
+    else:
+        start_at = None
+        end_at = None
+        start = min(anchors) if anchors else prepared.bars[0].session_date
+        end = result.market_asof
+        bar_count = sum(1 for bar in prepared.bars if start <= bar.session_date <= end)
     primary_start = None
     if result.scenarios and result.scenarios[0].completed_waves:
         primary_start = prepared.bars[
@@ -198,6 +212,9 @@ def _window(
         bar_count=max(1, bar_count),
         anchors=tuple(anchors),
         anchor_details=details,
+        anchor_times=anchor_times if intraday else (),
+        start_at=start_at,
+        end_at=end_at,
         fallback=any(warning.startswith("ANCHOR_FALLBACK") for warning in result.warnings),
         primary_pattern_start=primary_start,
     )
@@ -266,34 +283,69 @@ def _bias(result: AnalysisResult) -> str:
     return result.scenarios[0].next_leg_bias
 
 
-def _cross_timeframe(primary: AnalysisResult, weekly: AnalysisResult | None) -> BriefCrossTimeframe:
+def _timeframe_label(value: str) -> str:
+    return {
+        "1m": "1分钟线",
+        "5m": "5分钟线",
+        "15m": "15分钟线",
+        "30m": "30分钟线",
+        "60m": "60分钟线",
+        "1d": "日线",
+        "1w": "周线",
+    }.get(value, value)
+
+
+def _cross_timeframe(
+    primary: AnalysisResult,
+    background: AnalysisResult | None,
+    background_timeframe: str | None = None,
+) -> BriefCrossTimeframe:
     primary_bias = _bias(primary)
-    if weekly is None:
+    if background is None:
+        reason = (
+            "盘中周期暂未取得固定配对背景" if primary.timeframe.endswith("m") else "周线背景不可用"
+        )
         return BriefCrossTimeframe(
             state="NOT_AVAILABLE",
             primary_bias=primary_bias,
             primary_market_asof=primary.market_asof,
-            reason="周线背景不可用",
+            reason=reason,
         )
-    weekly_bias = _bias(weekly)
-    if primary.status != "OK" or weekly.status != "OK":
+    background_bias = _bias(background)
+    label = _timeframe_label(background_timeframe or background.timeframe)
+    if primary.status != "OK" or background.status != "OK":
         state = "UNDETERMINED"
-        reason = f"日线状态 {primary.status}，周线状态 {weekly.status}"
-    elif primary_bias == "UNKNOWN" or weekly_bias == "UNKNOWN":
+        reason = f"主周期状态 {primary.status}，{label}状态 {background.status}"
+    elif primary_bias == "UNKNOWN" or background_bias == "UNKNOWN":
         state = "UNDETERMINED"
-        reason = "至少一侧没有明确的下一段方向"
-    elif primary_bias == weekly_bias:
+        reason = f"主周期或{label}没有明确的下一段方向"
+    elif primary_bias == background_bias:
         state = "ALIGNED"
-        reason = "日线与周线下一段方向一致"
+        reason = f"主周期与{label}下一段方向一致"
     else:
         state = "CONFLICT"
-        reason = "日线与周线下一段方向相反"
+        reason = f"主周期与{label}下一段方向相反"
+    if background_timeframe == "1w" or (
+        background_timeframe is None and background.timeframe == "1w"
+    ):
+        return BriefCrossTimeframe(
+            state=state,
+            primary_bias=primary_bias,
+            weekly_bias=background_bias,
+            primary_market_asof=primary.market_asof,
+            weekly_market_asof=background.market_asof,
+            background_timeframe="1w",
+            background_bias=background_bias,
+            background_market_asof=background.market_asof,
+            reason=reason,
+        )
     return BriefCrossTimeframe(
         state=state,
         primary_bias=primary_bias,
-        weekly_bias=weekly_bias,
         primary_market_asof=primary.market_asof,
-        weekly_market_asof=weekly.market_asof,
+        background_timeframe=background_timeframe or background.timeframe,
+        background_bias=background_bias,
+        background_market_asof=background.market_asof,
         reason=reason,
     )
 
@@ -308,7 +360,7 @@ def _window_comparison(
 ) -> BriefWindowComparison:
     if alternate is None or alternate_prepared is None:
         return BriefWindowComparison(state="INCONCLUSIVE", reason=reason)
-    if request.anchor is not None:
+    if request.anchor is not None or request.anchor_at is not None:
         return BriefWindowComparison(state="NOT_APPLICABLE", reason="手动锚点不参与自动换窗")
     anchors = tuple(dict.fromkeys(primary.diagnostics.anchors))
     if len(anchors) < 2:
@@ -495,12 +547,65 @@ def build_brief(
     service = AnalysisService(settings)
     advanced = settings.analysis.engine_profile == "hierarchical_v1"
     day_budget = SearchBudget(settings.search.max_expansions) if advanced else None
-    prepared = prepare_bundle(request, source)
+    generated_at = datetime.now(UTC)
+    background_request = None
+    background_prepared = None
+    background_context = None
+    background_result = None
+    background = None
+    background_state = "NOT_REQUESTED"
+    background_state_message = ""
+    background_timeframe = None
+    analysis_source = source
+    if request.timeframe.endswith("m"):
+        from elliottwaver.timeframes import BACKGROUND_TIMEFRAMES
+
+        target = BACKGROUND_TIMEFRAMES.get(request.timeframe)
+        if target is not None:
+            try:
+                derived = resample_bundle(source, target, as_of=request.as_of)
+                background_request = request.model_copy(
+                    update={"timeframe": target, "anchor": None, "anchor_at": None}
+                )
+                background_prepared = prepare_bundle(background_request, derived)
+                analysis_source = source.model_copy(update={"auxiliary": background_prepared.bars})
+            except DataError as exc:
+                background_state = "INSUFFICIENT_DATA"
+                background_request = None
+                background_prepared = None
+                background_state_message = str(exc)
+    prepared = prepare_bundle(request, analysis_source)
     context = service.analyze_with_context(request, prepared, shared_budget=day_budget)
     result = context.result
     issues = list(_issues(result))
     if model_issue:
         issues.append(BriefIssue(code="MODEL_INVALID", scope="forecast", message=model_issue))
+    if background_state == "INSUFFICIENT_DATA":
+        issues.append(
+            BriefIssue(
+                code="BACKGROUND_UNAVAILABLE",
+                scope="background",
+                message=background_state_message or "固定配对背景不可用",
+            )
+        )
+    if background_request is not None and background_prepared is not None:
+        try:
+            background_context = service.analyze_with_context(
+                background_request, background_prepared
+            )
+            background_result = background_context.result
+            background_timeframe = background_prepared.timeframe
+            background = _period(background_result, background_prepared, background_context.anchors)
+            background_state = (
+                "AVAILABLE"
+                if background_result.status in {"OK", "UNCLEAR", "SEARCH_LIMITED"}
+                else "INSUFFICIENT_DATA"
+            )
+        except DataError as exc:
+            background_state = "INSUFFICIENT_DATA"
+            issues.append(
+                BriefIssue(code="BACKGROUND_UNAVAILABLE", scope="background", message=str(exc))
+            )
 
     weekly_result = None
     weekly_prepared = None
@@ -523,7 +628,10 @@ def build_brief(
 
     indicators = calculate(prepared.bars)
     cards = _select_cards(result, prepared)
-    outlook = build_outlook(cards, result, prepared, context.projections)
+    issued_at = (
+        generated_at if request.mode == "LIVE" and result.timeframe.endswith("m") else request.as_of
+    )
+    outlook = build_outlook(cards, result, prepared, context.projections, issued_at=issued_at)
     wave_relations = ()
     if advanced and weekly_context is not None and weekly_prepared is not None:
         wave_relations = link_timeframes(
@@ -542,15 +650,24 @@ def build_brief(
             forecast_weekly = service.weekly_background(request, source)[0].result
         except DataError:
             pass
-    cross_timeframe = _cross_timeframe(result, weekly_result)
+    cross_timeframe = _cross_timeframe(
+        result,
+        background_result or weekly_result,
+        background_timeframe or ("1w" if weekly_result is not None else None),
+    )
 
     alternate_result = None
     alternate_prepared = None
     anchors = sorted(set(result.diagnostics.anchors))
-    if not check_windows or request.anchor is not None or len(anchors) < 2:
+    if (
+        not check_windows
+        or request.anchor is not None
+        or request.anchor_at is not None
+        or len(anchors) < 2
+    ):
         if not check_windows:
             reason = "未启用换窗复核"
-        elif request.anchor is not None:
+        elif request.anchor is not None or request.anchor_at is not None:
             reason = "手动锚点不参与自动换窗"
         else:
             reason = "只有一个自动锚点"
@@ -609,7 +726,7 @@ def build_brief(
         mode=request.mode,
         engine_version=result.engine_version,
         config_hash=result.config_hash,
-        generated_at=datetime.now(UTC),
+        generated_at=generated_at,
         timeframe=result.timeframe,
         timeframe_reason=timeframe_reason,
         status=result.status,
@@ -620,6 +737,9 @@ def build_brief(
         feed=result.feed,
         adjustment=result.adjustment,
         latest_price=result.latest_price,
+        last_bar_end_at=prepared.bars[-1].end_at,
+        last_bar_id=prepared.bars[-1].bar_id,
+        last_bar_available_at=prepared.bars[-1].usable_at,
         window=_window(result, prepared, context.anchors),
         cards=cards,
         omitted_weight=result.omitted_weight,
@@ -627,6 +747,8 @@ def build_brief(
         issues=tuple(issues),
         weekly_state=weekly_state,
         weekly=weekly,
+        background_state=background_state,
+        background=background,
         cross_timeframe=cross_timeframe,
         wave_relations=wave_relations,
         outlook=outlook,
@@ -889,6 +1011,101 @@ def _structure_transition(
     return "COUNT_CHANGED", "主选结构发生变化", (event,)
 
 
+def _intraday_triggered_conditions(
+    previous: Brief,
+    current: Brief,
+    previous_source: MarketDataBundle | None,
+    current_source: MarketDataBundle | None,
+) -> tuple[tuple[LevelCondition, ...], tuple[dict, ...], str | None]:
+    if (
+        not previous.cards
+        or previous_source is None
+        or current_source is None
+        or previous.last_bar_end_at is None
+        or current.last_bar_end_at is None
+    ):
+        return (), (), None
+    if any(
+        condition.coordinate_id != previous.price_coordinate_id
+        for condition in previous.cards[0].conditions
+    ):
+        return (), (), "PRICE_BASIS_UNVERIFIED: 条件价格坐标与原摘要不一致"
+    scale = 1.0
+    if (
+        previous.adjustment == "provider_all"
+        and previous_source.provenance.price_coordinate_id
+        != current_source.provenance.price_coordinate_id
+    ):
+        scale = provider_price_scale(previous_source, current_source, previous.market_asof)
+        if scale is None:
+            return (), (), "PRICE_BASIS_UNVERIFIED: 发行时价格坐标无法核实"
+    start = previous.last_bar_end_at
+    end = current.last_bar_end_at
+    bars = tuple(
+        bar
+        for bar in current_source.bars
+        if bar.is_final and bar.usable_at <= current.as_of and start <= bar.start_at <= end
+    )
+    gaps = tuple(gap for gap in missing_intervals(current_source) if start < gap <= end)
+    triggered: list[LevelCondition] = []
+    events: list[dict] = []
+    issue = None
+    card = previous.cards[0]
+    for condition in card.conditions:
+        active = max(previous.as_of, condition.active_from)
+        missing = False
+        for source_bar in bars:
+            bar = source_bar
+            if scale != 1.0:
+                bar = source_bar.model_copy(
+                    update={
+                        field: getattr(source_bar, field) * scale
+                        for field in ("open", "high", "low", "close")
+                    }
+                )
+            trigger_at = bar.end_at if condition.side == "CLOSE" else bar.start_at
+            if trigger_at < active or not condition_hit(condition, bar):
+                continue
+            missing = any(gap < bar.start_at for gap in gaps)
+            status = "OBSERVED_AFTER_GAP" if missing else "TRIGGERED"
+            if not missing:
+                triggered.append(condition)
+            else:
+                issue = "INCOMPLETE_DATA: 缺口之后只记录已观测的触达"
+            events.append(
+                {
+                    "type": "condition",
+                    "status": status,
+                    "kind": condition.kind,
+                    "side": condition.side,
+                    "op": condition.op,
+                    "price": condition.price,
+                    "observed": getattr(bar, condition.side.lower()),
+                    "coordinate_id": condition.coordinate_id,
+                    "session": bar.session_date.isoformat(),
+                    "bar_id": source_bar.bar_id,
+                    "start_at": source_bar.start_at.isoformat(),
+                    "end_at": source_bar.end_at.isoformat(),
+                }
+            )
+            break
+    by_bar: dict[str, dict[str, str]] = {}
+    for event in events:
+        if event["type"] == "condition" and event["status"] == "TRIGGERED":
+            by_bar.setdefault(event["bar_id"], {})[event["kind"]] = event["session"]
+    for bar_id, kinds in by_bar.items():
+        if {"CONFIRMATION", "INVALIDATION"} <= kinds.keys():
+            events.append(
+                {
+                    "type": "outcome",
+                    "status": "AMBIGUOUS_SAME_BAR",
+                    "session": kinds["INVALIDATION"],
+                    "bar_id": bar_id,
+                }
+            )
+    return tuple(triggered), tuple(events), issue
+
+
 def _triggered_conditions(
     previous: Brief,
     current: Brief,
@@ -898,6 +1115,10 @@ def _triggered_conditions(
     scope_comparable: bool,
     revision_comparable: bool,
 ) -> tuple[tuple[LevelCondition, ...], tuple[dict, ...], str | None]:
+    if current.timeframe.endswith("m"):
+        if not scope_comparable or not revision_comparable:
+            return (), (), None
+        return _intraday_triggered_conditions(previous, current, previous_source, current_source)
     if (
         not previous.cards
         or previous_source is None
@@ -1035,7 +1256,7 @@ def compare_decisions(
     """Compare two published decisions without reading or rewriting either report."""
     if previous is None:
         return DecisionComparison(change="FIRST_RECORD", reason="没有更早的同类摘要")
-    legacy_view = current.schema_version != "1.2"
+    legacy_view = current.schema_version != "1.2" and not current.timeframe.endswith("m")
     structure_change, structure_reason, structure_events = _structure_transition(
         previous, current, previous_result, current_result, previous_source, legacy_view=legacy_view
     )
@@ -1136,14 +1357,19 @@ def attach_previous(
             previous_digest=previous.brief_digest,
             previous_market_asof=previous.market_asof,
             previous_as_of=previous.as_of,
+            previous_last_bar_end_at=previous.last_bar_end_at,
             previous_path=previous_path,
             structure_change=comparison.structure_change,
             data_revision=comparison.data_revision,
             revision_count=comparison.revision_count,
             factor_revision_count=comparison.factor_revision_count,
             triggered_conditions=comparison.triggered_conditions,
-            events=comparison.events if run.brief.schema_version == "1.2" else (),
-            input_change=comparison.input_change if run.brief.schema_version == "1.2" else None,
+            events=comparison.events
+            if run.brief.schema_version == "1.2" or run.brief.timeframe.endswith("m")
+            else (),
+            input_change=comparison.input_change
+            if run.brief.schema_version == "1.2" or run.brief.timeframe.endswith("m")
+            else None,
         )
     brief = run.brief.model_copy(update={"previous": previous_info})
     brief_digest = digest(brief.model_dump(mode="json", exclude={"brief_digest", "generated_at"}))

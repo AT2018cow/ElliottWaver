@@ -23,7 +23,8 @@ from elliottwaver.timeframes import Timeframe
 class BriefAnchor(Contract):
     date: date
     origin: Literal["EXPLICIT", "MACRO_HIGH", "MACRO_LOW", "FALLBACK"]
-    background_timeframe: Literal["1d", "1w", "1mo"] | None = None
+    background_timeframe: Timeframe | Literal["1mo"] | None = None
+    at: AwareDatetime | None = Field(None, exclude_if=lambda value: value is None)
     confirmed_at: AwareDatetime | None = None
 
 
@@ -33,6 +34,9 @@ class BriefWindow(Contract):
     bar_count: int = Field(ge=1)
     anchors: tuple[date, ...]
     anchor_details: tuple[BriefAnchor, ...] = ()
+    anchor_times: tuple[AwareDatetime, ...] = Field((), exclude_if=lambda value: not value)
+    start_at: AwareDatetime | None = Field(None, exclude_if=lambda value: value is None)
+    end_at: AwareDatetime | None = Field(None, exclude_if=lambda value: value is None)
     fallback: bool = False
     primary_pattern_start: date | None = None
 
@@ -92,6 +96,13 @@ class BriefCrossTimeframe(Contract):
     weekly_bias: Literal["UP", "DOWN", "UNKNOWN"] | None = None
     primary_market_asof: date
     weekly_market_asof: date | None = None
+    background_timeframe: Timeframe | Literal["1mo"] | None = Field(
+        None, exclude_if=lambda value: value is None
+    )
+    background_bias: Literal["UP", "DOWN", "UNKNOWN"] | None = Field(
+        None, exclude_if=lambda value: value is None
+    )
+    background_market_asof: date | None = Field(None, exclude_if=lambda value: value is None)
     reason: str
 
 
@@ -107,7 +118,7 @@ class BriefForecast(Contract):
         "MODEL_INVALID",
     ]
     horizon_sessions: int = Field(ge=1)
-    horizon_unit: Literal["SESSIONS", "WEEKS"] = "SESSIONS"
+    horizon_unit: Literal["SESSIONS", "WEEKS", "BARS"] = "SESSIONS"
     probabilities: dict[str, float] | None = None
     model_id: str | None = None
     reason: str | None = None
@@ -141,6 +152,9 @@ class BriefPrevious(Contract):
     previous_digest: str | None = None
     previous_market_asof: date | None = None
     previous_as_of: AwareDatetime | None = None
+    previous_last_bar_end_at: AwareDatetime | None = Field(
+        None, exclude_if=lambda value: value is None
+    )
     previous_path: str | None = None
     structure_change: str | None = None
     data_revision: Literal["NONE", "REVISED", "NOT_COMPARABLE"] = "NONE"
@@ -198,6 +212,11 @@ class Brief(Contract):
     feed: str
     adjustment: str
     latest_price: float = Field(gt=0)
+    last_bar_end_at: AwareDatetime | None = Field(None, exclude_if=lambda value: value is None)
+    last_bar_id: str | None = Field(None, exclude_if=lambda value: value is None)
+    last_bar_available_at: AwareDatetime | None = Field(
+        None, exclude_if=lambda value: value is None
+    )
     window: BriefWindow
     cards: tuple[BriefCard, ...] = ()
     omitted_weight: float = Field(0, ge=0, le=1)
@@ -206,6 +225,10 @@ class Brief(Contract):
     issues: tuple[BriefIssue, ...] = ()
     weekly_state: Literal["NOT_REQUESTED", "AVAILABLE", "INSUFFICIENT_DATA"] = "NOT_REQUESTED"
     weekly: BriefPeriod | None = None
+    background_state: Literal["NOT_REQUESTED", "AVAILABLE", "INSUFFICIENT_DATA"] = Field(
+        "NOT_REQUESTED", exclude_if=lambda value: value == "NOT_REQUESTED"
+    )
+    background: BriefPeriod | None = Field(None, exclude_if=lambda value: value is None)
     cross_timeframe: BriefCrossTimeframe | None = None
     window_comparison: BriefWindowComparison | None = None
     previous: BriefPrevious | None = None

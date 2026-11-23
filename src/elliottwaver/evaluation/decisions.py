@@ -7,7 +7,7 @@ import json
 import re
 import statistics
 from collections import Counter
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 import pyarrow as pa
@@ -21,7 +21,7 @@ from elliottwaver.data.snapshots import SnapshotStore
 from elliottwaver.engine.indicators import calculate
 from elliottwaver.engine.zigzag import extract
 from elliottwaver.errors import DataError, InputError
-from elliottwaver.evaluation.events import EVENT_SPECS
+from elliottwaver.evaluation.events import EVENT_SPECS, INTRADAY_EVENTS
 from elliottwaver.evaluation.features import (
     FEATURE_VERSION,
     SUPPORTED_FEATURE_VERSIONS,
@@ -34,6 +34,7 @@ from elliottwaver.evaluation.outcomes import (
     close_band,
     evaluate_outlook_event,
     first_touch,
+    intraday_outlook_window,
     outcome_window,
     outlook_window,
     period_dates,
@@ -48,6 +49,7 @@ from elliottwaver.forecast import (
 from elliottwaver.schemas.market import AnalysisRequest, MarketDataBundle
 from elliottwaver.schemas.outlook import OutlookCase, OutlookPeriod
 from elliottwaver.service import engine_rules_version
+from elliottwaver.timeframes import TIMEFRAMES
 from elliottwaver.util import atomic_write, canonical_json, digest
 
 SUPPORTED_EVENTS = {
@@ -113,6 +115,49 @@ EVENT_SUCCESS.update(
         for event in ("ADVANCE_FIRST_5D_V1", "ADVANCE_FIRST_2W_V1")
     }
 )
+INTRADAY_EVENT_IDS = {event for pair in INTRADAY_EVENTS.values() for event in pair}
+SUPPORTED_EVENTS.update(INTRADAY_EVENT_IDS)
+EVENT_SUCCESS.update(
+    {
+        event: (
+            "TARGET_FIRST",
+            {
+                "TARGET_FIRST",
+                "INVALIDATED_FIRST",
+                "STAGE_EXIT_FIRST",
+                "AMBIGUOUS_SAME_BAR",
+                "EXPIRED",
+            },
+        )
+        for event in INTRADAY_EVENT_IDS
+        if event.startswith("OUTLOOK_TARGET_FIRST")
+    }
+)
+EVENT_SUCCESS.update(
+    {
+        event: (
+            "CONFIRMED_FIRST",
+            {
+                "CONFIRMED_FIRST",
+                "INVALIDATED_FIRST",
+                "STAGE_EXIT_FIRST",
+                "AMBIGUOUS_SAME_BAR",
+                "EXPIRED",
+            },
+        )
+        for event in INTRADAY_EVENT_IDS
+        if event.startswith("ADVANCE_FIRST")
+    }
+)
+
+
+def _parse_cutoff(value: str | None) -> date | datetime | None:
+    if not value:
+        return None
+    text = str(value)
+    if "T" in text:
+        return datetime.fromisoformat(text.replace("Z", "+00:00"))
+    return date.fromisoformat(text)
 
 
 def _load_protocol(path: Path) -> dict:
@@ -140,18 +185,21 @@ def _load_protocol(path: Path) -> dict:
                 raise InputError(f"Protocol sample is missing {key}")
         if not re.fullmatch(r"[a-f0-9]{64}", sample["snapshot_id"]):
             raise InputError(f"Invalid snapshot_id for {sample['symbol']}")
-        if sample["source_timeframe"] not in {"1d", "1w"}:
+        if sample["source_timeframe"] not in TIMEFRAMES:
             raise InputError(f"Unsupported source_timeframe for {sample['symbol']}")
     if set(protocol["events"]) - SUPPORTED_EVENTS:
         raise InputError("Protocol contains unsupported events")
     grid = protocol["grid"]
-    if grid.get("cadence") not in {"EVERY_SESSION", "LAST_SESSION_OF_WEEK"}:
+    if grid.get("cadence") not in {"EVERY_SESSION", "LAST_SESSION_OF_WEEK", "EVERY_BAR"}:
         raise InputError("Unsupported grid cadence")
     start, end = (date.fromisoformat(grid[key]) for key in ("start", "end"))
     if start > end:
         raise InputError("Grid start follows end")
+    if grid.get("cadence") == "EVERY_BAR":
+        if int(grid.get("step", 1)) < 1:
+            raise InputError("Grid step must be positive")
     if grid.get("outcome_as_of"):
-        date.fromisoformat(grid["outcome_as_of"])
+        _parse_cutoff(grid["outcome_as_of"])
     if "splits" in protocol:
         split_windows(protocol)
     return protocol
@@ -172,6 +220,13 @@ def split_windows(protocol: dict) -> dict[str, tuple[date, date]]:
 
 def _decision_bars(bundle: MarketDataBundle, grid: dict, timeframe: str):
     start, end = (date.fromisoformat(grid[key]) for key in ("start", "end"))
+    if timeframe.endswith("m"):
+        bars = [bar for bar in bundle.bars if start <= bar.session_date <= end]
+        if grid.get("cadence") == "EVERY_BAR":
+            step = int(grid.get("step", 1))
+            return [(bar.start_at, bar) for bar in bars[::step]]
+        by_date = {bar.session_date: bar for bar in bars}
+        return [(day, by_date[day]) for day in sorted(by_date)]
     sessions = bundle.sessions
     if sessions and (start < sessions[0] or end > sessions[-1]):
         if bundle.provenance.provider != "synthetic_demo":
@@ -358,37 +413,63 @@ def _event_rows(protocol, decision, source, prepared, qualified, atr, *, price_s
     frozen_periods = tuple(
         OutlookPeriod.model_validate(period) for period in (outlook.get("periods") or ())
     )
+    intraday = prepared.timeframe.endswith("m")
+    allowed = (
+        set(INTRADAY_EVENTS[prepared.timeframe])
+        if intraday
+        else DAILY_EVENTS
+        if prepared.timeframe == "1d"
+        else WEEKLY_EVENTS
+    )
     for event_id in protocol["events"]:
-        if event_id not in (DAILY_EVENTS if prepared.timeframe == "1d" else WEEKLY_EVENTS):
+        if event_id not in allowed:
             continue
         horizon = event_horizon(event_id)
-        cutoff = protocol["grid"].get("outcome_as_of")
+        cutoff = _parse_cutoff(protocol["grid"].get("outcome_as_of"))
         frozen_event = event_id == "CLOSE_BAND_2W_V1" or event_id.startswith(
             ("ADVANCE_FIRST_", "OUTLOOK_TARGET_FIRST_")
         )
         if frozen_event and (outlook.get("status") != "AVAILABLE" or not frozen_periods):
             continue
         if frozen_event and frozen_periods:
-            window = outlook_window(
-                source,
-                prepared.bars[-1].session_date,
-                frozen_periods,
-                horizon,
-                issuance_factors=prepared.factors,
-                outcome_as_of=date.fromisoformat(cutoff) if cutoff else None,
-                price_scale=price_scale,
-            )
+            if intraday:
+                window = intraday_outlook_window(
+                    source,
+                    prepared.bars[-1].session_date,
+                    frozen_periods,
+                    horizon,
+                    issuance_factors=prepared.factors,
+                    outcome_as_of=cutoff,
+                    price_scale=price_scale,
+                )
+            else:
+                window = outlook_window(
+                    source,
+                    prepared.bars[-1].session_date,
+                    frozen_periods,
+                    horizon,
+                    issuance_factors=prepared.factors,
+                    outcome_as_of=cutoff,
+                    price_scale=price_scale,
+                )
         else:
             window = outcome_window(
                 source,
                 prepared.bars[-1].session_date,
                 horizon,
-                outcome_as_of=date.fromisoformat(cutoff) if cutoff else None,
+                outcome_as_of=cutoff
+                if isinstance(cutoff, date) and not isinstance(cutoff, datetime)
+                else None,
             )
         current = prepared.bars[-1].close
         is_close = event_id.startswith("CLOSE_BAND_")
         targets = [(0, None)] if is_close else enumerate(qualified, 1)
         due_date = window.dates[-1] if len(window.dates) == horizon else None
+        due_at = (
+            window.period_ends[-1].isoformat()
+            if window.period_ends and len(window.period_ends) == horizon
+            else None
+        )
         if frozen_event:
             due_bar = (
                 window.close_bar(horizon)
@@ -440,6 +521,7 @@ def _event_rows(protocol, decision, source, prepared, qualified, atr, *, price_s
                         "event_id": event_id,
                         "horizon": horizon,
                         "due_date": str(due_date) if due_date is not None else None,
+                        "due_at": due_at,
                         "label_available_at": label_available_at,
                         "candidate_key": case.scenario_id,
                         "structure_key": case.structure_key,
@@ -455,9 +537,16 @@ def _event_rows(protocol, decision, source, prepared, qualified, atr, *, price_s
                         ),
                         "status": outcome.status,
                         "session": str(outcome.session) if outcome.session else None,
+                        "trigger_start_at": outcome.start_at.isoformat()
+                        if outcome.start_at
+                        else None,
+                        "trigger_end_at": outcome.end_at.isoformat() if outcome.end_at else None,
+                        "trigger_bar_id": outcome.bar_id,
                         "value": outcome.value,
                         "triggers": list(outcome.evidence),
                         "period_sessions": [list(item) for item in window.period_sessions],
+                        "period_starts": [item.isoformat() for item in window.period_starts],
+                        "period_ends": [item.isoformat() for item in window.period_ends],
                         "source_hash": _window_source_hash(window, outcome),
                         "features": features,
                     }
@@ -479,13 +568,19 @@ def _event_rows(protocol, decision, source, prepared, qualified, atr, *, price_s
                     "event_id": event_id,
                     "horizon": horizon,
                     "due_date": str(due_date) if due_date is not None else None,
+                    "due_at": due_at,
                     "label_available_at": label_available_at,
                     "candidate_key": scenario.scenario_id if scenario else None,
                     "status": outcome.status,
                     "session": str(outcome.session) if outcome.session else None,
+                    "trigger_start_at": outcome.start_at.isoformat() if outcome.start_at else None,
+                    "trigger_end_at": outcome.end_at.isoformat() if outcome.end_at else None,
+                    "trigger_bar_id": outcome.bar_id,
                     "value": outcome.value,
                     "triggers": list(outcome.evidence),
                     "period_sessions": [list(item) for item in window.period_sessions],
+                    "period_starts": [item.isoformat() for item in window.period_starts],
+                    "period_ends": [item.isoformat() for item in window.period_ends],
                     "source_hash": _window_source_hash(
                         window, outcome, close_horizon=horizon if is_close else None
                     ),
@@ -671,7 +766,7 @@ def evaluate_protocol(
         symbol = sample["symbol"]
         snapshot_id = sample["snapshot_id"]
         source_timeframe = sample.get("source_timeframe", "1d")
-        if source_timeframe not in {"1d", "1w"}:
+        if source_timeframe not in TIMEFRAMES:
             raise InputError(f"Unsupported source_timeframe for {symbol}")
         bundle = store.load(snapshot_id)
         if (
@@ -684,16 +779,23 @@ def evaluate_protocol(
                 bundle = as_weekly(bundle)
             elif bundle.timeframe != "1w":
                 raise InputError(f"Snapshot timeframe is not daily or weekly for {symbol}")
-        elif bundle.timeframe != "1d":
-            raise InputError(f"Daily evaluation requires a daily snapshot for {symbol}")
+        elif bundle.timeframe != source_timeframe:
+            raise InputError(
+                f"{source_timeframe} evaluation requires a matching snapshot for {symbol}"
+            )
         timeframe = source_timeframe
         previous_pivots: list[dict] | None = None
         previous_decision: dict | None = None
         previous_run: BriefRun | None = None
         for decision_day, decision_bar in _decision_bars(bundle, protocol["grid"], timeframe):
-            decision_id = digest([protocol_identity, symbol, decision_day, timeframe, snapshot_id])[
-                :24
-            ]
+            decision_marker = (
+                decision_bar.start_at.isoformat()
+                if timeframe.endswith("m") and decision_bar is not None
+                else decision_day
+            )
+            decision_id = digest(
+                [protocol_identity, symbol, decision_marker, timeframe, snapshot_id]
+            )[:24]
             identity = {
                 "decision_id": decision_id,
                 "symbol": symbol,
@@ -703,7 +805,16 @@ def evaluate_protocol(
                 "mode": "FROZEN_DATA_REPLAY",
                 "feed": bundle.provenance.feed,
                 "adjustment": bundle.provenance.adjustment,
-                "decision_date": str(decision_day),
+                "decision_date": (
+                    decision_bar.session_date.isoformat()
+                    if timeframe.endswith("m") and decision_bar is not None
+                    else str(decision_day)
+                ),
+                "decision_at": (
+                    decision_bar.start_at.isoformat()
+                    if timeframe.endswith("m") and decision_bar is not None
+                    else None
+                ),
                 "source_snapshot_id": snapshot_id,
                 "as_of": decision_bar.usable_at.isoformat() if decision_bar is not None else None,
             }
@@ -719,9 +830,15 @@ def evaluate_protocol(
                 )
                 previous_pivots = previous_decision = None
                 continue
-            receipt = receipts.get((symbol, timeframe, str(decision_day))) if receipts else None
+            receipt = (
+                receipts.get((symbol, timeframe, str(decision_bar.session_date)))
+                if receipts
+                else None
+            )
             if receipts is not None and receipt is None:
-                raise InputError(f"No live decision receipt for {symbol} on {decision_day}")
+                raise InputError(
+                    f"No live decision receipt for {symbol} on {decision_bar.session_date}"
+                )
             issue_source = store.load(receipt.source_snapshot_id) if receipt is not None else bundle
             decision_cutoff = receipt.as_of if receipt is not None else decision_bar.usable_at
             request = AnalysisRequest(

@@ -53,7 +53,13 @@ class HistoryStore:
                         observed_at TEXT NOT NULL,
                         source_snapshot_id TEXT NOT NULL,
                         report_path TEXT NOT NULL,
-                        mode TEXT NOT NULL
+                        mode TEXT NOT NULL,
+                        timeframe TEXT,
+                        feed TEXT,
+                        adjustment TEXT,
+                        last_bar_end_at TEXT,
+                        last_bar_id TEXT,
+                        last_bar_available_at TEXT
                     )
                     """
                 )
@@ -64,7 +70,18 @@ class HistoryStore:
                 columns = {row[1] for row in db.execute("PRAGMA table_info(briefs)")}
                 if "base_lineage_key" not in columns:
                     db.execute("ALTER TABLE briefs ADD COLUMN base_lineage_key TEXT")
+                for column in (
+                    "timeframe",
+                    "feed",
+                    "adjustment",
+                    "last_bar_end_at",
+                    "last_bar_id",
+                    "last_bar_available_at",
+                ):
+                    if column not in columns:
+                        db.execute(f"ALTER TABLE briefs ADD COLUMN {column} TEXT")
                 self._migrate_base_lineage(db)
+                self._migrate_intraday_columns(db)
                 db.execute(
                     "CREATE INDEX IF NOT EXISTS brief_lineage "
                     "ON briefs(lineage_key, market_asof, observed_at)"
@@ -72,6 +89,10 @@ class HistoryStore:
                 db.execute(
                     "CREATE INDEX IF NOT EXISTS brief_base_lineage "
                     "ON briefs(base_lineage_key, market_asof, observed_at)"
+                )
+                db.execute(
+                    "CREATE INDEX IF NOT EXISTS brief_last_bar "
+                    "ON briefs(base_lineage_key, timeframe, last_bar_end_at, observed_at)"
                 )
                 db.commit()
 
@@ -105,6 +126,36 @@ class HistoryStore:
                 "INSERT OR REPLACE INTO history_meta (key, value) VALUES ('base_lineage_version', '2')"
             )
 
+    @staticmethod
+    def _migrate_intraday_columns(db: sqlite3.Connection) -> None:
+        rows = db.execute(
+            "SELECT brief_digest, report_path FROM briefs WHERE timeframe IS NULL"
+        ).fetchall()
+        for brief_digest, report_path in rows:
+            try:
+                brief = Brief.model_validate_json((Path(report_path) / "brief.json").read_text())
+            except (OSError, ValueError):
+                continue
+            db.execute(
+                """
+                UPDATE briefs SET timeframe = ?, feed = ?, adjustment = ?,
+                    last_bar_end_at = ?, last_bar_id = ?, last_bar_available_at = ?
+                WHERE brief_digest = ?
+                """,
+                (
+                    brief.timeframe,
+                    brief.feed,
+                    brief.adjustment,
+                    brief.last_bar_end_at.isoformat() if brief.last_bar_end_at else None,
+                    brief.last_bar_id,
+                    brief.last_bar_available_at.isoformat()
+                    if brief.last_bar_available_at
+                    else None,
+                    brief_digest,
+                ),
+            )
+        db.commit()
+
     def register(self, brief: Brief, report_path: Path) -> None:
         report_path = report_path.resolve()
         brief, _ = read_brief_report(report_path, expected_digest=brief.brief_digest)
@@ -113,8 +164,9 @@ class HistoryStore:
                 """
                 INSERT INTO briefs
                 (brief_digest, lineage_key, base_lineage_key, symbol, market_asof, as_of,
-                 observed_at, source_snapshot_id, report_path, mode)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 observed_at, source_snapshot_id, report_path, mode, timeframe, feed,
+                 adjustment, last_bar_end_at, last_bar_id, last_bar_available_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(brief_digest) DO NOTHING
                 """,
                 (
@@ -128,6 +180,14 @@ class HistoryStore:
                     brief.source_snapshot_id,
                     str(report_path),
                     brief.mode,
+                    brief.timeframe,
+                    brief.feed,
+                    brief.adjustment,
+                    brief.last_bar_end_at.isoformat() if brief.last_bar_end_at else None,
+                    brief.last_bar_id,
+                    brief.last_bar_available_at.isoformat()
+                    if brief.last_bar_available_at
+                    else None,
                 ),
             )
             db.commit()
@@ -138,6 +198,7 @@ class HistoryStore:
         *,
         as_of: date | None = None,
         mode: str | None = None,
+        timeframe: str | None = None,
         limit: int = 50,
     ) -> list[dict]:
         clauses = ["symbol = ?"]
@@ -148,32 +209,48 @@ class HistoryStore:
         if mode is not None:
             clauses.append("mode = ?")
             values.append(mode)
+        if timeframe is not None:
+            clauses.append("timeframe = ?")
+            values.append(timeframe)
         values.append(limit)
         with closing(sqlite3.connect(self.path)) as db:
             db.row_factory = sqlite3.Row
             rows = db.execute(
                 "SELECT * FROM briefs WHERE "
                 + " AND ".join(clauses)
-                + " ORDER BY market_asof DESC, observed_at DESC LIMIT ?",
+                + " ORDER BY COALESCE(last_bar_end_at, market_asof) DESC, observed_at DESC "
+                "LIMIT ?",
                 values,
             ).fetchall()
         return [dict(row) for row in rows]
 
     def previous(self, brief: Brief) -> dict | None:
+        last_bar = brief.last_bar_end_at.isoformat() if brief.last_bar_end_at else None
+        current_marker = last_bar or f"{brief.market_asof.isoformat()}T00:00:00+00:00"
         with closing(sqlite3.connect(self.path)) as db:
             db.row_factory = sqlite3.Row
             row = db.execute(
                 """
                 SELECT * FROM briefs
-                WHERE base_lineage_key = ? AND market_asof < ? AND mode = ?
+                WHERE base_lineage_key = ? AND mode = ? AND timeframe = ?
+                AND brief_digest != ?
+                AND (feed IS NULL OR feed = ?)
+                AND (adjustment IS NULL OR adjustment = ?)
+                AND COALESCE(last_bar_end_at, market_asof || 'T00:00:00+00:00') <= ?
+                AND as_of <= ?
                 AND (? != 'LIVE' OR julianday(observed_at) <= julianday(?))
-                ORDER BY market_asof DESC, observed_at DESC
+                ORDER BY COALESCE(last_bar_end_at, market_asof) DESC, observed_at DESC
                 LIMIT 1
                 """,
                 (
                     base_lineage_key(brief),
-                    brief.market_asof.isoformat(),
                     brief.mode,
+                    brief.timeframe,
+                    brief.brief_digest,
+                    brief.feed,
+                    brief.adjustment,
+                    current_marker,
+                    brief.as_of.isoformat(),
                     brief.mode,
                     brief.as_of.isoformat(),
                 ),

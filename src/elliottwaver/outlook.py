@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
 from elliottwaver.data.calendar import load_calendar
+from elliottwaver.data.periods import intraday_windows
 from elliottwaver.engine.projector import Projection
 from elliottwaver.schemas.brief import BriefCard
 from elliottwaver.schemas.market import MarketDataBundle
@@ -16,14 +18,72 @@ from elliottwaver.schemas.outlook import (
     OutlookPeriod,
 )
 from elliottwaver.schemas.wave import AnalysisResult, LevelCondition
+from elliottwaver.timeframes import minutes
 
 _SLOTS = ("PRIMARY", "ALTERNATE_1", "ALTERNATE_2")
 _DOUBLE_THREE_MARKERS = ("双锯齿", "W终点", "X不可触及", "X端点")
+_INTRADAY_SUFFIX = {"1m": "1M", "5m": "5M", "15m": "15M", "30m": "30M", "60m": "60M"}
+
+
+def _known_empty_slot(prepared: MarketDataBundle, timeframe: str, start_at: datetime) -> bool:
+    """Versioned source rule for the Sina CN equity 1m closing-auction gap."""
+    if (
+        timeframe == "1m"
+        and prepared.provenance.feed == "sina"
+        and prepared.instrument.market == "CN"
+        and prepared.instrument.asset_type == "EQUITY"
+    ):
+        local = start_at.astimezone(ZoneInfo(prepared.instrument.timezone)).time()
+        return local in {time(14, 57), time(14, 58)}
+    return False
+
+
+def _intraday_periods(
+    prepared: MarketDataBundle, market_asof: date, timeframe: str, issued_at: datetime
+) -> tuple[tuple[OutlookPeriod, ...], int, str]:
+    duration = minutes(timeframe)
+    if duration is None:
+        raise ValueError(f"intraday timeframe required: {timeframe}")
+    horizon = 5
+    last_error: Exception | None = None
+    for days in (70, 35, 20, 15, 10):
+        try:
+            calendar = load_calendar(
+                prepared.instrument,
+                market_asof,
+                market_asof + timedelta(days=days),
+            )
+        except Exception as exc:  # calendar coverage can end before the requested window
+            last_error = exc
+            continue
+        periods: list[OutlookPeriod] = []
+        for session in calendar.sessions:
+            for opened, closed in intraday_windows(session, duration):
+                if opened < issued_at or _known_empty_slot(prepared, timeframe, opened):
+                    continue
+                periods.append(
+                    OutlookPeriod(
+                        start_at=opened,
+                        end_session=session.date,
+                        end_at=closed,
+                        sessions=(session.date,),
+                    )
+                )
+                if len(periods) >= horizon:
+                    return tuple(periods), horizon, "BARS"
+        last_error = last_error or ValueError("insufficient future intraday windows")
+    raise ValueError(f"CALENDAR_UNAVAILABLE: {last_error}")
 
 
 def _periods(
-    prepared: MarketDataBundle, market_asof: date, timeframe: str
+    prepared: MarketDataBundle,
+    market_asof: date,
+    timeframe: str,
+    issued_at: datetime | None = None,
 ) -> tuple[tuple[OutlookPeriod, ...], int, str]:
+    issued_at = issued_at or prepared.as_of
+    if minutes(timeframe) is not None:
+        return _intraday_periods(prepared, market_asof, timeframe, issued_at)
     horizon = 5 if timeframe == "1d" else 2
     unit = "SESSIONS" if timeframe == "1d" else "WEEKS"
     last_error: Exception | None = None
@@ -40,7 +100,7 @@ def _periods(
         future = [
             session
             for session in calendar.sessions
-            if session.date > market_asof and session.open_at >= prepared.as_of
+            if session.date > market_asof and session.open_at >= issued_at
         ]
         if timeframe == "1d":
             selected = future[:horizon]
@@ -67,9 +127,7 @@ def _periods(
                 else:
                     groups.append((week, [session]))
             groups = [
-                (week, sessions)
-                for week, sessions in groups
-                if sessions[0].open_at >= prepared.as_of
+                (week, sessions) for week, sessions in groups if sessions[0].open_at >= issued_at
             ]
             selected = groups[:horizon]
             periods = tuple(
@@ -144,6 +202,7 @@ def _case(
     projection: Projection | None,
     current: float,
     horizon_unit: str,
+    timeframe: str = "1d",
 ) -> OutlookCase:
     conditions = _conditions(card, projection)
     stop = any(item.role in {"INVALIDATION", "STAGE_EXIT"} for item in conditions)
@@ -163,7 +222,13 @@ def _case(
         target_mode = "AFTER_ADVANCE"
     else:
         target_mode = "ACTIVE"
-    suffix = "5D" if horizon_unit == "SESSIONS" else "2W"
+    suffix = (
+        f"{_INTRADAY_SUFFIX[timeframe]}_5B"
+        if horizon_unit == "BARS"
+        else "5D"
+        if horizon_unit == "SESSIONS"
+        else "2W"
+    )
     advance_event = _event(
         f"ADVANCE_FIRST_{suffix}_V1",
         advance and stop and not stop_hit,
@@ -199,29 +264,43 @@ def _case(
     )
 
 
+def _fallback_shape(timeframe: str) -> tuple[int, str, str]:
+    if minutes(timeframe) is not None:
+        return 5, "BARS", "1.1"
+    if timeframe == "1d":
+        return 5, "SESSIONS", "1.0"
+    return 2, "WEEKS", "1.0"
+
+
 def build_outlook(
     cards: tuple[BriefCard, ...],
     result: AnalysisResult,
     prepared: MarketDataBundle,
     projections: dict[str, Projection],
+    *,
+    issued_at: datetime | None = None,
 ) -> BriefOutlook:
     """Freeze the next observation window and per-card conditions."""
-    issued_at = result.as_of
+    issued_at = issued_at or result.as_of
     coordinate_id = result.price_coordinate_id
+    version = "1.1" if minutes(result.timeframe) is not None else "1.0"
     try:
-        periods, horizon, unit = _periods(prepared, result.market_asof, result.timeframe)
+        periods, horizon, unit = _periods(prepared, result.market_asof, result.timeframe, issued_at)
     except Exception as exc:  # calendar coverage is optional evidence, not a hard failure
+        horizon, unit, version = _fallback_shape(result.timeframe)
         return BriefOutlook(
+            version=version,
             issued_at=issued_at,
             price_coordinate_id=coordinate_id,
-            horizon=5 if result.timeframe == "1d" else 2,
-            horizon_unit="SESSIONS" if result.timeframe == "1d" else "WEEKS",
+            horizon=horizon,
+            horizon_unit=unit,
             periods=(),
             status="UNAVAILABLE",
             reason=f"CALENDAR_UNAVAILABLE: {exc}",
         )
     if len(periods) < horizon:
         return BriefOutlook(
+            version=version,
             issued_at=issued_at,
             price_coordinate_id=coordinate_id,
             horizon=horizon,
@@ -232,6 +311,7 @@ def build_outlook(
         )
     if result.status not in {"OK", "UNCLEAR"}:
         return BriefOutlook(
+            version=version,
             issued_at=issued_at,
             price_coordinate_id=coordinate_id,
             horizon=horizon,
@@ -242,6 +322,7 @@ def build_outlook(
         )
     if not cards:
         return BriefOutlook(
+            version=version,
             issued_at=issued_at,
             price_coordinate_id=coordinate_id,
             horizon=horizon,
@@ -257,10 +338,12 @@ def build_outlook(
             projections.get(card.scenario_id),
             result.latest_price,
             unit,
+            result.timeframe,
         )
         for index, card in enumerate(cards[:3])
     )
     return BriefOutlook(
+        version=version,
         issued_at=issued_at,
         price_coordinate_id=coordinate_id,
         horizon=horizon,

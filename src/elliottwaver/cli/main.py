@@ -22,9 +22,11 @@ from elliottwaver.config import (
     large_degree_settings,
     load_settings,
     long_term_settings,
+    tushare_token,
 )
 from elliottwaver.data.calendar import parse_as_of
 from elliottwaver.data.demo import demo_bundle
+from elliottwaver.data.quality import missing_intervals
 from elliottwaver.data.router import route_symbol
 from elliottwaver.data.snapshots import SnapshotStore
 from elliottwaver.data.workflow import fetch_bundle
@@ -39,6 +41,7 @@ from elliottwaver.settlement import SettlementStore, support_matrix
 from elliottwaver.timeframes import TIMEFRAMES, normalize_timeframe
 from elliottwaver.util import atomic_write, canonical_json, digest
 from elliottwaver.visualization.brief_formatter import publish_brief, read_brief_report
+from elliottwaver.visualization.brief_text import market_time_text
 from elliottwaver.visualization.report_formatter import publish_report
 
 
@@ -59,6 +62,19 @@ def guarded(function):
 
 def _day(value):
     return date.fromisoformat(value) if value else None
+
+
+def _anchor(value):
+    if not value:
+        return None, None
+    text = str(value).strip()
+    if len(text) == 10:
+        return date.fromisoformat(text), None
+    moment = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    if moment.tzinfo is None:
+        raise ValueError("anchor timestamp must include a timezone")
+    moment = moment.astimezone(UTC)
+    return moment.date(), moment
 
 
 @guarded
@@ -117,12 +133,14 @@ def run_analyze(
         cutoff = parse_as_of(
             as_of, instrument, datetime.now(UTC), settings.data.delayed_access_buffer_minutes
         )
+    anchor_day, anchor_at = _anchor(anchor)
     request = AnalysisRequest(
         symbol=symbol,
         as_of=cutoff,
         start=_day(start),
         end=_day(end),
-        anchor=_day(anchor),
+        anchor=anchor_day,
+        anchor_at=anchor_at,
         feed=feed,
         top_k=top_k,
         allow_stale=allow_stale,
@@ -165,6 +183,8 @@ def _choose_brief_timeframe(requested, source, start, cutoff):
         return chosen, "显式选择"
     if source is not None and source.timeframe == "1w":
         return "1w", "快照本身为周线"
+    if source is not None and source.timeframe.endswith("m"):
+        return source.timeframe, "快照本身为分钟线"
     if start:
         start_day = _day(start)
         if start_day and (cutoff.date() - start_day).days > 5 * 365:
@@ -232,12 +252,14 @@ def _run_brief_core(
     chosen, reason = _choose_brief_timeframe(timeframe, source, start, cutoff)
     if source is not None and source.timeframe == "1w" and chosen == "1d":
         raise InputError("周线快照不能降为日线；请使用 --timeframe 1w")
+    anchor_day, anchor_at = _anchor(anchor)
     request = AnalysisRequest(
         symbol=symbol,
         as_of=cutoff,
         start=_day(start),
         end=_day(end),
-        anchor=_day(anchor),
+        anchor=anchor_day,
+        anchor_at=anchor_at,
         feed=feed,
         top_k=top_k,
         allow_stale=allow_stale,
@@ -716,16 +738,19 @@ def run_history(
     *,
     as_of=None,
     mode=None,
+    timeframe=None,
     config=None,
     json_output=False,
 ):
     settings = load_settings(Path(config) if config else None)
     mode_value = {"live": "LIVE", "frozen": "FROZEN_DATA_REPLAY"}.get(mode, mode)
+    timeframe_value = normalize_timeframe(timeframe) if timeframe else None
     store = HistoryStore(settings.cache.directory)
     rows = store.query(
         route_symbol(symbol).canonical_symbol,
         as_of=_day(as_of),
         mode=mode_value,
+        timeframe=timeframe_value,
     )
     records = []
     for row in rows:
@@ -735,8 +760,16 @@ def run_history(
             records.append(
                 {
                     "brief_digest": row["brief_digest"],
+                    "timeframe": brief.timeframe,
                     "market_asof": row["market_asof"],
                     "as_of": row["as_of"],
+                    "last_bar_end_at": brief.last_bar_end_at.isoformat()
+                    if brief.last_bar_end_at
+                    else None,
+                    "last_bar_local": market_time_text(brief.last_bar_end_at, brief.symbol)
+                    if brief.last_bar_end_at
+                    else None,
+                    "last_bar_id": brief.last_bar_id,
                     "mode": row["mode"],
                     "status": brief.status,
                     "primary": primary,
@@ -748,8 +781,12 @@ def run_history(
             records.append(
                 {
                     "brief_digest": row["brief_digest"],
+                    "timeframe": row.get("timeframe"),
                     "market_asof": row["market_asof"],
                     "as_of": row["as_of"],
+                    "last_bar_end_at": row.get("last_bar_end_at"),
+                    "last_bar_local": None,
+                    "last_bar_id": row.get("last_bar_id"),
                     "mode": row["mode"],
                     "status": "UNREADABLE",
                     "primary": None,
@@ -761,10 +798,11 @@ def run_history(
     if json_output:
         print(canonical_json(records))
     else:
-        table = Table("行情截止", "模式", "状态", "主选", "上次变化", "摘要")
+        table = Table("周期", "行情截止", "模式", "状态", "主选", "上次变化", "摘要")
         for record in records:
             table.add_row(
-                record["market_asof"],
+                record["timeframe"] or "—",
+                record["last_bar_local"] or record["market_asof"],
                 record["mode"],
                 record["status"],
                 record["primary"] or "—",
@@ -860,6 +898,21 @@ def run_fetch(
                 "mode": request.mode,
                 "first": bundle.bars[0].session_date,
                 "last": bundle.bars[-1].session_date,
+                "first_bar_start_at": bundle.bars[0].start_at.isoformat(),
+                "last_bar_start_at": bundle.bars[-1].start_at.isoformat(),
+                "last_bar_end_at": bundle.bars[-1].end_at.isoformat(),
+                "coverage_start": bundle.provenance.coverage_start.isoformat()
+                if bundle.provenance.coverage_start
+                else None,
+                "coverage_end": bundle.provenance.coverage_end.isoformat()
+                if bundle.provenance.coverage_end
+                else None,
+                "coverage_reason": bundle.provenance.coverage_reason or None,
+                "session_profile": bundle.provenance.session_profile,
+                "source_timeframe": bundle.provenance.source_timeframe or None,
+                "aggregation": bundle.provenance.aggregation or None,
+                "price_coordinate_id": bundle.provenance.price_coordinate_id,
+                "unknown_gap_count": len(missing_intervals(bundle)),
                 "bars": len(bundle.bars),
                 "timeframe": bundle.timeframe,
             }
@@ -880,7 +933,11 @@ def run_inspect(snapshot, *, config=None):
                 "bars": len(bundle.bars),
                 "first": bundle.bars[0].session_date,
                 "last": bundle.bars[-1].session_date,
+                "first_bar_start_at": bundle.bars[0].start_at.isoformat(),
+                "last_bar_start_at": bundle.bars[-1].start_at.isoformat(),
+                "last_bar_end_at": bundle.bars[-1].end_at.isoformat(),
                 "last_available_at": bundle.bars[-1].usable_at.isoformat(),
+                "unknown_gap_count": len(missing_intervals(bundle)),
                 "provenance": bundle.provenance,
             }
         )
@@ -976,6 +1033,12 @@ def run_doctor(market="US"):
         credentials = True
     except InputError:
         credentials = False
+    try:
+        tushare_token()
+        tushare_credentials = True
+    except InputError:
+        tushare_credentials = False
+    settings = load_settings()
     print(
         json.dumps(
             {
@@ -983,9 +1046,14 @@ def run_doctor(market="US"):
                 "market": market,
                 "packages": packages,
                 "alpaca_credentials_configured": credentials,
+                "tushare_token_configured": tushare_credentials,
+                "cn_equity_intraday_feed": settings.data.cn_equity_intraday_feed,
+                "cn_index_intraday_feed": settings.data.cn_index_intraday_feed or None,
                 "network_smoke": "NOT_RUN",
                 "supported_timeframes": TIMEFRAMES,
-                "index_timeframes": ["1d", "1w"],
+                "index_timeframes": list(TIMEFRAMES)
+                if settings.data.cn_index_intraday_feed
+                else ["1d", "1w"],
                 "supported_patterns": [template.name for template in TEMPLATES],
                 "bj_live": "INDEX_ONLY",
                 "calibrated_probability": "UNAVAILABLE",
@@ -1054,6 +1122,7 @@ def _argparse_app():
     history.add_argument("symbol")
     history.add_argument("--as-of")
     history.add_argument("--mode", choices=["live", "frozen"])
+    history.add_argument("--timeframe")
     history.add_argument("--config")
     history.add_argument("--json", dest="json_output", action="store_true")
     watchlist = sub.add_parser("watchlist")
@@ -1255,6 +1324,7 @@ else:
         symbol: str,
         as_of: str | None = None,
         mode: str | None = None,
+        timeframe: str | None = None,
         config: Path | None = None,
         json_output: bool = typer.Option(False, "--json"),
     ):

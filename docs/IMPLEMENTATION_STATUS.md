@@ -10,9 +10,9 @@
 | --- | --- |
 | 项目、配置、Schema | Python 包、Typer CLI、严格字段校验、配置优先级、错误码与结果身份已实现；快照 schema 为 1.1 |
 | 沪深 A 股行情 | 新浪日线、因子、1/5/15/30/60 分钟；版本兼容与有期限的隔离进程；通过真实数据子集验证 |
-| 沪深京指数行情 | 新浪指数日线（`SH000*`、`SZ399*`、`BJ899*`），日线/周线；无复权，`feed=sina-index`；指数分钟线未启用；通过真实数据子集验证 |
+| 沪深京指数行情 | 新浪指数日线（`SH000*`、`SZ399*`、`BJ899*`），日线/周线；无复权，`feed=sina-index`。配置 `data.cn_index_intraday_feed: tushare-cn-index` 后接入 Tushare `idx_mins`，按 8000 行上限和交易时段回补；真实权限样本待账户回执 |
 | 美股行情 | Alpaca REST v2 适配器，显式 feed/adjustment/end、全部分页、资产 ID/类别/代码一致性核对、认证错误与重复 token 防护；日线/周线、DST、假期、提前收盘、完整周、raw/all 对齐和 SIP/IEX 分缓存已通过冻结响应与离线入口测试。AAPL、BRK.B、SPY 的真实 SIP 小样本和 AAPL 的 IEX 样本已通过，见[验收记录](reviews/2026-11-20-us-equity-acceptance.md) |
-| 主周期 | `1m、5m、15m、30m、60m、1d、1w`，支持 `1h` 别名；两市场合成样本全覆盖，A 股真实样本全周期覆盖；指数仅 `1d / 1w` |
+| 主周期 | `1m、5m、15m、30m、60m、1d、1w`，支持 `1h` 别名；两市场合成样本全覆盖，A 股真实样本全周期覆盖；指数默认 `1d / 1w`，配置 Tushare 指数分钟后开放盘中周期 |
 | 时间边界 | 不纳入未完成/尚不可用 bar；UTC 与交易所会话分开；节假日、DST、提前收市、午休、小时线尾段与完整周处理已测试 |
 | 复权 | 保存 raw 与因子；A 股基准日乘法复权；先复权日线再聚合周线；美股供应商 all 不进行二次复权 |
 | 分析 | ATR/MACD、三尺度因果 ZigZag、背景锚点与回退、有限 CSP 搜索、端点与完整影线区间硬规则；`--long-term` 20 年窗口/首尾锚点/宽桥接搜索/子浪认证，`--allow-gaps` 显式跳过停牌缺口 |
@@ -20,10 +20,11 @@
 | 评分与点位 | 分项证据、缺失状态、质量/覆盖/相对权重、Top-K 未展示权重、带方向条件、第五浪上限、合法目标带；完成态含 38.2%–100% 回撤目标，低分但硬规则通过的结构以 `EXCLUDED_STRUCTURE` 显式列出；第五浪同时比较浪 5/浪 1 与浪 5/浪 3，含 2.618/4.236 扩展位；按 K 线跨度标注浪级并提示 `MIXED_DEGREE_SCENARIOS` |
 | 产物 | 单周期分析支持 Rich、JSON、Markdown、Plotly HTML、SVG/PNG 备选渲染，完整写入后更新对应周期/feed 的 latest。收盘摘要支持终端、JSON、HTML 和 Markdown，显示数据模式、截止时刻及候选规则证据，使用独立的摘要索引。 |
 | 收盘摘要 | `elliottwaver brief` 首屏用中文显示主备浪型、当前浪、观察期限、目标区及改变判断的条件。「核对依据」集中展示分析范围、子浪与规则状态。默认日线及完整周线背景，长跨度自动选择周线。`--format json` 保留终端文字并只保存 JSON 文件。真实行情概率当前为 `UNCALIBRATED`。 |
+| 盘中简报 | 明确给出盘中快照时自动采用其主周期；`BriefOutlook` 使用 `version=1.1`、`horizon_unit=BARS`、`horizon=5`，只选发行后尚未开始的 5 根主周期 K 线。首屏显示市场当地时间、最后一根已完成 K 线及可用时刻、推进/目标/失效条件和到期时刻。固定背景配对为 `1m→5m`、`5m→60m`、`15m/30m→60m`、`60m→1d`。旧盘中周线观察窗不再生成，结算返回 `SETTLEMENT_WINDOW_TIMEFRAME_MISMATCH`。 |
 | 短期预测增强 | PE-1 至 PE-6 核心：`project_with_gates` 条件角色、`BriefOutlook` 5 会话/2 周观察窗、推进/目标事件注册与评估、特征版本 4、A/B/C/D 对照、`freeze`/`score`、新事件模型作用域、按卡片概率展示、核销回放和终端/HTML/JSON 一致性；P-08 四标的（CN 个股/指数、US 个股/ETF）的 brief/watchlist/history/settle/support-matrix 全流程已通过；独立验收 PO-01 至 PO-09 已修复：推演条件语义、目标硬边界、发行/回放/核销共用冻结观察窗、训练/评分样本作用域、冻结与留出封存、标签语义、批量模型选择、终端精度和旧分析兼容；历史 holdout 已覆盖目标先达、推进和 2 周收盘事件，均正式记录为 INSUFFICIENT_EVIDENCE；旧评分产物只作回顾性研究留存，不用于批准。[实施记录](reviews/2026-11-21-prediction-outlook-protocols.md) · [独立验收修复](reviews/2026-11-21-prediction-outlook-review-followup.md) |
-| 历史与自选 | `elliottwaver history` 查询已发布摘要，原摘要记录上次判断及变化，区分 `CONFIG_CHANGED`、`DATA_REVISED` 和 `NOT_COMPARABLE`。`elliottwaver watchlist` 批量生成 JSON 摘要，支持有限重试、有界并发、模型注册表回退和单标的失败隔离。 |
-| 结算与支持矩阵 | `elliottwaver settle` 使用本地快照，按 `(brief_digest,event_id,scope)` 去重并增量结算，行情修订追加版本，保留最初观察。`elliottwaver support-matrix` 列出资产类型、周期和事件，传入训练汇总后显示该汇总中的支持状态和原因。 |
-| 离线评估 | `scripts/evaluate_briefs.py` 输出日线/周线 decisions/events/summary/manifest；支持收盘区间、确认或推进先达、目标先达事件；summary 按标的、资产类型、周期、浪型和期限分解，并包含已确认拐点改写数、极值至确认 K 线数、相邻主选切换率、预测覆盖、确认延迟和搜索截断；`scripts/merge_evaluations.py` 可合并单样本分批结果 |
+| 历史与自选 | `elliottwaver history` 查询已发布摘要，原摘要记录上次判断及变化，区分 `CONFIG_CHANGED`、`DATA_REVISED` 和 `NOT_COMPARABLE`。新增 `timeframe`、`feed`、`adjustment`、`last_bar_end_at`、`last_bar_id` 和 `last_bar_available_at`，同日盘中摘要按最后一根 K 线排序；`history --timeframe` 可筛选。`elliottwaver watchlist` 批量生成 JSON 摘要，支持有限重试、有界并发、模型注册表回退和单标的失败隔离。 |
+| 结算与支持矩阵 | `elliottwaver settle` 使用本地快照，按 `(brief_digest,event_id,scope)` 去重并增量结算，行情修订追加版本，保留最初观察。盘中事件使用冻结的 5 个精确时隙和同一个观察窗解析器，记录触发 `bar_id`、起止时刻和价格口径；同根目标/失效、未知缺口和右删失分别保留状态。`elliottwaver support-matrix` 增加 5 个盘中周期和 5B 事件行，传入训练汇总后显示支持状态和原因。 |
+| 离线评估 | `scripts/evaluate_briefs.py` 输出日线/周线/盘中 decisions/events/summary/manifest；支持收盘区间、确认或推进先达、目标先达事件；盘中协议使用 `EVERY_BAR` 和 `step`，决策 ID 含精确 bar 开始时刻，事件保留 `decision_at`、`due_at`、`period_starts`、`period_ends`、`trigger_bar_id` 和触发时刻；summary 按标的、资产类型、周期、浪型和期限分解，并包含已确认拐点改写数、极值至确认 K 线数、相邻主选切换率、预测覆盖、确认延迟和搜索截断；`scripts/merge_evaluations.py` 可合并单样本分批结果 |
 | 多浪级引擎 | `engine_profile=hierarchical_v1` 显式启用 `hierarchical-rules-v3`。递归子浪选择按实际可证明的深度排序，历史日周关系也遵循请求深度。摘要包含日周关联与历史触发证据，评估使用正式摘要的首选结构键和比较模式。 [修复复验](reviews/2026-11-21-wave-engine-followup-repair.md) |
 | 概率研究 | 30 只沪深个股和 7 个指数的 2026 留出检验中，8 项日线事件均未获批。修正训练入口后，指数 20 日目标先达的价格基线对照与校准均未过。2023–2025 开发期已完成滚动校准、目标几何和失效审计；C 按 A 参照入选，但相对含目标几何的价格基线无增量，波浪结构增益未建立。没有新增独立前向留出，状态为研究完成、待新留出，未注册模型。[留出重算](reviews/2026-11-20-cn-index-probability-recheck.md) · [开发期验收](reviews/2026-11-19-cn-index-target-accuracy.md) · [前向验收](protocols/cn-index-target-forward.md) |
 | 端点复核 | `scripts/review_wave_cases.py` 用校验后的日线逐段复核盲标端点，输出规则证据。56 个案例中 18 个至少通过一个端点模板，38 个保留待定。[日用版验收](reviews/2026-11-19-release-preparation.md) |
@@ -32,10 +33,10 @@
 
 ## 验证结果
 
-以下为 `v0.5.1` 发布验收结果；0.6.0 为更名版本，功能与 0.5.1 相同。
+以下为 `v0.6.0` 基线加本轮盘中增量后的验证结果。详细证据、快照 ID 和逐项命令见[盘中验收记录](reviews/2026-11-23-intraday-acceptance.md)。
 
 ```text
-python -m pytest tests -q              524 passed
+python -m pytest tests -q              542 passed
 ruff check src tests scripts           PASS
 ruff format --check src tests scripts  PASS
 pip check                             No broken requirements found

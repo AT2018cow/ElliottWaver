@@ -17,7 +17,9 @@ from elliottwaver.data.router import route_symbol
 from elliottwaver.data.sina_provider import SinaProvider
 from elliottwaver.data.snapshots import SERIES_FIELDS, SnapshotStore
 from elliottwaver.data.source_cache import SourceBlockStore
+from elliottwaver.data.tencent_provider import TencentProvider
 from elliottwaver.data.tushare_provider import TushareProvider
+from elliottwaver.data.yahoo_provider import YahooIndexProvider
 from elliottwaver.errors import DataError, InputError, SourceError
 from elliottwaver.schemas.market import AnalysisRequest, MarketDataBundle
 from elliottwaver.util import digest
@@ -69,9 +71,11 @@ def fetch_bundle(
         raise InputError("--feed sip/iex applies only to US equities")
     try:
         if instrument.market == "US" and instrument.asset_type == "INDEX":
-            parser = "massive-v1"
+            parser = "yahoo-chart-v1" if feed == "yahoo-index" else "massive-v1"
         elif instrument.market == "US":
             parser = "alpaca-rest-v1"
+        elif feed == "tencent-cn-index":
+            parser = "tencent-mkline-v1"
         elif feed.startswith("tushare"):
             parser = "tushare-v1"
         elif instrument.asset_type == "INDEX":
@@ -89,8 +93,12 @@ def fetch_bundle(
     else:
         adjustment_key = "basis_date_qfq"
     if instrument.market == "US" and instrument.asset_type == "INDEX":
-        source_timeframe = request.timeframe if intraday else "1d"
-        aggregation = "none"
+        if feed == "yahoo-index" and request.timeframe == "60m":
+            source_timeframe = "30m"
+            aggregation = "30m->60m"
+        else:
+            source_timeframe = request.timeframe if intraday else "1d"
+            aggregation = "none"
         session_profile = "us_index_rth"
     elif instrument.market == "US":
         source_timeframe = "1m" if request.timeframe == "1m" else "5m"
@@ -191,10 +199,16 @@ def fetch_bundle(
                 ):
                     return store.save_at_cutoff(cached, request.as_of)
         source = provider or (
-            MassiveIndexProvider(settings.data, feed=feed)
+            YahooIndexProvider(settings.data, feed=feed)
+            if instrument.market == "US"
+            and instrument.asset_type == "INDEX"
+            and feed == "yahoo-index"
+            else MassiveIndexProvider(settings.data, feed=feed)
             if instrument.market == "US" and instrument.asset_type == "INDEX"
             else AlpacaProvider(settings.data, feed=feed)
             if instrument.market == "US"
+            else TencentProvider(settings.data, feed=feed)
+            if feed == "tencent-cn-index"
             else TushareProvider(settings.data, feed=feed)
             if feed.startswith("tushare")
             else SinaProvider(settings.data)

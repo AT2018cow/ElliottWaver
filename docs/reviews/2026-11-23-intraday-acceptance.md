@@ -10,12 +10,12 @@
 | --- | --- | --- |
 | IN-00 盘中简报停止周线观察窗 | 完成 | 60m/5m 合成与真实快照均输出 `version=1.1`、`horizon_unit=BARS`、`horizon=5`，不再出现 `2W` 事件。旧盘中 `1.0` 周线观察窗在结算时返回 `SETTLEMENT_WINDOW_TIMEFRAME_MISMATCH`。 |
 | IN-01 行情适配、会话和聚合 | 部分完成 | 新浪/`sina-index` 和 Alpaca SIP/IEX 路径保留；新增 Tushare `stock_mins`/`idx_mins` 适配器、CN 盘中 feed 配置、覆盖范围和来源字段。Tushare 只用假响应验证，真实账户权限未取得。CN 指数盘中默认仍拒绝，配置 `cn_index_intraday_feed: tushare-cn-index` 后才路由。 |
-| IN-02 历史覆盖与增量缓存 | 完成（盘中源块） | 新增 `SourceBlockStore`，按资产、feed、源周期、session profile、复权、parser、日历版本和日线背景结束日缓存每个交易日的源块；保留不可变修订；源级文件锁串行化同一源区间；供应商失败和部分覆盖写入 `source_failures`，已校验块保留。冷取数、热命中、尾段刷新、跨周期共享 5m 源块、精确截止零请求和失败保留均有计数假供应商测试。日/周源块仍未覆盖。 |
+| IN-02 历史覆盖与增量缓存 | 完成（盘中源块） | 新增 `SourceBlockStore`，按资产、feed、源周期、session profile、复权、parser、日历版本和日线背景结束日缓存每个交易日的源块；保留不可变修订；源级文件锁串行化同一源区间；供应商失败和部分覆盖写入 `source_failures`，已校验块保留。冷取数、热命中、尾段刷新、跨周期共享 5m 源块、精确截止零请求和失败保留均有计数假供应商测试。日/周源块已在 §5.4 明确排除。 |
 | IN-03 精确锚点、多周期背景和逐腿证据 | 完成（含真实重叠样本） | 支持带时区的精确 `--anchor`；固定配对 `1m→5m`、`5m→60m`、`15m/30m→60m`、`60m→1d` 已接入 `resample_bundle` 和简报背景；`hierarchical_v1` 允许盘中结构计算；新增 `engine/intraday_link.py`，按精确 K 线区间把父结构腿映射到子结构，复用 `match_interval`、子模板许可、深度和共享预算。AAPL SIP 5m/60m 真实重叠样本得到 43 条关系，其中 10 条 `VERIFIED`、33 条 `PROVISIONAL`。 |
 | IN-04 盘中简报与冻结观察窗 | 完成 | 发行后尚未开始的 5 根主周期 K 线；跨午休、周末和休市；最后一根 K 线结束/可用时刻；市场当地时间；`1h`/`60m` 同路径；`brief --timeframe auto` 对盘中快照自动采用快照周期。 |
 | IN-05 同日历史、结算和评估 | 完成 | SQLite 增加周期/feed/复权/最后 K 线字段和索引；同日按最后 K 线排序；5B 事件注册；盘中观察窗解析器与结算/评估共用；同根目标/失效、未知缺口、右删失、拆股换算和未来修订测试通过。 |
-| IN-06 自动化、真实行情、性能和发布 | 部分完成 | 全量 556 项测试、Ruff、格式、`pip check`、`git diff --check` 和 wheel 构建通过。真实 CN 个股 1m/5m/15m/30m/60m、AAPL/BRK.B/SPY 的 SIP/IEX 15m/30m/60m 与 IEX 1m、NVDA 60m SIP 和 AAPL 5m IEX 已核对；BRK.B IEX 因缺口、BRK.B SIP 60m 因无候选未发行；CN 指数、Tushare 真实权限和 Massive 真实权限未完成；真实冷/热计数与合成简报 p50/p95 已记录。 |
-| IN-07 原生美股指数 | 代码完成，真实权限阻塞 | 已接入 Massive `I:` 指数聚合接口、`SPX`/`NDX` 路由、`us_index_feed: massive-index` 和 `MASSIVE_API_KEY`；假响应验证 5m 原生指数、无成交量证据和 workflow 路由。真实 Massive 账户凭证未取得，未提交真实指数验收。 |
+| IN-06 自动化、真实行情、性能和发布 | 完成（免费源覆盖） | 全量 558 项测试、Ruff、格式、`pip check`、`git diff --check` 和 wheel 构建通过。真实 CN 个股 1m/5m/15m/30m/60m、CN 指数 000001/000300/399001 的 1m/5m/15m/30m/60m、AAPL/BRK.B/SPY 的 SIP/IEX 15m/30m/60m 与 IEX 1m、SPX/NDX Yahoo 1m/5m/15m/30m/60m 已核对；BRK.B IEX 因缺口、BRK.B SIP 60m 因无候选未发行。Tushare 与 Massive 授权源仍因凭证阻塞；真实冷/热计数与合成简报 p50/p95 已记录。 |
+| IN-07 原生美股指数 | 完成（Yahoo 免费源；Massive 授权源待凭证） | 支持 `SPX`/`NDX` 等原生指数路由；Massive `I:` 适配器和假响应测试已完成；另接入 Yahoo 免费 chart 源，真实 SPX/NDX 1m/5m/15m/30m/60m 已取得。Yahoo 15m/30m/60m 存在少量缺失，验收时显式 `--allow-gaps`；Massive 真实权限仍未取得。 |
 
 ## 2. 改动文件
 
@@ -112,11 +112,54 @@ KSTR 5m 的真实快照未覆盖足够完整的历史/缺口，按方案继续�
 
 BRK.B IEX 的 1m 有 6918 个未知缺口，15m/30m/60m 分别为 40/37/35，分析状态为 `INSUFFICIENT_DATA`；5B 观察窗仍按 `version=1.1`、`horizon_unit=BARS` 输出但状态为 `UNAVAILABLE`，未发行事件。AAPL 1m 有 3 个缺口但仍为 `UNCLEAR/AVAILABLE`；SPY 1m 有 20 个缺口，仍为 `OK/AVAILABLE`。BRK.B SIP 60m 的候选状态为 `UNCLEAR`，没有可发行卡片，因此观察窗 `UNAVAILABLE`。这些是数据质量和候选质量结果，不是接口失败。
 
+### 4.3.1 沪深指数 Tencent 免费源矩阵
+
+使用 `data.cn_index_intraday_feed: tencent-cn-index`，无需 Token。2026-11-20 15:05 CST 截止：
+
+| 指数 | 周期 | 快照 ID | bars | 缺口 | brief | 5B 观察窗 |
+| --- | --- | --- | ---: | ---: | --- | --- |
+| 000300.SH | 1m | `4c0622fd057eaee4c3651dbac397f4423e4bcc66876b37f4e99b5e3ee58ddb0b` | 5040 | 0 | OK | AVAILABLE |
+| 000300.SH | 5m | `fc7183f28b4cbf6f50982da615e9e351f0a60c4cb45ae3289c3c2a5c0b66f200` | 5904 | 0 | UNCLEAR | UNAVAILABLE |
+| 000300.SH | 15m | `fe3ad3941eababba2a283bc86a644cc2909a8513460ba50690132dc0ddcda5a7` | 1968 | 0 | OK | AVAILABLE |
+| 000300.SH | 30m | `d80bd0bb6e6b81d8c689cbd6daafc47248dcc3d4a8ed3b49b6a607f0a4ba53a1` | 1928 | 0 | OK | AVAILABLE |
+| 000300.SH | 60m | `fe2b8f5f1fbb7e02acf13dd11eaec0f08eda1f38ee91bc2ef7f3890670127ac9` | 964 | 0 | OK | AVAILABLE |
+| 000001.SH | 1m | `110e058b4bf5c4b3d211888c9ae9e787ce10fdf6d70056935c056c3c2ed833ab` | 5040 | 0 | OK | AVAILABLE |
+| 000001.SH | 5m | `2479fad2322f1e959b248f090c4d4c8412ae53bb29045ea8b0b94ecfad2d2709` | 5904 | 0 | OK | AVAILABLE |
+| 000001.SH | 15m | `6206a3fcc82e06a190580a6e948562f6c88a6e155595e14b7677cda7cd08f62d` | 1968 | 0 | OK | AVAILABLE |
+| 000001.SH | 30m | `bdbf6934626a3a119501a28f2c202b605dcc5e2835da67ce8c5b8548319706e8` | 1928 | 0 | OK | AVAILABLE |
+| 000001.SH | 60m | `870d8a4f7dd1a9b987796eea39c661d146355a13391060497241802f8d0b923d` | 964 | 0 | UNCLEAR | UNAVAILABLE |
+| 399001.SZ | 1m | `b6416cb83a06e15f3ea65718ddb5634c7b8578c2bb39c00b594da49b6f13522e` | 5038 | 2 | OK | AVAILABLE |
+| 399001.SZ | 5m | `7da037973f2bd705e5ec96e987988add3bbb9ef79c7a9a5bfe6a5b8c72e2187b` | 5904 | 0 | OK | AVAILABLE |
+| 399001.SZ | 15m | `e24ce7b659dfd4917370e799ec0112a4eb3eab6febbee1ebc03105726ee55567` | 1968 | 0 | OK | AVAILABLE |
+| 399001.SZ | 30m | `c74fc75b173c1fecd564881c27837788d666a0b8c13c1f20cbbbf7fd3be67466` | 1928 | 0 | UNCLEAR | AVAILABLE |
+| 399001.SZ | 60m | `4d2dbb9f962bbb79a31d41849b3b8dedc2b00fa5f26db6bf2763cebab4b4f7ad` | 964 | 0 | OK | AVAILABLE |
+
+Tencent 是免费公开接口，无 Token，但无 SLA；成交量单位未认证，`volume_comparable=False`。399001.SZ 1m 有 2 个未知缺口，仍为 `OK/AVAILABLE`。
+
 ### 4.3 沪深指数与 Tushare
 
 - `data/tushare_provider.py` 已实现 `stock_mins`、`idx_mins` 和 `adj_factor` 的请求、时间标签按 bar 结束解析、8000 行/日期片段接口约定、覆盖范围和来源字段。
 - 假响应测试验证 `000300.SH` 60m 四根窗口、`600519.SH` 60m 基准日复权和 `fetch_bundle` 路由。
 - 真实 Tushare 账户未提供 `TUSHARE_TOKEN` 或权限回执，未提交真实指数/个股分钟证据。未配置 `cn_index_intraday_feed` 时，CN 指数盘中仍返回 `INDEX_INTRADAY_UNSUPPORTED`。
+
+### 4.4.1 SPX / NDX Yahoo 免费源矩阵
+
+使用 `data.us_index_feed: yahoo-index`，无需 Token。2026-11-20 21:30 UTC 截止：
+
+| 指数 | 周期 | 快照 ID | bars | 缺口 | brief | 5B 观察窗 |
+| --- | --- | --- | ---: | ---: | --- | --- |
+| SPX | 1m | `8b265e9791f95549d653d6a22368c9fcbfbc2bd09b25bb0fdccbb4e87138c52e` | 2730 | 0 | OK | AVAILABLE |
+| SPX | 5m | `3a13f4d2aeeb641a7cd3718af5490267a4c1464afb54237f5cc42e8a4679cb47` | 4661 | 19 | OK | AVAILABLE |
+| SPX | 15m | `c60241486915f386c6095f0ccc475f27fa2fcecd11c50e844c9bfe2e522c6aee` | 1554 | 6 | OK（`--allow-gaps`） | AVAILABLE |
+| SPX | 30m | `fba6c2dfade481705a2fe711cd10aadb49b00f2b1182d73e071a69bf3f7bd31a` | 778 | 2 | OK（`--allow-gaps`） | AVAILABLE |
+| SPX | 60m | `c0e8d8956abfa5a75be6c6989a7bc7ef5ff0a12eae7f00061f4ee7a8631f82af` | 419 | 1 | OK（`--allow-gaps`） | AVAILABLE |
+| NDX | 1m | `dcc1a1bda9f73b05cbca7a77dd077ee17545e99a5f0c61f527eb4767ae7d63c7` | 2730 | 0 | OK | AVAILABLE |
+| NDX | 5m | `4aef49694c1a80a82f3f86961922818d188c81a21c23cfa82e1f0ac4f23921da` | 4661 | 19 | OK | AVAILABLE |
+| NDX | 15m | `a70d73f21f74ac5a6da1801620538fda5bacc71392489ab4ac4075c9c19fdc52` | 1554 | 6 | OK（`--allow-gaps`） | AVAILABLE |
+| NDX | 30m | `6361c5648773241af9bae1d5f2798f6c33d3c02a77b17b39ec2913b9086fa2fa` | 778 | 2 | OK（`--allow-gaps`） | AVAILABLE |
+| NDX | 60m | `72b8182895d463a86896ccfc1e8f0bf89bd70aa6a3daccab6d80718fb43b7435` | 419 | 1 | OK（`--allow-gaps`） | AVAILABLE |
+
+Yahoo 是免费公开接口，无 Token，但非官方、无 SLA；1m 只覆盖最近约 7 天，5m/15m/30m/60m 约 60 天。指数成交量不作为可比证据。15m/30m/60m 有少量缺失，默认会判 `INSUFFICIENT_DATA`，验收时显式使用 `--allow-gaps` 并在报告中保留 `ALLOWED_GAPS`。Massive 授权源仍待凭证。
 
 ### 4.4 原生美股指数
 
@@ -180,7 +223,7 @@ IN-07 代码完成、真实权限阻塞：已按 Massive 官方 `GET /v2/aggs/ti
 ## 6. 验证命令与结果
 
 ```text
-.venv/bin/python -m pytest tests -q              556 passed
+.venv/bin/python -m pytest tests -q              561 passed
 .venv/bin/ruff check src tests scripts           PASS
 .venv/bin/ruff format --check src tests scripts  PASS
 .venv/bin/python -m pip check                    No broken requirements found
@@ -191,14 +234,14 @@ Wheel：
 
 ```text
 elliottwaver-0.6.0-py3-none-any.whl
-sha256 6c95148afa788c4473c66a3ffee31e4c9919d03a0de1151025f5263a85c73fa7
+sha256 2f3c19f517c03baa75e8cd906bdcf6db0ffb55ad284637125427fd59fd2ae727
 ```
 
 ## 7. 未完成项与原因
 
 1. **IN-02 剩余边界**：盘中源块、尾段刷新、修订、跨周期共享、源级锁和失败记录已完成；日线和周线仍走整包快照缓存，供应商页面级部分响应仍只能按已返回 bundle 的覆盖范围记录。
 2. **IN-03 剩余边界**：盘中父子腿映射已通过合成和 AAPL SIP 5m/60m 真实重叠样本；未验证父腿保留为 `PROVISIONAL`。日周 `timeframe_link` 保持原路径。
-3. **IN-06 真实覆盖**：CN 指数、Tushare 真实权限和 Massive 真实指数权限未完成；BRK.B IEX 的 1m/15m/30m/60m 因稀疏缺口为 `INSUFFICIENT_DATA`，已作为真实限制记录；真实冷/热请求计数和合成简报 p50/p95 已完成。
-4. **IN-07 真实权限**：Massive 指数适配器和假响应测试已完成；真实 `MASSIVE_API_KEY`/指数计划回执未取得，真实 SPX/NDX 逐周期证据待补。
+3. **IN-06 真实覆盖**：CN 指数已用 Tencent 免费源完成 000001/000300/399001 全五周期；Tushare 授权源仍未验证。BRK.B IEX 的 1m/15m/30m/60m 因稀疏缺口为 `INSUFFICIENT_DATA`，已作为真实限制记录；真实冷/热请求计数和合成简报 p50/p95 已完成。
+4. **IN-07 真实权限**：Yahoo 免费源已完成真实 SPX/NDX 全五周期；Massive 授权指数适配器和假响应测试已完成，但 `MASSIVE_API_KEY`/指数计划回执未取得，Massive 真实逐周期证据待补。
 
 这些限制不影响已经通过的离线 5B 观察窗、同日历史、结算、评估和旧快照兼容路径；后续取得权限后按同一记录追加真实组合。

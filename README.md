@@ -87,7 +87,7 @@ python3 -m venv .venv
 .venv/bin/elliottwaver analyze AAPL --feed iex --timeframe 15m
 ```
 
-默认 SIP，权限失败不会换成 IEX。美股分钟/小时线采用 RTH 开盘锚定聚合；原生日线采用供应商日线口径，保守等到纽约日期结束并经过访问缓冲后再视为完整，和 RTH 收盘不是同一截止时刻。原生美股指数 `SPX`、`NDX` 等使用独立路由；配置 `data.us_index_feed: massive-index` 和 `MASSIVE_API_KEY` 后走 Massive `I:` 指数聚合，指数无成交量时明确标记为不可比。
+默认 SIP，权限失败不会换成 IEX。美股分钟/小时线采用 RTH 开盘锚定聚合；原生日线采用供应商日线口径，保守等到纽约日期结束并经过访问缓冲后再视为完整，和 RTH 收盘不是同一截止时刻。原生美股指数 `SPX`、`NDX` 等使用独立路由。免费方案可配置 `data.us_index_feed: yahoo-index`，无需 Token，使用 Yahoo chart 的 1m/5m/15m/30m/60m 数据；15m/30m/60m 有少量缺失时需显式 `--allow-gaps`。授权方案配置 `data.us_index_feed: massive-index` 和 `MASSIVE_API_KEY` 后走 Massive `I:` 指数聚合。指数无成交量时明确标记为不可比。
 
 A 股小时线不跨午休。周线从先复权的日线聚合，只分析完整周。新浪分钟历史长度随周期变化，不能保证任意历史日期都有分钟数据；当前 1 分钟样本约有 1,970 根，而不是完整 90 日。收盘集合竞价的已知无成交分钟时隙不补造 K 线，其他未知缺口会显示数据不足。
 

@@ -23,9 +23,10 @@ scoring:
   temperature: 12.0
 data:
   us_feed: sip
-  us_index_feed: ""
+  us_index_feed: ""  # "" | massive-index | yahoo-index
   cn_equity_intraday_feed: sina
-  cn_index_intraday_feed: ""
+  cn_index_intraday_feed: ""  # "" | tushare-cn-index | tencent-cn-index
+  tencent_max_pages: 20
   request_timeout_seconds: 20
   max_attempts: 3
   total_fetch_deadline_seconds: 120

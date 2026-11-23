@@ -73,15 +73,16 @@ class ScoringConfig(Section):
 
 class DataConfig(Section):
     us_feed: Literal["sip", "iex"] = "sip"
-    us_index_feed: Literal["", "massive-index"] = ""
+    us_index_feed: Literal["", "massive-index", "yahoo-index"] = ""
     cn_equity_intraday_feed: Literal["sina", "tushare-cn-equity"] = "sina"
-    cn_index_intraday_feed: Literal["", "tushare-cn-index"] = ""
+    cn_index_intraday_feed: Literal["", "tushare-cn-index", "tencent-cn-index"] = ""
     request_timeout_seconds: float = Field(20, gt=0, le=60)
     max_attempts: int = Field(3, ge=1, le=5)
     total_fetch_deadline_seconds: float = Field(120, gt=0, le=600)
     max_requests_per_second: float = Field(2, gt=0, le=8)
     delayed_access_buffer_minutes: int = Field(20, ge=15, le=120)
     cache_ttl_seconds: int = Field(21600, ge=0)
+    tencent_max_pages: int = Field(20, ge=1, le=200)
 
 
 class CacheConfig(Section):

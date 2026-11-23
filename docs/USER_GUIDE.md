@@ -218,10 +218,11 @@ live 端点为 `https://api.alpaca.markets`。配置文件从当前工作目录�
 
 当前美股适配器已通过冻结响应、身份错配、分页、DST、假期、提前收盘、完整周、复权和离线入口测试；AAPL、BRK.B、SPY 的真实 SIP 小样本和 AAPL 的 IEX 样本也已通过，验收状态见[美股日用版验收](reviews/2026-11-20-us-equity-acceptance.md)。
 
-原生美股指数（`SPX`、`NDX`、`DJI`、`RUT`、`VIX`）与 ETF 分开路由。配置 `data.us_index_feed: massive-index` 并提供 `MASSIVE_API_KEY` 后，使用 Massive `I:` 指数聚合接口：
+原生美股指数（`SPX`、`NDX`、`DJI`、`RUT`、`VIX`）与 ETF 分开路由。免费方案配置 `data.us_index_feed: yahoo-index`，无需 Token，使用 Yahoo chart 数据；授权方案配置 `data.us_index_feed: massive-index` 并提供 `MASSIVE_API_KEY`。
 
-```dotenv
-MASSIVE_API_KEY=你的密钥
+```yaml
+data:
+  us_index_feed: yahoo-index
 ```
 
 ```bash
@@ -230,11 +231,13 @@ MASSIVE_API_KEY=你的密钥
 .venv/bin/elliottwaver brief NDX --timeframe 1h --format json
 ```
 
+Yahoo 免费源 1m 只覆盖最近约 7 天，5m/15m/30m/60m 约 60 天；15m/30m/60m 有少量缺失时需显式 `--allow-gaps`。Massive 授权源使用 `MASSIVE_API_KEY` 和 `data.us_index_feed: massive-index`。
+
 指数聚合不提供成交量，报告把 `volume_comparable` 标为 `False`，不会用 ETF 成交量替代。未配置 `us_index_feed` 时，请求 `SPX`/`NDX` 返回 `US_INDEX_FEED_UNCONFIGURED`。
 
 ### 4.3 沪深京指数
 
-无需 API key。指数使用新浪指数日线，来源标记为 `sina-index`，调整口径为 `none`，不计算复权因子。目前支持日线和周线：
+无需 API key。指数使用新浪指数日线，来源标记为 `sina-index`，调整口径为 `none`，不计算复权因子。日线和周线默认可用；盘中指数可配置免费 `data.cn_index_intraday_feed: tencent-cn-index`，无需 Token，支持 1m/5m/15m/30m/60m。
 
 ```bash
 .venv/bin/elliottwaver analyze 000688.SH --timeframe 1d

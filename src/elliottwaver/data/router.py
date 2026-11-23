@@ -50,11 +50,18 @@ def route_symbol(symbol: str) -> Instrument:
     aliases = {"BRK-B": "BRK.B", "BRK-A": "BRK.A", "BF-B": "BF.B", "BF-A": "BF.A"}
     canonical = aliases.get(text, text)
     asset_type = asset_type_for("US", canonical)
+    yahoo_index = {
+        "SPX": "^GSPC",
+        "NDX": "^NDX",
+        "DJI": "^DJI",
+        "RUT": "^RUT",
+        "VIX": "^VIX",
+    }
     return Instrument(
         instrument_id=f"US_INDEX:{canonical}" if asset_type == "INDEX" else f"US:{canonical}",
         input_symbol=symbol,
         canonical_symbol=canonical,
-        provider_symbol=canonical,
+        provider_symbol=yahoo_index.get(canonical, canonical),
         market="US",
         exchange="US_INDEX" if asset_type == "INDEX" else "UNKNOWN",
         currency="USD",

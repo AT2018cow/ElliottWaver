@@ -188,7 +188,7 @@ Wheel：
 
 ```text
 elliottwaver-0.6.0-py3-none-any.whl
-sha256 e4ca059197ac5e57a77f2a48d3861be629b0348543a5f379e45cd052e5cb5a57
+sha256 6c95148afa788c4473c66a3ffee31e4c9919d03a0de1151025f5263a85c73fa7
 ```
 
 ## 7. 未完成项与原因

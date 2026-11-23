@@ -186,6 +186,7 @@ def resample_bundle(
     target_timeframe: str,
     *,
     as_of: datetime | None = None,
+    buffer_minutes: int = 0,
 ) -> MarketDataBundle:
     """Derive a coarser intraday/daily background from the same source bundle."""
     target_timeframe = str(target_timeframe)
@@ -204,7 +205,7 @@ def resample_bundle(
             bundle.instrument,
             target_timeframe,
             cutoff,
-            buffer_minutes=0 if bundle.instrument.market == "CN" else 0,
+            buffer_minutes=buffer_minutes,
         )
         raw = aggregate_intraday(
             bundle.raw_bars,
@@ -212,14 +213,14 @@ def resample_bundle(
             bundle.instrument,
             target_timeframe,
             cutoff,
-            buffer_minutes=0 if bundle.instrument.market == "CN" else 0,
+            buffer_minutes=buffer_minutes,
         )
         expected = expected_starts(
             calendar,
             bundle.instrument,
             cutoff,
             target_timeframe,
-            buffer_minutes=0,
+            buffer_minutes=buffer_minutes,
             since=bundle.sessions[0],
         )
         aggregation = f"{source_timeframe}->{target_timeframe}"

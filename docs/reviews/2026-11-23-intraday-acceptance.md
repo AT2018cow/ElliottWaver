@@ -10,11 +10,11 @@
 | --- | --- | --- |
 | IN-00 盘中简报停止周线观察窗 | 完成 | 60m/5m 合成与真实快照均输出 `version=1.1`、`horizon_unit=BARS`、`horizon=5`，不再出现 `2W` 事件。旧盘中 `1.0` 周线观察窗在结算时返回 `SETTLEMENT_WINDOW_TIMEFRAME_MISMATCH`。 |
 | IN-01 行情适配、会话和聚合 | 部分完成 | 新浪/`sina-index` 和 Alpaca SIP/IEX 路径保留；新增 Tushare `stock_mins`/`idx_mins` 适配器、CN 盘中 feed 配置、覆盖范围和来源字段。Tushare 只用假响应验证，真实账户权限未取得。CN 指数盘中默认仍拒绝，配置 `cn_index_intraday_feed: tushare-cn-index` 后才路由。 |
-| IN-02 历史覆盖与增量缓存 | 完成（盘中源块） | 新增 `SourceBlockStore`，按资产、feed、源周期、session profile、复权、parser、日历版本和日线背景结束日缓存每个交易日的源块；保留不可变修订。冷取数、热命中、尾段刷新、跨周期共享 5m 源块和精确截止零请求均有计数假供应商测试。整段权限失败保留、源级锁和日/周源块仍未覆盖。 |
+| IN-02 历史覆盖与增量缓存 | 完成（盘中源块） | 新增 `SourceBlockStore`，按资产、feed、源周期、session profile、复权、parser、日历版本和日线背景结束日缓存每个交易日的源块；保留不可变修订；源级文件锁串行化同一源区间；供应商失败和部分覆盖写入 `source_failures`，已校验块保留。冷取数、热命中、尾段刷新、跨周期共享 5m 源块、精确截止零请求和失败保留均有计数假供应商测试。日/周源块仍未覆盖。 |
 | IN-03 精确锚点、多周期背景和逐腿证据 | 完成（盘中腿映射） | 支持带时区的精确 `--anchor`；固定配对 `1m→5m`、`5m→60m`、`15m/30m→60m`、`60m→1d` 已接入 `resample_bundle` 和简报背景；`hierarchical_v1` 允许盘中结构计算；新增 `engine/intraday_link.py`，按精确 K 线区间把父结构腿映射到子结构，复用 `match_interval`、子模板许可、深度和共享预算。合成 5m/60m 关系测试通过；长区间重叠的真实逐腿证据待补。 |
 | IN-04 盘中简报与冻结观察窗 | 完成 | 发行后尚未开始的 5 根主周期 K 线；跨午休、周末和休市；最后一根 K 线结束/可用时刻；市场当地时间；`1h`/`60m` 同路径；`brief --timeframe auto` 对盘中快照自动采用快照周期。 |
 | IN-05 同日历史、结算和评估 | 完成 | SQLite 增加周期/feed/复权/最后 K 线字段和索引；同日按最后 K 线排序；5B 事件注册；盘中观察窗解析器与结算/评估共用；同根目标/失效、未知缺口、右删失、拆股换算和未来修订测试通过。 |
-| IN-06 自动化、真实行情、性能和发布 | 部分完成 | 全量 553 项测试、Ruff、格式、`pip check`、`git diff --check` 和 wheel 构建通过。真实 CN 个股 1m/5m/15m/30m/60m、美股 NVDA 60m SIP 和 AAPL 5m IEX 简报已核对；CN 1m 与 KSTR 5m SIP 因数据不足未发行；CN 指数、Tushare 真实权限、Massive 真实权限、其余 IEX 周期和真实冷/热取数未完成；合成简报 p50/p95 已记录。 |
+| IN-06 自动化、真实行情、性能和发布 | 部分完成 | 全量 553 项测试、Ruff、格式、`pip check`、`git diff --check` 和 wheel 构建通过。真实 CN 个股 1m/5m/15m/30m/60m、美股 NVDA 60m SIP 和 AAPL 5m IEX 简报已核对；CN 1m 与 KSTR 5m SIP 因数据不足未发行；CN 指数、Tushare 真实权限、Massive 真实权限和其余 IEX 周期未完成；真实快照冷/热请求计数与合成简报 p50/p95 已记录。 |
 | IN-07 原生美股指数 | 代码完成，真实权限阻塞 | 已接入 Massive `I:` 指数聚合接口、`SPX`/`NDX` 路由、`us_index_feed: massive-index` 和 `MASSIVE_API_KEY`；假响应验证 5m 原生指数、无成交量证据和 workflow 路由。真实 Massive 账户凭证未取得，未提交真实指数验收。 |
 
 ## 2. 改动文件
@@ -102,7 +102,7 @@ IN-07 代码完成、真实权限阻塞：已按 Massive 官方 `GET /v2/aggs/ti
 | A-04 精确边界与规则 | 同日两个锚点范围正确；确认前后逐时比较；浪 2/浪 3/浪 4/浪 5/三角形 E 浪和亚型正反例 | 精确时间锚点测试通过；既有规则/亚型测试通过；`hierarchical_v1` 5m 结构测试通过；盘中父子腿映射仍为部分完成 |
 | A-05 盘中简报与结算 | 手算 5 根窗口；同根目标/失效、确认在先、只到目标、未知首根、最后一根尚不可用、跨午休/次日；结算与评估同事件 | `test_intraday.py` 覆盖 5 根窗口、同根歧义、缺失首根、结算事件、评估 5B 行；结算与评估共用 `intraday_outlook_window` |
 | A-06 前缀与历史 | 物理截断到决策时刻；篡改未来一根不影响原决策；同日两份逆序写入仍按行情先后 | 盘中 replay 前缀测试通过；同日历史逆序写入测试通过；未来修订由既有结算 revision 测试覆盖 |
-| A-07 兼容与性能 | 读取旧快照/旧简报/旧 SQLite；并发坏标的隔离；冷/热取数、分析、自选的 p50/p95 | 旧真实快照兼容读取测试通过；旧 SQLite 迁移与并发自选既有测试通过。合成 `build_brief` 5 次：600519 60m p50 0.254s / p95 0.552s；AAPL 5m p50 0.422s / p95 0.488s。真实冷/热取数请求次数未测 |
+| A-07 兼容与性能 | 读取旧快照/旧简报/旧 SQLite；并发坏标的隔离；冷/热取数、分析、自选的 p50/p95 | 旧真实快照兼容读取测试通过；旧 SQLite 迁移与并发自选既有测试通过。真实 AAPL IEX 5m 冷/热 provider 调用 1/1，AAPL IEX 5m→60m 共享源块调用 1/1，NVDA SIP 60m 调用 1/1。合成 `build_brief` 5 次：600519 60m p50 0.254s / p95 0.552s；AAPL 5m p50 0.422s / p95 0.488s |
 
 ### 5.1 IN-02 源块缓存独立证据
 
@@ -115,11 +115,26 @@ IN-07 代码完成、真实权限阻塞：已按 Massive 官方 `GET /v2/aggs/ti
 | 跨周期共享 | 先取 5m，再取 15m，供应商调用不增加 | 5m 冷取 1 次；15m 请求仍为 1 次，输出 15m 聚合 bars |
 | 精确截止 | 请求更早 as_of，供应商零新增请求 | 调用计数保持 1，返回截止时刻前的 bars |
 | 后移截止 | 缓存块 cutoff 早于新 as_of，只重取目标 session | 新增 1 次请求，返回更晚的可用 bar |
+| 源级锁 | 5m/15m 两个不同整包 key 同时请求，只允许一次供应商取数 | 两线程并发，provider 调用 1 次 |
+| 供应商失败 | 保留已有块和 revision，记录失败原因 | 失败后 revision 数不变，`source_failures` 有记录 |
+| 部分覆盖 | 保留旧尾部，记录缺失 session | 刷新返回旧完整尾部，失败表记录目标 session |
+
+### 5.2 真实快照冷/热请求计数
+
+把真实快照包装成带调用计数的 provider，使用隔离缓存运行 `fetch_bundle`：
+
+| 数据 | 周期 | 冷取数 bars | 冷调用 | 热命中后调用 | 结果 |
+| --- | --- | ---: | ---: | ---: | --- |
+| AAPL IEX | 5m | 7016 | 1 | 1（未增加） | 同一 snapshot |
+| AAPL IEX | 5m→60m 共享源块 | 629 | 1（5m 冷取） | 1（未增加） | 60m 由 5m 源块聚合 |
+| NVDA SIP | 60m | 630 | 1 | 1（未增加） | 同一 snapshot |
+
+真实快照来源：AAPL IEX `8b3b30874041c6a1d0369f60d34909a63a60efe500faf967827b63c4439f40ed`，NVDA SIP `a994efbaf82a5e98cf41e224d7e64f0cba7824f268d52f0dae95f77005b19725`。计数 provider 只做真实快照的时间切片，不访问网络。
 
 ## 6. 验证命令与结果
 
 ```text
-.venv/bin/python -m pytest tests -q              553 passed
+.venv/bin/python -m pytest tests -q              556 passed
 .venv/bin/ruff check src tests scripts           PASS
 .venv/bin/ruff format --check src tests scripts  PASS
 .venv/bin/python -m pip check                    No broken requirements found
@@ -130,12 +145,12 @@ Wheel：
 
 ```text
 elliottwaver-0.6.0-py3-none-any.whl
-sha256 0efb7e5aa80fd83629135f9c3de8d99d3652bad73abef956ccc7102c305ffc5c
+sha256 e4ca059197ac5e57a77f2a48d3861be629b0348543a5f379e45cd052e5cb5a57
 ```
 
 ## 7. 未完成项与原因
 
-1. **IN-02 剩余边界**：盘中源块、尾段刷新、修订和跨周期共享已完成；源级锁仍复用整包缓存锁，供应商中途失败时只保留已完成源块，不保存部分页面级覆盖原因；日线和周线仍走整包快照缓存。
+1. **IN-02 剩余边界**：盘中源块、尾段刷新、修订、跨周期共享、源级锁和失败记录已完成；日线和周线仍走整包快照缓存，供应商页面级部分响应仍只能按已返回 bundle 的覆盖范围记录。
 2. **IN-03 剩余边界**：盘中父子腿映射已实现并通过合成关系测试；尚未取得足够长、父子区间重叠的真实快照来逐腿确认 VERIFIED 比例。日周 `timeframe_link` 保持原路径。
 3. **IN-06 真实覆盖**：CN 指数、Tushare 真实权限、IEX 真实样本、BRK.B/SPY 全五周期和真实冷/热取数请求次数未完成。原因：账户权限/凭证和样本时间限制。合成简报 p50/p95 已记录。
 4. **IN-07 真实权限**：Massive 指数适配器和假响应测试已完成；真实 `MASSIVE_API_KEY`/指数计划回执未取得，真实 SPX/NDX 逐周期证据待补。

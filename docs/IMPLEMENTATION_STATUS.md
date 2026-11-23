@@ -37,7 +37,7 @@
 以下为 `v0.6.0` 基线加本轮盘中增量后的验证结果。详细证据、快照 ID 和逐项命令见[盘中验收记录](reviews/2026-11-23-intraday-acceptance.md)。
 
 ```text
-python -m pytest tests -q              553 passed
+python -m pytest tests -q              556 passed
 ruff check src tests scripts           PASS
 ruff format --check src tests scripts  PASS
 pip check                             No broken requirements found

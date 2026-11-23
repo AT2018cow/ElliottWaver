@@ -7,12 +7,13 @@ The final analysis bundle is assembled from the latest revision of each block.
 
 from __future__ import annotations
 
+import fcntl
 import json
 import sqlite3
 from collections import defaultdict
-from contextlib import closing
+from contextlib import closing, contextmanager
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 from elliottwaver.data.adjustment import adjust_to_basis
@@ -88,6 +89,17 @@ class SourceBlockStore:
                 db.execute("UPDATE source_blocks SET cutoff = fetched_at WHERE cutoff IS NULL")
             db.execute(
                 """
+                CREATE TABLE IF NOT EXISTS source_failures (
+                    source_key TEXT NOT NULL,
+                    session_date TEXT NOT NULL,
+                    reason TEXT NOT NULL,
+                    fetched_at TEXT NOT NULL,
+                    PRIMARY KEY (source_key, session_date, reason)
+                )
+                """
+            )
+            db.execute(
+                """
                 CREATE TABLE IF NOT EXISTS source_context (
                     source_key TEXT NOT NULL,
                     context_end TEXT NOT NULL,
@@ -99,6 +111,16 @@ class SourceBlockStore:
                 """
             )
             db.commit()
+
+    @contextmanager
+    def lock(self, source_key: str):
+        path = self.root / f"source-{source_key}.lock"
+        with path.open("a") as handle:
+            fcntl.flock(handle, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(handle, fcntl.LOCK_UN)
 
     def latest_blocks(self, source_key: str) -> dict[date, SourceBlock]:
         with closing(sqlite3.connect(self.path)) as db:
@@ -128,6 +150,29 @@ class SourceBlockStore:
                 datetime.fromisoformat(cutoff),
             )
         return result
+
+    def record_failure(self, source_key: str, sessions: tuple[date, ...], reason: str) -> None:
+        now = datetime.now(UTC).isoformat()
+        with closing(sqlite3.connect(self.path)) as db:
+            for session in sessions:
+                db.execute(
+                    """
+                    INSERT OR REPLACE INTO source_failures
+                    (source_key, session_date, reason, fetched_at)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (source_key, session.isoformat(), reason[:500], now),
+                )
+            db.commit()
+
+    def failures(self, source_key: str) -> tuple[dict, ...]:
+        with closing(sqlite3.connect(self.path)) as db:
+            db.row_factory = sqlite3.Row
+            rows = db.execute(
+                "SELECT * FROM source_failures WHERE source_key = ? ORDER BY session_date",
+                (source_key,),
+            ).fetchall()
+        return tuple(dict(row) for row in rows)
 
     def coverage(self, source_key: str) -> tuple[date | None, date | None]:
         blocks = self.latest_blocks(source_key)
@@ -230,6 +275,7 @@ class SourceBlockStore:
                     (source_key, session.isoformat()),
                 ).fetchone()
                 if latest is not None and latest[1] == block_hash:
+                    db.commit()
                     continue
                 revision = (latest[0] + 1) if latest is not None else 1
                 db.execute(
@@ -252,6 +298,7 @@ class SourceBlockStore:
                     ),
                 )
                 inserted += 1
+                db.commit()
             if bundle.daily_context or bundle.raw_daily_context:
                 context_end = bundle.bars[-1].session_date.isoformat()
                 db.execute(

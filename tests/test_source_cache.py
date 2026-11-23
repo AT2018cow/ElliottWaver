@@ -1,4 +1,6 @@
 import sqlite3
+import threading
+import time
 from datetime import date, timedelta
 
 from elliottwaver.config import Settings
@@ -19,18 +21,27 @@ class CountingProvider:
             }
         )
         self.calls: list[tuple[date, date, str]] = []
+        self.fail_next = False
+        self.max_session: date | None = None
+        self.delay = 0.0
 
     def fetch(self, instrument, start, end, as_of, timeframe="1d"):
         self.calls.append((start, end, timeframe))
+        if self.delay:
+            time.sleep(self.delay)
+        if self.fail_next:
+            self.fail_next = False
+            raise DataError("fixture provider failure")
+        effective_end = min(end, self.max_session) if self.max_session else end
         bars = tuple(
             bar
             for bar in self.bundle.bars
-            if start <= bar.session_date <= end and bar.usable_at <= as_of
+            if start <= bar.session_date <= effective_end and bar.usable_at <= as_of
         )
         raw = tuple(
             bar
             for bar in self.bundle.raw_bars
-            if start <= bar.session_date <= end and bar.usable_at <= as_of
+            if start <= bar.session_date <= effective_end and bar.usable_at <= as_of
         )
         if not bars:
             raise DataError("fixture has no bars in the requested range")
@@ -64,8 +75,22 @@ class CountingProvider:
         bars = list(self.bundle.bars)
         raw = list(self.bundle.raw_bars)
         last = bars[-1]
-        bars[-1] = last.model_copy(update={"close": last.close + delta})
-        raw[-1] = raw[-1].model_copy(update={"close": raw[-1].close + delta})
+        revised = last.close + delta
+        bars[-1] = last.model_copy(
+            update={
+                "close": revised,
+                "high": max(last.high, revised),
+                "low": min(last.low, revised),
+            }
+        )
+        raw_last = raw[-1]
+        raw[-1] = raw_last.model_copy(
+            update={
+                "close": raw_last.close + delta,
+                "high": max(raw_last.high, raw_last.close + delta),
+                "low": min(raw_last.low, raw_last.close + delta),
+            }
+        )
         self.bundle = self.bundle.model_copy(update={"bars": tuple(bars), "raw_bars": tuple(raw)})
 
 
@@ -156,3 +181,69 @@ def test_exact_cutoff_reuses_cached_bundle_with_zero_requests(tmp_path):
     assert len(provider.calls) == 1
     assert sliced.as_of == cutoff
     assert sliced.bars[-1].usable_at <= cutoff
+
+
+def test_source_lock_serializes_shared_timeframes(tmp_path):
+    provider = CountingProvider(demo_bundle("AAPL", timeframe="5m"))
+    provider.delay = 0.2
+    settings = _settings(tmp_path)
+    base = AnalysisRequest(
+        symbol="AAPL", as_of=provider.bundle.as_of, timeframe="5m", mode="FROZEN_DATA_REPLAY"
+    )
+    errors = []
+
+    def run(request):
+        try:
+            fetch_bundle(request, settings, provider=provider)
+        except Exception as exc:  # pragma: no cover - diagnostic path
+            errors.append(exc)
+
+    threads = [
+        threading.Thread(target=run, args=(base,)),
+        threading.Thread(target=run, args=(base.model_copy(update={"timeframe": "15m"}),)),
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert not errors
+    assert len(provider.calls) == 1
+
+
+def test_provider_failure_preserves_blocks_and_records_failure(tmp_path):
+    provider = CountingProvider(demo_bundle("AAPL", timeframe="5m"))
+    settings = _settings(tmp_path)
+    request = AnalysisRequest(
+        symbol="AAPL", as_of=provider.bundle.as_of, timeframe="5m", mode="FROZEN_DATA_REPLAY"
+    )
+    first = fetch_bundle(request, settings, provider=provider)
+    source_key = _source_key(tmp_path)
+    before = SourceBlockStore(tmp_path).revision_count(source_key)
+    provider.fail_next = True
+    try:
+        fetch_bundle(request, settings, provider=provider, refresh=True)
+    except DataError:
+        pass
+    else:  # pragma: no cover - the provider must fail
+        raise AssertionError("expected provider failure")
+    store = SourceBlockStore(tmp_path)
+    assert store.revision_count(source_key) == before
+    assert store.latest_blocks(source_key)[first.bars[-1].session_date].bars
+    failures = store.failures(source_key)
+    assert failures
+    assert any("fixture provider failure" in row["reason"] for row in failures)
+
+
+def test_partial_provider_coverage_keeps_prior_blocks_and_marks_gap(tmp_path):
+    provider = CountingProvider(demo_bundle("AAPL", timeframe="5m"))
+    settings = _settings(tmp_path)
+    request = AnalysisRequest(
+        symbol="AAPL", as_of=provider.bundle.as_of, timeframe="5m", mode="FROZEN_DATA_REPLAY"
+    )
+    first = fetch_bundle(request, settings, provider=provider)
+    source_key = _source_key(tmp_path)
+    provider.max_session = date(2024, 1, 4)
+    result = fetch_bundle(request, settings, provider=provider, refresh=True)
+    assert result.bars[-1].session_date == first.bars[-1].session_date
+    failures = SourceBlockStore(tmp_path).failures(source_key)
+    assert any(row["session_date"] == "2024-01-05" for row in failures)

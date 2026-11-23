@@ -1,0 +1,23 @@
+# Fully free, no-API-key intraday profile.
+# CN daily still uses Sina; US daily/intraday uses Yahoo.
+# BaoStock is an optional historical fallback for CN stocks at 5m/15m/30m/60m:
+#   cn_equity_intraday_feed: baostock
+# BaoStock has no 1m endpoint and no index minute history.
+
+analysis:
+  timeframe: 1d
+  engine_profile: classic_v4
+
+data:
+  us_equity_feed: yahoo
+  us_index_feed: yahoo-index
+  cn_equity_intraday_feed: tencent-cn-equity
+  cn_index_intraday_feed: tencent-cn-index
+  tencent_max_pages: 20
+
+cache:
+  directory: .cache/elliottwaver
+
+output:
+  directory: reports
+  formats: [html, md]

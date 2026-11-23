@@ -73,7 +73,35 @@ def test_workflow_routes_us_index_to_yahoo_when_configured(tmp_path):
         data={"us_index_feed": "yahoo-index"},
     )
     request = AnalysisRequest(symbol="SPX", as_of=AS_OF, timeframe="5m")
-    bundle = fetch_bundle(request, settings, provider=FakeYahoo(settings.data))
+    bundle = fetch_bundle(request, settings, provider=FakeYahoo(settings.data, feed="yahoo-index"))
     assert bundle.instrument.asset_type == "INDEX"
     assert bundle.provenance.feed == "yahoo-index"
+    assert bundle.bars[-1].session_date == date(2024, 6, 3)
+
+
+def test_yahoo_us_equity_uses_free_feed_and_ticker_alias():
+    provider = FakeYahoo(DataConfig(us_equity_feed="yahoo"), feed="yahoo")
+    bundle = provider.fetch(
+        route_symbol("BRK.B"),
+        date(2024, 5, 31),
+        date(2024, 6, 3),
+        AS_OF,
+        timeframe="5m",
+    )
+    assert bundle.instrument.asset_type == "EQUITY"
+    assert bundle.provenance.feed == "yahoo"
+    assert bundle.provenance.volume_comparable is True
+    assert bundle.provenance.volume_unit == "shares"
+
+
+def test_workflow_routes_us_equity_to_yahoo_when_configured(tmp_path):
+    settings = Settings(
+        cache={"directory": tmp_path},
+        analysis={"history_years": 1},
+        data={"us_equity_feed": "yahoo"},
+    )
+    request = AnalysisRequest(symbol="AAPL", as_of=AS_OF, timeframe="5m")
+    bundle = fetch_bundle(request, settings, provider=FakeYahoo(settings.data, feed="yahoo"))
+    assert bundle.instrument.asset_type == "EQUITY"
+    assert bundle.provenance.feed == "yahoo"
     assert bundle.bars[-1].session_date == date(2024, 6, 3)

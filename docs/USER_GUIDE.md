@@ -90,6 +90,21 @@ python3 -m venv .venv
 
 单市场安装可选择 `[cn]` 或 `[us]`。用源码包可运行 `scripts/` 中的研究、回放和验收脚本。开发和测试用 `-e '.[dev,cn,us]'`。
 
+### 完全免费、无需 API Key
+
+复制 [config.free.example.yaml](../config.free.example.yaml) 后可直接使用：
+
+```bash
+cp config.free.example.yaml config.free.yaml
+.venv/bin/elliottwaver brief 600519.SH --config config.free.yaml
+.venv/bin/elliottwaver brief AAPL --config config.free.yaml
+```
+
+- 沪深个股/指数：Tencent 免费分钟线，无需 Token。
+- 美股个股/ETF/指数：Yahoo 免费 chart，无需 Token。
+- 沪深个股 `5m/15m/30m/60m` 历史回补可把 `cn_equity_intraday_feed` 改为 `baostock`；BaoStock 没有 1m，也不提供指数分钟线。
+- 免费接口无 SLA；Yahoo 15m/30m/60m 有少量缺口时使用 `--allow-gaps`，报告会保留 `ALLOWED_GAPS`。
+
 ### 环境检查与锁定依赖
 
 如需使用本项目记录的依赖版本：

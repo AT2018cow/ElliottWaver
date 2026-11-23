@@ -1,6 +1,8 @@
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
+import pandas as pd
+
 from elliottwaver.config import DataConfig, Settings
 from elliottwaver.data.router import route_symbol
 from elliottwaver.data.tencent_provider import TencentProvider
@@ -81,4 +83,58 @@ def test_workflow_routes_cn_index_to_tencent_when_configured(tmp_path):
     bundle = fetch_bundle(request, settings, provider=FakeTencent(settings.data))
     assert bundle.instrument.asset_type == "INDEX"
     assert bundle.provenance.feed == "tencent-cn-index"
+    assert bundle.bars[-1].session_date == date(2024, 6, 3)
+
+
+def test_tencent_equity_60m_applies_sina_factors(monkeypatch):
+    def factor_frame(**kwargs):
+        return pd.DataFrame(
+            [
+                {"date": "2024-01-01", "hfq_factor": 1.0},
+                {"date": "2024-06-03", "hfq_factor": 1.0},
+            ]
+        )
+
+    import akshare as ak
+
+    monkeypatch.setattr(ak, "stock_zh_a_hist_sina", factor_frame)
+    provider = FakeTencent(
+        DataConfig(cn_equity_intraday_feed="tencent-cn-equity"), feed="tencent-cn-equity"
+    )
+    bundle = provider.fetch(
+        route_symbol("600519.SH"),
+        date(2024, 6, 3),
+        date(2024, 6, 3),
+        datetime(2024, 6, 3, 15, 5, tzinfo=CST),
+        timeframe="60m",
+    )
+    assert bundle.provenance.feed == "tencent-cn-equity"
+    assert bundle.provenance.adjustment == "basis_date_qfq"
+    assert bundle.factors
+    assert bundle.bars == bundle.raw_bars
+
+
+def test_workflow_routes_cn_equity_to_tencent(monkeypatch, tmp_path):
+    def factor_frame(**kwargs):
+        return pd.DataFrame([{"date": "2024-01-01", "hfq_factor": 1.0}])
+
+    import akshare as ak
+
+    monkeypatch.setattr(ak, "stock_zh_a_hist_sina", factor_frame)
+    settings = Settings(
+        cache={"directory": tmp_path},
+        analysis={"history_years": 1},
+        data={"cn_equity_intraday_feed": "tencent-cn-equity"},
+    )
+    request = AnalysisRequest(
+        symbol="600519.SH",
+        as_of=datetime(2024, 6, 3, 15, 5, tzinfo=CST),
+        timeframe="60m",
+    )
+    bundle = fetch_bundle(
+        request,
+        settings,
+        provider=FakeTencent(settings.data, feed="tencent-cn-equity"),
+    )
+    assert bundle.provenance.feed == "tencent-cn-equity"
     assert bundle.bars[-1].session_date == date(2024, 6, 3)

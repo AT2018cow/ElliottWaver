@@ -14,7 +14,7 @@
 | IN-03 精确锚点、多周期背景和逐腿证据 | 完成（含真实重叠样本） | 支持带时区的精确 `--anchor`；固定配对 `1m→5m`、`5m→60m`、`15m/30m→60m`、`60m→1d` 已接入 `resample_bundle` 和简报背景；`hierarchical_v1` 允许盘中结构计算；新增 `engine/intraday_link.py`，按精确 K 线区间把父结构腿映射到子结构，复用 `match_interval`、子模板许可、深度和共享预算。AAPL SIP 5m/60m 真实重叠样本得到 43 条关系，其中 10 条 `VERIFIED`、33 条 `PROVISIONAL`。 |
 | IN-04 盘中简报与冻结观察窗 | 完成 | 发行后尚未开始的 5 根主周期 K 线；跨午休、周末和休市；最后一根 K 线结束/可用时刻；市场当地时间；`1h`/`60m` 同路径；`brief --timeframe auto` 对盘中快照自动采用快照周期。 |
 | IN-05 同日历史、结算和评估 | 完成 | SQLite 增加周期/feed/复权/最后 K 线字段和索引；同日按最后 K 线排序；5B 事件注册；盘中观察窗解析器与结算/评估共用；同根目标/失效、未知缺口、右删失、拆股换算和未来修订测试通过。 |
-| IN-06 自动化、真实行情、性能和发布 | 完成（免费源覆盖） | 全量 558 项测试、Ruff、格式、`pip check`、`git diff --check` 和 wheel 构建通过。真实 CN 个股 1m/5m/15m/30m/60m、CN 指数 000001/000300/399001 的 1m/5m/15m/30m/60m、AAPL/BRK.B/SPY 的 SIP/IEX 15m/30m/60m 与 IEX 1m、SPX/NDX Yahoo 1m/5m/15m/30m/60m 已核对；BRK.B IEX 因缺口、BRK.B SIP 60m 因无候选未发行。Tushare 与 Massive 授权源仍因凭证阻塞；真实冷/热计数与合成简报 p50/p95 已记录。 |
+| IN-06 自动化、真实行情、性能和发布 | 完成（免费源覆盖） | 全量 568 项测试、Ruff、格式、`pip check`、`git diff --check` 和 wheel 构建通过。真实 CN 个股/指数、AAPL/BRK.B/SPY SIP/IEX、SPX/NDX Yahoo 和完全免费无 Key 组合均已核对；BaoStock 5m/60m 历史回补通过；BRK.B IEX 与 Yahoo 15m/30m/60m 缺口按限制记录。Tushare 与 Massive 授权源仍因凭证阻塞。 |
 | IN-07 原生美股指数 | 完成（Yahoo 免费源；Massive 授权源待凭证） | 支持 `SPX`/`NDX` 等原生指数路由；Massive `I:` 适配器和假响应测试已完成；另接入 Yahoo 免费 chart 源，真实 SPX/NDX 1m/5m/15m/30m/60m 已取得。Yahoo 15m/30m/60m 存在少量缺失，验收时显式 `--allow-gaps`；Massive 真实权限仍未取得。 |
 
 ## 2. 改动文件
@@ -165,6 +165,48 @@ Yahoo 是免费公开接口，无 Token，但非官方、无 SLA；1m 只覆盖�
 
 IN-07 代码完成、真实权限阻塞：已按 Massive 官方 `GET /v2/aggs/ticker/I:{indicesTicker}/range/{multiplier}/{timespan}/{from}/{to}` 接入 `SPX`/`NDX`，指数无成交量时保留 `volume_comparable=False`。假响应验证了 5m 会话过滤、日线背景、`I:` 身份和 workflow 路由。真实 `MASSIVE_API_KEY` 和指数计划回执未取得，未用 ETF 或合成行情冒充原生指数。
 
+### 4.5 完全免费、无需 API Key 组合
+
+配置：[config.free.example.yaml](../../config.free.example.yaml)。CN 个股/指数使用 Tencent，US 个股/ETF/指数使用 Yahoo，均为免费公开接口，无需 Token。
+
+#### CN 个股 Tencent
+
+| 周期 | 快照 ID | bars | 缺口 | brief |
+| --- | --- | ---: | ---: | --- |
+| 1m | `9e7e4ba42cebf929e440774a25152fd58aa99fede0867be3c8b45842af3fc29e` | 5040 | 0 | OK / AVAILABLE |
+| 5m | `0a72b044cf1f2f374fa17622f7320cf634445a5fef6e691fd8be440efbe16922` | 5904 | 0 | OK / AVAILABLE |
+| 15m | `32412e77b5d613aceb8c3ff58d0554648249c8e063179e719277027c0c32433e` | 1968 | 0 | UNCLEAR / UNAVAILABLE |
+| 30m | `ecd28d56183b50d5b0f45d3892979c45763c2a94f76377f7bf253a7b84483b3a` | 1928 | 0 | OK / AVAILABLE |
+| 60m | `793863b097bc2b7b1dfe8deacf39b7d21e44c307167293b288106cb568e42c3f` | 964 | 0 | OK / AVAILABLE |
+
+#### CN 个股 BaoStock 历史回补
+
+| 周期 | 快照 ID | bars | 缺口 | 结果 |
+| --- | --- | ---: | ---: | --- |
+| 5m | `e4586cf3edb0a38835f97a31b8b755e42bef80ec9e791e9389a3d199b90520cc` | 58368 | 0 | QFQ，历史回补 |
+| 60m | `b7037dd54b7af7c7f1962b0048fd4649f60f2ff2386f83212462bdfb208bfa05` | 4864 | 0 | QFQ，历史回补 |
+
+BaoStock 没有 1m，也不提供指数分钟线；请求 1m 返回 `BAOSTOCK_1M_UNSUPPORTED`。它作为 `5m/15m/30m/60m` 的长历史回补源，不是实时源。
+
+#### US 个股/ETF Yahoo
+
+| 品种 | 周期 | 快照 ID | bars | 缺口 | brief |
+| --- | --- | --- | ---: | ---: | --- |
+| AAPL | 1m | `89b110ada105175dd439c5d2eeafd8c0c41d0deb164780f4e235c6b2e216b09b` | 2730 | 0 | OK |
+| AAPL | 5m | `82315f44db683b3fb1976c2cb5035bee27fdcc7aa10524cdb55babdbe25ba5ec` | 4661 | 19 | OK |
+| AAPL | 15m | `d471090fa40aee85d42eadd4ab738712492c7d7d6d9e89f83edba82ac8aabb77` | 1554 | 6 | OK（`--allow-gaps`） |
+| AAPL | 30m | `a2274e6c218ff84be1a8d3968f21e7a0eb948ee7b5ef6ce94dd712b04590f895` | 778 | 2 | OK（`--allow-gaps`） |
+| AAPL | 60m | `4f1151d6f2040d70cfdcd0558e045449f226a7564c90cdc4a4fe7fdbafe9e289` | 419 | 1 | OK（`--allow-gaps`） |
+| SPY | 1m | `81faa02d592e0d145479ef2bb9e38fbcb499e5a0caee40140a896bc244bea12b` | 2730 | 0 | OK |
+| SPY | 5m | `14fdf7021ae7e63f3c5f7714750046722bedfa870ef1a5eb7eee1cfaf8da3f6f` | 4661 | 19 | OK |
+| SPY | 15m | `5bfdfa52ae68ea8c8e082f8cb5d656a45c4dbef5abf21a73f9972884d849b0e0` | 1554 | 6 | OK（`--allow-gaps`） |
+| SPY | 30m | `f8f0635bb1482d28b96416cc6a18071ad71f9da26ed4c02b127f7c8c3f48fe91` | 777 | 3 | OK（`--allow-gaps`） |
+| SPY | 60m | `acf4ed2a10780074b204ccbf5e7320e3f449fd8c96a3547dc5159a1d8b27d73d` | 418 | 2 | OK（`--allow-gaps`） |
+
+Yahoo 15m/30m/60m 的缺口需要显式 `--allow-gaps`；报告保留 `ALLOWED_GAPS`，不把缺口当作完整数据。Yahoo 免费源无 SLA，1m 只覆盖最近约 7 天。
+
+可靠性处理：Tencent/Yahoo 请求使用有界重试和 `Retry-After` 退避；源块按 session 原子提交并保留 revision；失败和部分覆盖写入 `source_failures`；所有源分别记录 feed、parser、覆盖范围、缺口和价格口径。
+
 ## 5. A-01 至 A-07 独立预期与实测
 
 | 用例 | 独立预期 | 实测 |
@@ -223,7 +265,7 @@ IN-07 代码完成、真实权限阻塞：已按 Massive 官方 `GET /v2/aggs/ti
 ## 6. 验证命令与结果
 
 ```text
-.venv/bin/python -m pytest tests -q              561 passed
+.venv/bin/python -m pytest tests -q              568 passed
 .venv/bin/ruff check src tests scripts           PASS
 .venv/bin/ruff format --check src tests scripts  PASS
 .venv/bin/python -m pip check                    No broken requirements found
@@ -234,7 +276,7 @@ Wheel：
 
 ```text
 elliottwaver-0.6.0-py3-none-any.whl
-sha256 2f3c19f517c03baa75e8cd906bdcf6db0ffb55ad284637125427fd59fd2ae727
+sha256 077e6f708a14ad03d4b2542ed937bc041ff9ca758b5a41b6210e2294d8f5eb6d
 ```
 
 ## 7. 未完成项与原因

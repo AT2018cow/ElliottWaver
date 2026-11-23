@@ -9,9 +9,9 @@
 | 能力 | 状态与证据边界 |
 | --- | --- |
 | 项目、配置、Schema | Python 包、Typer CLI、严格字段校验、配置优先级、错误码与结果身份已实现；快照 schema 为 1.1 |
-| 沪深 A 股行情 | 新浪日线、因子、1/5/15/30/60 分钟；版本兼容与有期限的隔离进程；通过真实数据子集验证 |
+| 沪深 A 股行情 | 新浪日线、因子、1/5/15/30/60 分钟；免费 Tencent 1m/5m/15m/30m/60m（QFQ，无需 Token）；BaoStock 5m/15m/30m/60m 长历史回补（无 1m）；版本兼容、重试和隔离进程；真实数据子集验证 |
 | 沪深京指数行情 | 新浪指数日线（`SH000*`、`SZ399*`、`BJ899*`），日线/周线；无复权，`feed=sina-index`。盘中可配置免费 `data.cn_index_intraday_feed: tencent-cn-index`，无需 Token，1m/5m/15m/30m/60m 真实样本已通过；也可配置 Tushare `idx_mins`，真实权限样本待账户回执 |
-| 美股行情 | Alpaca REST v2 适配器，显式 feed/adjustment/end、全部分页、资产 ID/类别/代码一致性核对、认证错误与重复 token 防护；日线/周线、DST、假期、提前收盘、完整周、raw/all 对齐和 SIP/IEX 分缓存已通过冻结响应与离线入口测试。AAPL、BRK.B、SPY 的真实 SIP 小样本和 AAPL 的 IEX 样本已通过，见[验收记录](reviews/2026-11-20-us-equity-acceptance.md) |
+| 美股行情 | Alpaca REST v2 适配器，显式 feed/adjustment/end、全部分页、资产 ID/类别/代码一致性核对、认证错误与重复 token 防护；日线/周线、DST、假期、提前收盘、完整周、raw/all 对齐和 SIP/IEX 分缓存已通过冻结响应与离线入口测试。另提供免费 Yahoo 1m/5m/15m/30m/60m 无 Key 源。AAPL、BRK.B、SPY 的真实 SIP 小样本、IEX 1m/5m/15m/30m/60m 和 Yahoo 免费组合已通过，见[盘中验收](reviews/2026-11-23-intraday-acceptance.md) |
 | 美股指数 | `SPX`、`NDX`、`DJI`、`RUT`、`VIX` 独立路由；配置 `data.us_index_feed: massive-index` 和 `MASSIVE_API_KEY` 后接入 Massive `I:` 指数聚合，保留无成交量、`volume_comparable=False` 和 RTH 会话过滤。假响应验证 5m 原生指数、日线背景和 workflow 路由。免费 Yahoo chart 源已取得真实 SPX/NDX 1m/5m/15m/30m/60m；Massive 真实权限待补 |
 | 主周期 | `1m、5m、15m、30m、60m、1d、1w`，支持 `1h` 别名；两市场合成样本全覆盖，A 股真实样本全周期覆盖；CN 指数默认 `1d / 1w`，配置 Tushare 指数分钟后开放盘中周期；美股指数配置 Massive 后开放原生周期 |
 | 时间边界 | 不纳入未完成/尚不可用 bar；UTC 与交易所会话分开；节假日、DST、提前收市、午休、小时线尾段与完整周处理已测试 |
@@ -37,7 +37,7 @@
 以下为 `v0.6.0` 基线加本轮盘中增量后的验证结果。详细证据、快照 ID 和逐项命令见[盘中验收记录](reviews/2026-11-23-intraday-acceptance.md)。
 
 ```text
-python -m pytest tests -q              561 passed
+python -m pytest tests -q              568 passed
 ruff check src tests scripts           PASS
 ruff format --check src tests scripts  PASS
 pip check                             No broken requirements found
@@ -129,7 +129,7 @@ pip check                             No broken requirements found
 
 `max_subwave_depth` 默认 0，子浪证据显示 `UNAVAILABLE`。`--long-term` 默认设为 1，显式 `--subwave-depth 2` 再向下认证一层。全部父腿均已确认并通过位置规则和子模板硬规则时显示 `VERIFIED`。已完成收敛三角形还要求至少四腿为锯齿族、复杂腿最多一条；五平台或双复杂腿为 `UNVERIFIED` 且不获得满额子浪分。E 腿嵌套只标记 `PROVISIONAL`。证据不足或部分失败显示 `UNAVAILABLE` 或 `UNVERIFIED`。通用楔形的内部结构认证保留为 `UNAVAILABLE`。单周期候选的 `calibrated_event_probability` 保持 `null`，获批的短期事件概率通过 `brief.forecasts` 发布。
 
-其他边界：BJ 个股仅有代码路由，线上接入显式拒绝；BJ 指数（`899*`）已接通。Sina 无可信停牌证据时内部缺口保持未知；长历史个股需显式 `--allow-gaps`。父级上下文只在本次枚举到的候选之间建立，搜索未枚举到的更大结构仍为 `UNKNOWN`；子浪认证覆盖 5 浪推动/楔形和 3 浪锯齿/平台，复杂组合调整、running flat、扩散楔形和截短五浪仍未覆盖。尚未接入 BaoStock 备源；指数分钟线未启用；分钟历史取供应商实际返回范围；评分默认参数为工程初值，未根据收益寻优。
+其他边界：BJ 个股仅有代码路由，线上接入显式拒绝；BJ 指数（`899*`）已接通。Sina 无可信停牌证据时内部缺口保持未知；长历史个股需显式 `--allow-gaps`。父级上下文只在本次枚举到的候选之间建立，搜索未枚举到的更大结构仍为 `UNKNOWN`；子浪认证覆盖 5 浪推动/楔形和 3 浪锯齿/平台，复杂组合调整、running flat、扩散楔形和截短五浪仍未覆盖。BaoStock 已作为沪深个股 5m/15m/30m/60m 免费历史回补源，不提供 1m 和指数分钟线；沪深指数分钟线由 Tencent 免费源或 Tushare 授权源提供；分钟历史取供应商实际返回范围；评分默认参数为工程初值，未根据收益寻优。
 
 ## 复现
 

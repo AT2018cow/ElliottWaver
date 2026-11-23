@@ -30,6 +30,17 @@ python3 -m venv .venv
 
 开发和全量测试可用 `.venv/bin/python -m pip install -e '.[dev,cn,us]'`。`requirements.lock` 保存验证过的 Python 3.12 / Linux 依赖版本。[Wheel 安装](docs/USER_GUIDE.md#2-安装与环境检查)
 
+### 完全免费、无需 API Key
+
+使用 [config.free.example.yaml](config.free.example.yaml)：
+
+```bash
+.venv/bin/elliottwaver brief 600519.SH --config config.free.example.yaml
+.venv/bin/elliottwaver brief AAPL --config config.free.example.yaml
+```
+
+该配置使用 Tencent 沪深个股/指数分钟线、Yahoo 美股个股/ETF/指数分钟线，均无需 Token。`5m/15m/30m/60m` 需要更长历史时，可把 `cn_equity_intraday_feed` 改为 `baostock`；BaoStock 没有 1m 和指数分钟线。免费公开接口无 SLA，Yahoo 15m/30m/60m 有少量缺口时需要显式 `--allow-gaps`。
+
 ## 先看离线演示
 
 无需密钥或网络，所有演示图表会明确标记为合成行情：

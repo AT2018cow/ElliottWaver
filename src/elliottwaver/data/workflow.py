@@ -5,6 +5,7 @@ from importlib.metadata import PackageNotFoundError, version
 
 from elliottwaver.config import Settings
 from elliottwaver.data.alpaca_provider import AlpacaProvider
+from elliottwaver.data.baostock_provider import BaoStockProvider
 from elliottwaver.data.calendar import latest_analyzable, load_calendar
 from elliottwaver.data.massive_provider import MassiveIndexProvider
 from elliottwaver.data.periods import (
@@ -55,7 +56,12 @@ def fetch_bundle(
             )
         feed = settings.data.us_index_feed
     elif instrument.market == "US":
-        feed = request.feed or settings.data.us_feed
+        if settings.data.us_equity_feed == "yahoo":
+            if request.feed:
+                raise InputError("--feed sip/iex applies only to Alpaca US equities")
+            feed = "yahoo"
+        else:
+            feed = request.feed or settings.data.us_feed
     elif instrument.asset_type == "INDEX":
         if intraday:
             if not settings.data.cn_index_intraday_feed:
@@ -73,9 +79,13 @@ def fetch_bundle(
         if instrument.market == "US" and instrument.asset_type == "INDEX":
             parser = "yahoo-chart-v1" if feed == "yahoo-index" else "massive-v1"
         elif instrument.market == "US":
-            parser = "alpaca-rest-v1"
+            parser = "yahoo-chart-v1" if feed == "yahoo" else "alpaca-rest-v1"
         elif feed == "tencent-cn-index":
             parser = "tencent-mkline-v1"
+        elif feed == "tencent-cn-equity":
+            parser = "tencent-mkline-v1"
+        elif feed == "baostock":
+            parser = "baostock-v1"
         elif feed.startswith("tushare"):
             parser = "tushare-v1"
         elif instrument.asset_type == "INDEX":
@@ -87,7 +97,7 @@ def fetch_bundle(
     if instrument.market == "US" and instrument.asset_type == "INDEX":
         adjustment_key = "none"
     elif instrument.market == "US":
-        adjustment_key = "all"
+        adjustment_key = "none" if feed == "yahoo" else "all"
     elif instrument.asset_type == "INDEX":
         adjustment_key = "none"
     else:
@@ -101,21 +111,32 @@ def fetch_bundle(
             aggregation = "none"
         session_profile = "us_index_rth"
     elif instrument.market == "US":
-        source_timeframe = "1m" if request.timeframe == "1m" else "5m"
-        aggregation = (
-            "none"
-            if request.timeframe == "1m"
-            else f"5m->{request.timeframe}"
-            if intraday
-            else "none"
-        )
-        session_profile = "us_rth_open_aligned" if intraday else "provider_native_daily"
+        if feed == "yahoo":
+            if request.timeframe == "60m":
+                source_timeframe = "30m"
+                aggregation = "30m->60m"
+            else:
+                source_timeframe = request.timeframe if intraday else "1d"
+                aggregation = "none"
+            session_profile = "us_rth_open_aligned"
+        else:
+            source_timeframe = "1m" if request.timeframe == "1m" else "5m"
+            aggregation = (
+                "none"
+                if request.timeframe == "1m"
+                else f"5m->{request.timeframe}"
+                if intraday
+                else "none"
+            )
+            session_profile = "us_rth_open_aligned" if intraday else "provider_native_daily"
     else:
         source_timeframe = request.timeframe
         aggregation = "none"
         session_profile = (
             "cn_sina_1m_auction_sparse_v1"
             if intraday and request.timeframe == "1m" and feed == "sina"
+            else "cn_baostock_history"
+            if feed == "baostock"
             else "cn_exchange_session"
         )
     cache_identity = [
@@ -206,9 +227,13 @@ def fetch_bundle(
             else MassiveIndexProvider(settings.data, feed=feed)
             if instrument.market == "US" and instrument.asset_type == "INDEX"
             else AlpacaProvider(settings.data, feed=feed)
-            if instrument.market == "US"
+            if instrument.market == "US" and feed in {"sip", "iex"}
+            else YahooIndexProvider(settings.data, feed=feed)
+            if instrument.market == "US" and feed == "yahoo"
             else TencentProvider(settings.data, feed=feed)
-            if feed == "tencent-cn-index"
+            if feed in {"tencent-cn-index", "tencent-cn-equity"}
+            else BaoStockProvider(settings.data, feed=feed)
+            if feed == "baostock"
             else TushareProvider(settings.data, feed=feed)
             if feed.startswith("tushare")
             else SinaProvider(settings.data)

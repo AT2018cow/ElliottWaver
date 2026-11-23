@@ -10,12 +10,11 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-import requests
-
 from elliottwaver.config import DataConfig
 from elliottwaver.data.calendar import bar_window, load_calendar
 from elliottwaver.data.periods import aggregate_intraday, expected_starts, target_session
 from elliottwaver.data.quality import normalize_bars
+from elliottwaver.data.reliability import request_json
 from elliottwaver.errors import DataError, SourceError
 from elliottwaver.schemas.market import Bar, Instrument, MarketDataBundle, Provenance
 from elliottwaver.timeframes import minutes
@@ -28,20 +27,25 @@ _RANGE = {"1m": "7d", "5m": "60d", "15m": "60d", "30m": "60d", "60m": "60d", "1d
 
 class YahooIndexProvider:
     def __init__(self, config: DataConfig, *, feed: str = "yahoo-index"):
-        if feed != "yahoo-index":
+        if feed not in {"yahoo-index", "yahoo"}:
             raise ValueError(f"unsupported Yahoo feed {feed}")
         self.config = config
         self.feed = feed
 
+    @staticmethod
+    def _ticker(instrument: Instrument) -> str:
+        if instrument.asset_type == "INDEX":
+            return instrument.provider_symbol
+        return instrument.provider_symbol.replace(".", "-")
+
     def _chart(self, ticker: str, interval: str) -> dict:
-        response = requests.get(
+        payload = request_json(
+            "GET",
             f"{_API}/{ticker}",
             params={"interval": interval, "range": _RANGE[interval], "includePrePost": "false"},
             headers={"User-Agent": "Mozilla/5.0"},
             timeout=(10, self.config.request_timeout_seconds),
         )
-        response.raise_for_status()
-        payload = response.json()
         chart = payload.get("chart") or {}
         if chart.get("error"):
             raise SourceError(f"YAHOO_CHART: {chart['error']}")
@@ -56,7 +60,7 @@ class YahooIndexProvider:
         calendar,
         as_of: datetime,
     ) -> tuple[Bar, ...]:
-        result = self._chart(instrument.provider_symbol, "1d")
+        result = self._chart(self._ticker(instrument), "1d")
         meta = result.get("meta") or {}
         zone = ZoneInfo(meta.get("exchangeTimezoneName", instrument.timezone))
         sessions = {session.date: session for session in calendar.sessions}
@@ -106,8 +110,12 @@ class YahooIndexProvider:
         as_of: datetime,
         timeframe: str = "1d",
     ) -> MarketDataBundle:
-        if instrument.market != "US" or instrument.asset_type != "INDEX":
-            raise DataError("Yahoo index provider requires a US index instrument")
+        if instrument.market != "US":
+            raise DataError("Yahoo provider requires a US instrument")
+        if instrument.asset_type == "INDEX" and self.feed != "yahoo-index":
+            raise DataError("Yahoo index requires feed yahoo-index")
+        if instrument.asset_type == "EQUITY" and self.feed != "yahoo":
+            raise DataError("Yahoo equity requires feed yahoo")
         interval = _INTERVAL.get(timeframe)
         if interval is None:
             raise DataError("Yahoo index provider requires 1m/5m/15m/30m/60m or 1d")
@@ -142,7 +150,7 @@ class YahooIndexProvider:
                 source_timeframe="1d",
                 expected=(),
             )
-        result = self._chart(instrument.provider_symbol, source_interval)
+        result = self._chart(self._ticker(instrument), source_interval)
         meta = result.get("meta") or {}
         zone = ZoneInfo(meta.get("exchangeTimezoneName", instrument.timezone))
         sessions = {session.date: session for session in calendar.sessions}
@@ -263,7 +271,7 @@ class YahooIndexProvider:
                 adjustment="none",
                 basis_date=bars[-1].session_date,
                 price_coordinate_id=digest(
-                    ["yahoo-index", self.feed, target, [bar.bar_id for bar in bars]]
+                    ["yahoo", self.feed, target, [bar.bar_id for bar in bars]]
                 ),
                 parser_version="yahoo-chart-v1",
                 source_timeframe=source_timeframe,
@@ -271,17 +279,21 @@ class YahooIndexProvider:
                 coverage_start=bars[0].session_date,
                 coverage_end=bars[-1].session_date,
                 coverage_reason="YAHOO_FREE_RANGE",
-                session_profile="us_index_rth",
+                session_profile="us_index_rth"
+                if instrument.asset_type == "INDEX"
+                else "us_rth_open_aligned",
                 calendar_version=calendar.version,
                 fetched_at=datetime.now(UTC),
                 requested_start=bars[0].session_date,
                 requested_end=target,
                 amount_currency="USD",
-                volume_unit="index_volume",
-                volume_comparable=False,
-                warnings=(
-                    "YAHOO_UNOFFICIAL_FREE_SOURCE: 免费公开接口，无 SLA",
-                    "YAHOO_INDEX_VOLUME_UNAVAILABLE: 指数成交量不作为可比证据",
+                volume_unit="index_volume" if instrument.asset_type == "INDEX" else "shares",
+                volume_comparable=instrument.asset_type != "INDEX",
+                warnings=("YAHOO_UNOFFICIAL_FREE_SOURCE: 免费公开接口，无 SLA",)
+                + (
+                    ("YAHOO_INDEX_VOLUME_UNAVAILABLE: 指数成交量不作为可比证据",)
+                    if instrument.asset_type == "INDEX"
+                    else ()
                 ),
             ),
         )

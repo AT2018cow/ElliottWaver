@@ -73,8 +73,11 @@ class ScoringConfig(Section):
 
 class DataConfig(Section):
     us_feed: Literal["sip", "iex"] = "sip"
+    us_equity_feed: Literal["alpaca", "yahoo"] = "alpaca"
     us_index_feed: Literal["", "massive-index", "yahoo-index"] = ""
-    cn_equity_intraday_feed: Literal["sina", "tushare-cn-equity"] = "sina"
+    cn_equity_intraday_feed: Literal[
+        "sina", "tushare-cn-equity", "tencent-cn-equity", "baostock"
+    ] = "sina"
     cn_index_intraday_feed: Literal["", "tushare-cn-index", "tencent-cn-index"] = ""
     request_timeout_seconds: float = Field(20, gt=0, le=60)
     max_attempts: int = Field(3, ge=1, le=5)

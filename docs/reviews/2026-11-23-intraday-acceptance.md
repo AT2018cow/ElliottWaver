@@ -11,7 +11,7 @@
 | IN-00 盘中简报停止周线观察窗 | 完成 | 60m/5m 合成与真实快照均输出 `version=1.1`、`horizon_unit=BARS`、`horizon=5`，不再出现 `2W` 事件。旧盘中 `1.0` 周线观察窗在结算时返回 `SETTLEMENT_WINDOW_TIMEFRAME_MISMATCH`。 |
 | IN-01 行情适配、会话和聚合 | 部分完成 | 新浪/`sina-index` 和 Alpaca SIP/IEX 路径保留；新增 Tushare `stock_mins`/`idx_mins` 适配器、CN 盘中 feed 配置、覆盖范围和来源字段。Tushare 只用假响应验证，真实账户权限未取得。CN 指数盘中默认仍拒绝，配置 `cn_index_intraday_feed: tushare-cn-index` 后才路由。 |
 | IN-02 历史覆盖与增量缓存 | 完成（盘中源块） | 新增 `SourceBlockStore`，按资产、feed、源周期、session profile、复权、parser、日历版本和日线背景结束日缓存每个交易日的源块；保留不可变修订；源级文件锁串行化同一源区间；供应商失败和部分覆盖写入 `source_failures`，已校验块保留。冷取数、热命中、尾段刷新、跨周期共享 5m 源块、精确截止零请求和失败保留均有计数假供应商测试。日/周源块仍未覆盖。 |
-| IN-03 精确锚点、多周期背景和逐腿证据 | 完成（盘中腿映射） | 支持带时区的精确 `--anchor`；固定配对 `1m→5m`、`5m→60m`、`15m/30m→60m`、`60m→1d` 已接入 `resample_bundle` 和简报背景；`hierarchical_v1` 允许盘中结构计算；新增 `engine/intraday_link.py`，按精确 K 线区间把父结构腿映射到子结构，复用 `match_interval`、子模板许可、深度和共享预算。合成 5m/60m 关系测试通过；长区间重叠的真实逐腿证据待补。 |
+| IN-03 精确锚点、多周期背景和逐腿证据 | 完成（含真实重叠样本） | 支持带时区的精确 `--anchor`；固定配对 `1m→5m`、`5m→60m`、`15m/30m→60m`、`60m→1d` 已接入 `resample_bundle` 和简报背景；`hierarchical_v1` 允许盘中结构计算；新增 `engine/intraday_link.py`，按精确 K 线区间把父结构腿映射到子结构，复用 `match_interval`、子模板许可、深度和共享预算。AAPL SIP 5m/60m 真实重叠样本得到 43 条关系，其中 10 条 `VERIFIED`、33 条 `PROVISIONAL`。 |
 | IN-04 盘中简报与冻结观察窗 | 完成 | 发行后尚未开始的 5 根主周期 K 线；跨午休、周末和休市；最后一根 K 线结束/可用时刻；市场当地时间；`1h`/`60m` 同路径；`brief --timeframe auto` 对盘中快照自动采用快照周期。 |
 | IN-05 同日历史、结算和评估 | 完成 | SQLite 增加周期/feed/复权/最后 K 线字段和索引；同日按最后 K 线排序；5B 事件注册；盘中观察窗解析器与结算/评估共用；同根目标/失效、未知缺口、右删失、拆股换算和未来修订测试通过。 |
 | IN-06 自动化、真实行情、性能和发布 | 部分完成 | 全量 553 项测试、Ruff、格式、`pip check`、`git diff --check` 和 wheel 构建通过。真实 CN 个股 1m/5m/15m/30m/60m、美股 NVDA 60m SIP 和 AAPL 5m IEX 简报已核对；CN 1m 与 KSTR 5m SIP 因数据不足未发行；CN 指数、Tushare 真实权限、Massive 真实权限和其余 IEX 周期未完成；真实快照冷/热请求计数与合成简报 p50/p95 已记录。 |
@@ -119,6 +119,16 @@ IN-07 代码完成、真实权限阻塞：已按 Massive 官方 `GET /v2/aggs/ti
 | 供应商失败 | 保留已有块和 revision，记录失败原因 | 失败后 revision 数不变，`source_failures` 有记录 |
 | 部分覆盖 | 保留旧尾部，记录缺失 session | 刷新返回旧完整尾部，失败表记录目标 session |
 
+### 5.3 AAPL SIP 5m/60m 真实父子腿证据
+
+使用同一 feed 的真实快照：
+
+- 子周期 5m：`b7336d55d525ccf61cd8092243ba227fc2385dae78d0ec877704af06f418b976`，7016 根。
+- 父周期 60m：`88d57fbbf7e213306709a2aa5d874cb399ca69d8551fc0050c71da914fa1e2fc`，629 根。
+- 高级引擎 `hierarchical_v1`，`max_subwave_depth=1`，共享预算 50000。
+
+实测：43 条 `WaveRelation`，其中 10 条 `VERIFIED`、33 条 `PROVISIONAL`，全部为 `EXACT_LEG`。示例父腿标签包括 `1`、`2`、`W`、`X`、`A`、`B`，均匹配 `ZIGZAG_ABC` 子结构。该样本证明真实重叠区间上的父腿→子结构映射可工作；未验证部分保留为 `PROVISIONAL`，未提升为已认证。
+
 ### 5.2 真实快照冷/热请求计数
 
 把真实快照包装成带调用计数的 provider，使用隔离缓存运行 `fetch_bundle`：
@@ -151,7 +161,7 @@ sha256 e4ca059197ac5e57a77f2a48d3861be629b0348543a5f379e45cd052e5cb5a57
 ## 7. 未完成项与原因
 
 1. **IN-02 剩余边界**：盘中源块、尾段刷新、修订、跨周期共享、源级锁和失败记录已完成；日线和周线仍走整包快照缓存，供应商页面级部分响应仍只能按已返回 bundle 的覆盖范围记录。
-2. **IN-03 剩余边界**：盘中父子腿映射已实现并通过合成关系测试；尚未取得足够长、父子区间重叠的真实快照来逐腿确认 VERIFIED 比例。日周 `timeframe_link` 保持原路径。
+2. **IN-03 剩余边界**：盘中父子腿映射已通过合成和 AAPL SIP 5m/60m 真实重叠样本；未验证父腿保留为 `PROVISIONAL`。日周 `timeframe_link` 保持原路径。
 3. **IN-06 真实覆盖**：CN 指数、Tushare 真实权限、IEX 真实样本、BRK.B/SPY 全五周期和真实冷/热取数请求次数未完成。原因：账户权限/凭证和样本时间限制。合成简报 p50/p95 已记录。
 4. **IN-07 真实权限**：Massive 指数适配器和假响应测试已完成；真实 `MASSIVE_API_KEY`/指数计划回执未取得，真实 SPX/NDX 逐周期证据待补。
 

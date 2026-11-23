@@ -14,7 +14,7 @@
 | IN-03 精确锚点、多周期背景和逐腿证据 | 完成（含真实重叠样本） | 支持带时区的精确 `--anchor`；固定配对 `1m→5m`、`5m→60m`、`15m/30m→60m`、`60m→1d` 已接入 `resample_bundle` 和简报背景；`hierarchical_v1` 允许盘中结构计算；新增 `engine/intraday_link.py`，按精确 K 线区间把父结构腿映射到子结构，复用 `match_interval`、子模板许可、深度和共享预算。AAPL SIP 5m/60m 真实重叠样本得到 43 条关系，其中 10 条 `VERIFIED`、33 条 `PROVISIONAL`。 |
 | IN-04 盘中简报与冻结观察窗 | 完成 | 发行后尚未开始的 5 根主周期 K 线；跨午休、周末和休市；最后一根 K 线结束/可用时刻；市场当地时间；`1h`/`60m` 同路径；`brief --timeframe auto` 对盘中快照自动采用快照周期。 |
 | IN-05 同日历史、结算和评估 | 完成 | SQLite 增加周期/feed/复权/最后 K 线字段和索引；同日按最后 K 线排序；5B 事件注册；盘中观察窗解析器与结算/评估共用；同根目标/失效、未知缺口、右删失、拆股换算和未来修订测试通过。 |
-| IN-06 自动化、真实行情、性能和发布 | 部分完成 | 全量 553 项测试、Ruff、格式、`pip check`、`git diff --check` 和 wheel 构建通过。真实 CN 个股 1m/5m/15m/30m/60m、美股 NVDA 60m SIP 和 AAPL 5m IEX 简报已核对；CN 1m 与 KSTR 5m SIP 因数据不足未发行；CN 指数、Tushare 真实权限、Massive 真实权限和其余 IEX 周期未完成；真实快照冷/热请求计数与合成简报 p50/p95 已记录。 |
+| IN-06 自动化、真实行情、性能和发布 | 部分完成 | 全量 556 项测试、Ruff、格式、`pip check`、`git diff --check` 和 wheel 构建通过。真实 CN 个股 1m/5m/15m/30m/60m、AAPL/BRK.B/SPY 的 SIP/IEX 15m/30m/60m、NVDA 60m SIP 和 AAPL 5m IEX 已核对；BRK.B IEX 因缺口、BRK.B SIP 60m 因无候选未发行；CN 指数、Tushare 真实权限、Massive 真实权限和其余 IEX 周期未完成；真实冷/热计数与合成简报 p50/p95 已记录。 |
 | IN-07 原生美股指数 | 代码完成，真实权限阻塞 | 已接入 Massive `I:` 指数聚合接口、`SPX`/`NDX` 路由、`us_index_feed: massive-index` 和 `MASSIVE_API_KEY`；假响应验证 5m 原生指数、无成交量证据和 workflow 路由。真实 Massive 账户凭证未取得，未提交真实指数验收。 |
 
 ## 2. 改动文件
@@ -82,6 +82,33 @@
 
 KSTR 5m 的真实快照未覆盖足够完整的历史/缺口，按方案继续完成可独立验证的部分，未把它解释为通过。IEX 真实样本本轮未取得；SIP/IEX 分离仍由既有冻结响应和入口测试覆盖。
 
+### 4.2.1 AAPL / BRK.B / SPY SIP 与 IEX 矩阵
+
+2026-11-20 收盘后，使用真实 Alpaca 快照运行 `brief --offline`。所有条目均使用 `1h` 对应的 `60m` 规范周期；`15m/30m/60m` 由同一 5m 源块聚合。
+
+| 品种 | feed | 周期 | 快照 ID | bars | 缺口 | brief 状态 | 5B 观察窗 |
+| --- | --- | --- | --- | ---: | ---: | --- | --- |
+| AAPL | sip | 15m | `eead93baf5cceacb7029c406afb8524d50750cacf1dd9c3cd886eab48f6ac11a` | 2338 | 0 | OK | AVAILABLE |
+| AAPL | sip | 30m | `d272b9558e828eda089e820898ea6edb934e23f0850d703c82139cbc26fea900` | 1169 | 0 | OK | AVAILABLE |
+| AAPL | sip | 60m | `88d57fbbf7e213306709a2aa5d874cb399ca69d8551fc0050c71da914fa1e2fc` | 629 | 0 | OK | AVAILABLE |
+| AAPL | iex | 15m | `23ebf10218bb026d70f69be0b0def7e91cb5a8b982326c7f46fe9ac89adc4679` | 2338 | 0 | OK | AVAILABLE |
+| AAPL | iex | 30m | `a2ca098929e0eca967c3fcaf4cc0a1c1edc68f61c70bbf9a76ee1e33a0bfdc04` | 1169 | 0 | OK | AVAILABLE |
+| AAPL | iex | 60m | `a50a52f3fb6921d38be6e2b42694a1353c7ad4f8a9763b948d4aef6a7f6567e9` | 629 | 0 | OK | AVAILABLE |
+| BRK.B | sip | 15m | `69e74e6cc55b0781d0df83f9917a0eba5b50c82227f6c8e39eb17d2430733da2` | 2338 | 0 | OK | AVAILABLE |
+| BRK.B | sip | 30m | `5a39a61a802600659e318cda2bd9dde9aa24eed0219e260645a4c96012321a12` | 1169 | 0 | UNCLEAR | AVAILABLE |
+| BRK.B | sip | 60m | `c19a529ec658375d976860af509803a78c6514bfd74b037bd48051919417e7d4` | 629 | 0 | UNCLEAR | UNAVAILABLE |
+| BRK.B | iex | 15m | `7aafec3a2190e529abe093d426c1135b2f0235c7525fa826288cc4a55ee58a8a` | 2298 | 40 | INSUFFICIENT_DATA | UNAVAILABLE |
+| BRK.B | iex | 30m | `c88216e4cc8539d6a195abde976fb7dbe4617bb4eb9dd381f0af5ae0fc4c14a6` | 1132 | 37 | INSUFFICIENT_DATA | UNAVAILABLE |
+| BRK.B | iex | 60m | `6582509bfef44d56fb881c759d649a452c86d7c1168675e5e98c80a6ba653951` | 594 | 35 | INSUFFICIENT_DATA | UNAVAILABLE |
+| SPY | sip | 15m | `37408d4b61cb54761f762e1c3986097376a278f06052669edc1fea76a8504519` | 2338 | 0 | OK | AVAILABLE |
+| SPY | sip | 30m | `30da329facf0d254f66c72cf530da497403453177b712ec0d1bef7195c8e1085` | 1169 | 0 | OK | AVAILABLE |
+| SPY | sip | 60m | `ad9227c7dc28a0f3e95a242f4839223b5e4ada7434f46eba7e510a4ec62e1d96` | 629 | 0 | OK | AVAILABLE |
+| SPY | iex | 15m | `cd6344ad40a0affb95834eb0db7f289e30d37c0c0d7c0f06341fc8b4518e2886` | 2338 | 0 | OK | AVAILABLE |
+| SPY | iex | 30m | `e64f14d035115c114567622fe80fa9663a1dca171b9038926a1fa8f36a251cce` | 1169 | 0 | OK | AVAILABLE |
+| SPY | iex | 60m | `cead3eb3b3921d3d16b5e278a1407342544b212c244a6282bd2f628a7034e805` | 629 | 0 | OK | AVAILABLE |
+
+BRK.B IEX 的 40/37/35 个未知缺口使分析状态为 `INSUFFICIENT_DATA`，5B 观察窗仍按 `version=1.1`、`horizon_unit=BARS` 输出但状态为 `UNAVAILABLE`，未发行事件。BRK.B SIP 60m 的候选状态为 `UNCLEAR`，没有可发行卡片，因此观察窗 `UNAVAILABLE`。这些是数据质量和候选质量结果，不是接口失败。
+
 ### 4.3 沪深指数与 Tushare
 
 - `data/tushare_provider.py` 已实现 `stock_mins`、`idx_mins` 和 `adj_factor` 的请求、时间标签按 bar 结束解析、8000 行/日期片段接口约定、覆盖范围和来源字段。
@@ -140,6 +167,12 @@ IN-07 代码完成、真实权限阻塞：已按 Massive 官方 `GET /v2/aggs/ti
 | NVDA SIP | 60m | 630 | 1 | 1（未增加） | 同一 snapshot |
 
 真实快照来源：AAPL IEX `8b3b30874041c6a1d0369f60d34909a63a60efe500faf967827b63c4439f40ed`，NVDA SIP `a994efbaf82a5e98cf41e224d7e64f0cba7824f268d52f0dae95f77005b19725`。计数 provider 只做真实快照的时间切片，不访问网络。
+
+### 5.4 IN-02 范围说明：日/周不改为源块
+
+源块缓存按 **盘中源周期** 设计，覆盖 1m/5m/15m/30m/60m 的交易日块、尾段刷新和跨周期共享。日线和周线继续使用既有整包快照缓存：它们的历史跨度长、供应商分页和整包内容寻址已能提供精确截止复用，拆成日块不会改善本轮的盘中请求次数，反而增加日/周两套一致性路径。
+
+因此本轮明确将日/周源块排除在 IN-02 范围外；日/周仍保留 `SnapshotStore` 的整包缓存、`save_at_cutoff` 和旧快照兼容读取。若后续需要日/周级增量，再单独设计日块和周末聚合缓存。
 
 ## 6. 验证命令与结果
 

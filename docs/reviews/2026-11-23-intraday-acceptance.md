@@ -14,7 +14,7 @@
 | IN-03 精确锚点、多周期背景和逐腿证据 | 完成（盘中腿映射） | 支持带时区的精确 `--anchor`；固定配对 `1m→5m`、`5m→60m`、`15m/30m→60m`、`60m→1d` 已接入 `resample_bundle` 和简报背景；`hierarchical_v1` 允许盘中结构计算；新增 `engine/intraday_link.py`，按精确 K 线区间把父结构腿映射到子结构，复用 `match_interval`、子模板许可、深度和共享预算。合成 5m/60m 关系测试通过；长区间重叠的真实逐腿证据待补。 |
 | IN-04 盘中简报与冻结观察窗 | 完成 | 发行后尚未开始的 5 根主周期 K 线；跨午休、周末和休市；最后一根 K 线结束/可用时刻；市场当地时间；`1h`/`60m` 同路径；`brief --timeframe auto` 对盘中快照自动采用快照周期。 |
 | IN-05 同日历史、结算和评估 | 完成 | SQLite 增加周期/feed/复权/最后 K 线字段和索引；同日按最后 K 线排序；5B 事件注册；盘中观察窗解析器与结算/评估共用；同根目标/失效、未知缺口、右删失、拆股换算和未来修订测试通过。 |
-| IN-06 自动化、真实行情、性能和发布 | 部分完成 | 全量 547 项测试、Ruff、格式、`pip check`、`git diff --check` 和 wheel 构建通过。真实 CN 个股 60m/5m 与美股 NVDA 60m SIP 简报通过；KSTR 5m SIP 因数据不足未发行；CN 指数、Tushare 真实权限、Massive 真实权限和真实冷/热取数未完成；合成简报 p50/p95 已记录。 |
+| IN-06 自动化、真实行情、性能和发布 | 部分完成 | 全量 553 项测试、Ruff、格式、`pip check`、`git diff --check` 和 wheel 构建通过。真实 CN 个股 1m/5m/15m/30m/60m 与美股 NVDA 60m SIP 简报已核对；1m 因数据不足未发行，KSTR 5m SIP 也因数据不足未发行；CN 指数、Tushare 真实权限、Massive 真实权限、IEX 全周期和真实冷/热取数未完成；合成简报 p50/p95 已记录。 |
 | IN-07 原生美股指数 | 代码完成，真实权限阻塞 | 已接入 Massive `I:` 指数聚合接口、`SPX`/`NDX` 路由、`us_index_feed: massive-index` 和 `MASSIVE_API_KEY`；假响应验证 5m 原生指数、无成交量证据和 workflow 路由。真实 Massive 账户凭证未取得，未提交真实指数验收。 |
 
 ## 2. 改动文件
@@ -53,8 +53,11 @@
 
 | 品种 | 周期 | feed | 快照 ID | 最后 K 线 | 结果 |
 | --- | --- | --- | --- | --- | --- |
-| 600519.SH | 60m | sina | `00d67c91c914c115fe3a6dbd33c3ecfa4ff945133056164e0ef5cdb591e83118` | 2026-11-16 15:00 CST | `UNCLEAR`，5B 观察窗，事件 `ADVANCE_FIRST_60M_5B_V1`、`OUTLOOK_TARGET_FIRST_60M_5B_V1` |
+| 600519.SH | 1m | sina | `adfdc3a50d3c59c71c402c8adee14c60ab8556d5bd4a515ff69742fa4f2ff412` | 2026-11-16 15:00 CST | `INSUFFICIENT_DATA`，5B 观察窗 `UNAVAILABLE`；未发行事件 |
 | 600519.SH | 5m | sina | `eb270f1681277487b446b23f0487a8f5c9ac120bc817b844f08cfbc25cf42a29` | 2026-11-16 15:00 CST | `OK`，5B 观察窗，事件 `ADVANCE_FIRST_5M_5B_V1`、`OUTLOOK_TARGET_FIRST_5M_5B_V1` |
+| 600519.SH | 15m | sina | `6f116b759b14021bb1fd45b4ace0ed94770cec78712a6ab87b883bcfabb27b9c` | 2026-11-16 15:00 CST | `OK`，5B 观察窗，事件 `ADVANCE_FIRST_15M_5B_V1`、`OUTLOOK_TARGET_FIRST_15M_5B_V1` |
+| 600519.SH | 30m | sina | `fe40715ff916efb5174f2964e36aab010fd5801d63e1e4ed08e10a62d5de15f7` | 2026-11-16 15:00 CST | `OK`，5B 观察窗，事件 `ADVANCE_FIRST_30M_5B_V1`、`OUTLOOK_TARGET_FIRST_30M_5B_V1` |
+| 600519.SH | 60m | sina | `00d67c91c914c115fe3a6dbd33c3ecfa4ff945133056164e0ef5cdb591e83118` | 2026-11-16 15:00 CST | `UNCLEAR`，5B 观察窗，事件 `ADVANCE_FIRST_60M_5B_V1`、`OUTLOOK_TARGET_FIRST_60M_5B_V1` |
 
 复现方式：使用 `cache.directory: .cache/live-smoke` 的临时配置，运行：
 

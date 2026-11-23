@@ -3,7 +3,7 @@
 import math
 from bisect import bisect_right
 from collections.abc import Sequence
-from datetime import date
+from datetime import date, datetime
 
 from elliottwaver.errors import DataError
 from elliottwaver.schemas.market import Bar, FactorPoint, MarketDataBundle
@@ -36,8 +36,29 @@ def adjust_to_basis(
     return tuple(adjusted)
 
 
+def adjust_from_issuance(
+    bars: Sequence[Bar],
+    current_factors: Sequence[FactorPoint],
+    issuance_factors: Sequence[FactorPoint],
+    decision: date,
+) -> tuple[Bar, ...]:
+    """Retain the issuing factor history and append subsequent changes."""
+    return adjust_to_basis(
+        bars,
+        (
+            *(point for point in issuance_factors if point.effective_date <= decision),
+            *(point for point in current_factors if point.effective_date > decision),
+        ),
+        basis_date=decision,
+    )
+
+
 def provider_price_scale(
-    issued: MarketDataBundle, current: MarketDataBundle, decision: date
+    issued: MarketDataBundle,
+    current: MarketDataBundle,
+    decision: date,
+    *,
+    issued_as_of: datetime | None = None,
 ) -> float | None:
     """Infer a uniform bridge only from unchanged raw sessions at issuance."""
 
@@ -51,7 +72,7 @@ def provider_price_scale(
     old = [
         (raw, bar)
         for raw, bar in zip(old_raw, old_adjusted, strict=True)
-        if bar.session_date <= decision
+        if bar.session_date <= decision and (issued_as_of is None or bar.usable_at <= issued_as_of)
     ][-2:]
     new = {bar.start_at: (raw, bar) for raw, bar in zip(new_raw, new_adjusted, strict=True)}
     if len(old) < 2 or old[-1][1].session_date != decision:

@@ -8,8 +8,8 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from zoneinfo import ZoneInfo
 
-from elliottwaver.data.adjustment import provider_price_scale
-from elliottwaver.data.periods import resample_bundle
+from elliottwaver.data.adjustment import adjust_from_issuance, provider_price_scale
+from elliottwaver.data.periods import background_bundle
 from elliottwaver.data.quality import missing_intervals
 from elliottwaver.engine.indicators import calculate
 from elliottwaver.engine.intraday_link import link_intraday_timeframes
@@ -544,11 +544,11 @@ def build_brief(
     model_approved_at: datetime | None = None,
     retrospective: bool = False,
     model_issue: str | None = None,
+    intraday_issued_at: datetime | None = None,
 ) -> BriefRun:
     service = AnalysisService(settings)
     advanced = settings.analysis.engine_profile == "hierarchical_v1"
     day_budget = SearchBudget(settings.search.max_expansions) if advanced else None
-    generated_at = datetime.now(UTC)
     background_request = None
     background_prepared = None
     background_context = None
@@ -564,7 +564,7 @@ def build_brief(
         target = BACKGROUND_TIMEFRAMES.get(request.timeframe)
         if target is not None:
             try:
-                derived = resample_bundle(source, target, as_of=request.as_of)
+                derived = background_bundle(source, target, as_of=request.as_of)
                 background_request = request.model_copy(
                     update={"timeframe": target, "anchor": None, "anchor_at": None}
                 )
@@ -629,10 +629,6 @@ def build_brief(
 
     indicators = calculate(prepared.bars)
     cards = _select_cards(result, prepared)
-    issued_at = (
-        generated_at if request.mode == "LIVE" and result.timeframe.endswith("m") else request.as_of
-    )
-    outlook = build_outlook(cards, result, prepared, context.projections, issued_at=issued_at)
     wave_relations = ()
     if advanced and background_context is not None and background_prepared is not None:
         wave_relations = link_intraday_timeframes(
@@ -702,18 +698,42 @@ def build_brief(
             request, prepared, context, service, day_budget
         )
 
-    forecasts = forecasts_for_brief(
-        result,
-        prepared,
-        indicators,
+    live_intraday = request.mode == "LIVE" and result.timeframe.endswith("m")
+    issue_now = live_intraday and intraday_issued_at is None
+    source_snapshot_id = source.snapshot_id
+    issued_at = request.as_of
+    if live_intraday:
+        issued_at = intraday_issued_at or max(request.as_of, datetime.now(UTC))
+    outlook = build_outlook(cards, result, prepared, context.projections, issued_at=issued_at)
+    forecast_inputs = dict(
         qualified=context.qualified,
         models=active_models,
         weekly=forecast_weekly,
         candidate_ids={card.scenario_id for card in cards},
-        outlook=outlook,
         wave_relations=wave_relations,
         window_state=window_comparison.state,
     )
+    forecasts = forecasts_for_brief(
+        result,
+        prepared,
+        indicators,
+        outlook=outlook,
+        **forecast_inputs,
+    )
+    generated_at = datetime.now(UTC)
+    while issue_now:
+        issued_at = max(request.as_of, generated_at)
+        if not outlook.periods or outlook.periods[0].start_at >= issued_at:
+            outlook = outlook.model_copy(update={"issued_at": issued_at})
+            break
+        previous_cases = outlook.cases
+        outlook = build_outlook(cards, result, prepared, context.projections, issued_at=issued_at)
+        # Forecast features depend on the cases, while the calendar fixes the event window.
+        if outlook.cases != previous_cases:
+            forecasts = forecasts_for_brief(
+                result, prepared, indicators, outlook=outlook, **forecast_inputs
+            )
+        generated_at = datetime.now(UTC)
     by_scenario = {}
     for item in forecasts:
         if item.scenario_id is not None:
@@ -732,7 +752,7 @@ def build_brief(
     brief = Brief(
         schema_version="1.2" if advanced else "1.1",
         brief_digest="",
-        source_snapshot_id=source.snapshot_id,
+        source_snapshot_id=source_snapshot_id,
         symbol=result.instrument.canonical_symbol,
         as_of=request.as_of,
         mode=request.mode,
@@ -1048,37 +1068,53 @@ def _intraday_triggered_conditions(
         and previous_source.provenance.price_coordinate_id
         != current_source.provenance.price_coordinate_id
     ):
-        scale = provider_price_scale(previous_source, current_source, previous.market_asof)
+        scale = provider_price_scale(
+            previous_source, current_source, previous.market_asof, issued_as_of=previous.as_of
+        )
         if scale is None:
             return (), (), "PRICE_BASIS_UNVERIFIED: 发行时价格坐标无法核实"
-    start = previous.last_bar_end_at
+    issued_at = previous.outlook.issued_at if previous.outlook is not None else None
+    start = max(previous.last_bar_end_at, previous.as_of, issued_at or previous.as_of)
     end = current.last_bar_end_at
-    bars = tuple(
+    qfq = previous.adjustment == "basis_date_qfq"
+    source_bars = tuple(
         bar
-        for bar in current_source.bars
-        if bar.is_final and bar.usable_at <= current.as_of and start <= bar.start_at <= end
+        for bar in (current_source.raw_bars if qfq else current_source.bars)
+        if bar.is_final
+        and bar.usable_at <= current.as_of
+        and start <= bar.start_at
+        and bar.end_at <= end
     )
-    gaps = tuple(gap for gap in missing_intervals(current_source) if start < gap <= end)
+    if not source_bars:
+        return (), (), None
+    bars = source_bars
+    if qfq:
+        try:
+            bars = adjust_from_issuance(
+                source_bars, current_source.factors, previous_source.factors, previous.market_asof
+            )
+        except DataError:
+            return (), (), "PRICE_BASIS_UNVERIFIED: 发行时复权因子不足"
+    elif scale != 1.0:
+        bars = tuple(
+            bar.model_copy(
+                update={
+                    field: getattr(bar, field) * scale for field in ("open", "high", "low", "close")
+                }
+            )
+            for bar in source_bars
+        )
+    gaps = tuple(gap for gap in missing_intervals(current_source) if start <= gap < end)
     triggered: list[LevelCondition] = []
     events: list[dict] = []
     issue = None
     card = previous.cards[0]
     for condition in card.conditions:
-        active = max(previous.as_of, condition.active_from)
-        missing = False
-        for source_bar in bars:
-            bar = source_bar
-            if scale != 1.0:
-                bar = source_bar.model_copy(
-                    update={
-                        field: getattr(source_bar, field) * scale
-                        for field in ("open", "high", "low", "close")
-                    }
-                )
-            trigger_at = bar.end_at if condition.side == "CLOSE" else bar.start_at
-            if trigger_at < active or not condition_hit(condition, bar):
+        active = max(start, condition.active_from)
+        for source_bar, bar in zip(source_bars, bars, strict=True):
+            if bar.start_at < active or not condition_hit(condition, bar):
                 continue
-            missing = any(gap < bar.start_at for gap in gaps)
+            missing = any(active <= gap < bar.start_at for gap in gaps)
             status = "OBSERVED_AFTER_GAP" if missing else "TRIGGERED"
             if not missing:
                 triggered.append(condition)

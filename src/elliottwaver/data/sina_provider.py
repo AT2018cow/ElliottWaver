@@ -11,7 +11,12 @@ from zoneinfo import ZoneInfo
 from elliottwaver.config import DataConfig
 from elliottwaver.data.adjustment import adjust_to_basis
 from elliottwaver.data.calendar import bar_window, latest_analyzable, load_calendar
-from elliottwaver.data.periods import expected_starts, intraday_windows, target_session
+from elliottwaver.data.periods import (
+    SINA_AUCTION_PROFILE,
+    expected_starts,
+    intraday_windows,
+    target_session,
+)
 from elliottwaver.data.quality import normalize_bars
 from elliottwaver.errors import DataError, SourceError
 from elliottwaver.schemas.market import Bar, FactorPoint, Instrument, MarketDataBundle, Provenance
@@ -315,7 +320,7 @@ class SinaProvider:
                     if adjusted and start < adjusted[0].session_date
                     else ""
                 ),
-                session_profile="cn_sina_1m_auction_sparse_v1"
+                session_profile=SINA_AUCTION_PROFILE
                 if timeframe == "1m"
                 else "cn_exchange_session",
                 calendar_version=calendar.version,

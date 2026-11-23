@@ -126,9 +126,8 @@ class TencentProvider:
         )
         if not bars or not expected:
             raise DataError("TENCENT_NO_BARS: no completed index bars")
-        expected = tuple(item for item in expected if item <= bars[-1].start_at)
-        if not expected or expected[-1] != bars[-1].start_at:
-            raise DataError("STALE_INTRADAY: Tencent index bars do not align to the session grid")
+        if expected[-1] != bars[-1].start_at:
+            raise DataError("STALE_INTRADAY: Tencent lacks the required completed bar")
         name = ""
         if first_data is not None:
             name = (first_data.get("qt") or {}).get(instrument.provider_symbol, [None, ""])[1] or ""

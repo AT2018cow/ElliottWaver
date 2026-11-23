@@ -1,7 +1,9 @@
 """Live acquisition and cache orchestration, outside the pure engine."""
 
+from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta
 from importlib.metadata import PackageNotFoundError, version
+from zoneinfo import ZoneInfo
 
 from elliottwaver.config import Settings
 from elliottwaver.data.alpaca_provider import AlpacaProvider
@@ -9,20 +11,22 @@ from elliottwaver.data.baostock_provider import BaoStockProvider
 from elliottwaver.data.calendar import latest_analyzable, load_calendar
 from elliottwaver.data.massive_provider import MassiveIndexProvider
 from elliottwaver.data.periods import (
+    SINA_AUCTION_PROFILE,
     as_weekly,
-    expected_starts,
-    resample_bundle,
+    intraday_windows,
     target_session,
 )
 from elliottwaver.data.router import route_symbol
 from elliottwaver.data.sina_provider import SinaProvider
 from elliottwaver.data.snapshots import SERIES_FIELDS, SnapshotStore
-from elliottwaver.data.source_cache import SourceBlockStore
+from elliottwaver.data.source_cache import SourceBlockStore, compatible_provider_basis
 from elliottwaver.data.tencent_provider import TencentProvider
+from elliottwaver.data.tushare_provider import PARSER_VERSION as TUSHARE_PARSER_VERSION
 from elliottwaver.data.tushare_provider import TushareProvider
 from elliottwaver.data.yahoo_provider import YahooIndexProvider
 from elliottwaver.errors import DataError, InputError, SourceError
 from elliottwaver.schemas.market import AnalysisRequest, MarketDataBundle
+from elliottwaver.timeframes import minutes
 from elliottwaver.util import digest
 
 
@@ -34,7 +38,11 @@ def fetch_bundle(
     start = end - timedelta(days=366 * settings.analysis.history_years)
     if request.start:
         start = min(start, request.start - timedelta(days=settings.analysis.warmup_bars * 2))
-    anchor_day = request.anchor_at.date() if request.anchor_at else request.anchor
+    anchor_day = (
+        request.anchor_at.astimezone(ZoneInfo(instrument.timezone)).date()
+        if request.anchor_at
+        else request.anchor
+    )
     if anchor_day:
         start = min(start, anchor_day - timedelta(days=settings.analysis.warmup_bars * 2))
     calendar = load_calendar(instrument, start, end)
@@ -87,7 +95,7 @@ def fetch_bundle(
         elif feed == "baostock":
             parser = "baostock-v1"
         elif feed.startswith("tushare"):
-            parser = "tushare-v1"
+            parser = TUSHARE_PARSER_VERSION
         elif instrument.asset_type == "INDEX":
             parser = "sina-index-v1/" + version("akshare")
         else:
@@ -133,12 +141,54 @@ def fetch_bundle(
         source_timeframe = request.timeframe
         aggregation = "none"
         session_profile = (
-            "cn_sina_1m_auction_sparse_v1"
+            SINA_AUCTION_PROFILE
             if intraday and request.timeframe == "1m" and feed == "sina"
             else "cn_baostock_history"
             if feed == "baostock"
             else "cn_exchange_session"
         )
+    auction_sparse = session_profile == SINA_AUCTION_PROFILE
+    buffer = settings.data.delayed_access_buffer_minutes
+    delay = timedelta(minutes=buffer if instrument.market == "US" else 0)
+    required_interval = None
+    if intraday:
+        required_interval = next(
+            (
+                slot
+                for slot in reversed(
+                    tuple(
+                        intraday_windows(
+                            calendar.session(target),
+                            minutes(request.timeframe),
+                            auction_sparse=auction_sparse,
+                        )
+                    )
+                )
+                if slot[1] + delay <= request.as_of
+            ),
+            None,
+        )
+        if required_interval is None:
+            raise DataError("STALE_INTRADAY: no completed interval for the requested session")
+
+    def current_tail(bundle):
+        last = bundle.bars[-1]
+        return last.session_date == target and (
+            required_interval is None or (last.start_at, last.end_at) == required_interval
+        )
+
+    def check_native(bundle):
+        if (
+            bundle.instrument.canonical_symbol != instrument.canonical_symbol
+            or bundle.instrument.market != instrument.market
+            or bundle.instrument.asset_type != instrument.asset_type
+            or bundle.provenance.feed != feed
+            or bundle.timeframe != source_timeframe
+            or bundle.as_of != request.as_of
+            or bundle.bars[-1].session_date > target
+        ):
+            raise DataError("Provider returned a different symbol, feed, timeframe or cutoff")
+
     cache_identity = [
         instrument.canonical_symbol,
         instrument.asset_type,
@@ -153,18 +203,7 @@ def fetch_bundle(
         session_profile,
         source_timeframe,
         aggregation,
-        expected_starts(
-            calendar,
-            instrument,
-            request.as_of,
-            request.timeframe,
-            buffer_minutes=settings.data.delayed_access_buffer_minutes,
-            through=end,
-            since=target,
-            auction_sparse=instrument.market == "CN",
-        )[-1:]
-        if intraday
-        else (),
+        (required_interval, "intraday-grid-v2") if intraday else (),
         "snapshot-v1.1",
     ]
     if intraday:
@@ -191,21 +230,28 @@ def fetch_bundle(
                 session_profile,
                 parser,
                 adjustment_key,
-                calendar.version,
-                daily_context_end if intraday else None,
+                calendar.version.rsplit("/", 1)[0],
+                buffer,
+                "source-block-v2",
             ]
         )
         if intraday
         else None
     )
-    with store.lock(key):
+    source_lock = source_store.lock(source_key) if source_store is not None else nullcontext()
+    with store.lock(key), source_lock:
+        lookup_key = (
+            digest([key, source_store.revision_token(source_key, start, target, request.as_of)])
+            if source_store is not None
+            else key
+        )
         if not refresh:
             cached = store.lookup(
-                key, datetime.now(UTC), settings.data.cache_ttl_seconds, as_of=request.as_of
+                lookup_key, datetime.now(UTC), settings.data.cache_ttl_seconds, as_of=request.as_of
             )
             if (
                 cached is not None
-                and cached.bars[-1].session_date == target
+                and current_tail(cached)
                 and cached.instrument.canonical_symbol == instrument.canonical_symbol
                 and cached.instrument.market == instrument.market
                 and cached.provenance.feed == feed
@@ -239,76 +285,50 @@ def fetch_bundle(
             else SinaProvider(settings.data)
         )
         if source_store is not None and source_key is not None:
-            with source_store.lock(source_key):
-                desired = tuple(session for session in calendar.dates if start <= session <= target)
-                blocks = source_store.latest_blocks(source_key)
-                stale = tuple(
-                    session
-                    for session, block in blocks.items()
-                    if block.cutoff < request.as_of and session >= start
+            blocks = source_store.latest_blocks(source_key)
+            first = min(blocks, default=target)
+            previous_start = source_store.requested_start(source_key)
+            backfill = (
+                not blocks
+                or target < first
+                or (
+                    (request.start is not None or anchor_day is not None)
+                    and previous_start is not None
+                    and start < previous_start
                 )
-                missing = tuple(
-                    session for session in desired if session not in blocks or session in stale
+            )
+            floor = start if backfill else max(start, first)
+            desired = tuple(s for s in calendar.sessions if floor <= s.date <= target)
+            missing = []
+            for session in desired:
+                block = blocks.get(session.date)
+                if block is None:
+                    missing.append(session.date)
+                    continue
+                slots = tuple(
+                    intraday_windows(
+                        session, minutes(source_timeframe), auction_sparse=auction_sparse
+                    )
                 )
-                fetch_start = min(missing) if missing else None
-                if refresh:
-                    if blocks:
-                        refresh_start = max(start, max(blocks))
-                        fetch_start = (
-                            min(fetch_start, refresh_start)
-                            if fetch_start is not None
-                            else refresh_start
-                        )
-                    else:
-                        fetch_start = start
-                if fetch_start is not None:
-                    # Give providers enough prior daily context for the tail session.
-                    fetch_start = max(start, fetch_start - timedelta(days=7))
-                if fetch_start is None:
-                    assembled = source_store.assemble(
-                        source_key,
-                        instrument=instrument,
-                        calendar=calendar,
-                        timeframe=request.timeframe,
-                        source_timeframe=source_timeframe,
-                        as_of=request.as_of,
-                        start=start,
-                        end=target,
-                        buffer_minutes=settings.data.delayed_access_buffer_minutes,
-                    )
-                    if assembled is not None and assembled.bars[-1].session_date == target:
-                        store.remember(key, assembled)
-                        return assembled
-                    fetch_start = start
-                try:
-                    native = source.fetch(
-                        instrument, fetch_start, target, request.as_of, timeframe=source_timeframe
-                    )
-                except (DataError, SourceError) as exc:
-                    source_store.record_failure(
-                        source_key,
-                        tuple(session for session in desired if session >= fetch_start),
-                        str(exc),
-                    )
-                    raise
-                coverage_end = native.bars[-1].session_date if native.bars else fetch_start
-                source_store.store_bundle(
-                    source_key,
-                    native,
-                    sessions=tuple(
-                        session for session in desired if fetch_start <= session <= coverage_end
-                    ),
-                    source_timeframe=source_timeframe,
-                    session_profile=session_profile,
-                    parser_version=parser,
-                    calendar_version=calendar.version,
+                grid = set(slots)
+                if any((bar.start_at, bar.end_at) not in grid for bar in block.raw_bars):
+                    missing.append(session.date)
+                    continue
+                tail = next(
+                    (slot for slot in reversed(slots) if slot[1] + delay <= request.as_of), None
                 )
-                if coverage_end < target:
-                    source_store.record_failure(
-                        source_key,
-                        tuple(session for session in desired if coverage_end < session <= target),
-                        "PARTIAL_PROVIDER_COVERAGE",
-                    )
+                if tail is not None and (block.bars[-1].start_at, block.bars[-1].end_at) < tail:
+                    missing.append(session.date)
+            if refresh:
+                missing.append(target)
+            context_through = source_store.context_through(source_key)
+            if context_through and daily_context_end and context_through < daily_context_end:
+                missing.append(daily_context_end)
+            fetch_start = min(missing, default=None)
+            if fetch_start is not None:
+                # Overlap the tail for price-basis validation and daily background.
+                fetch_start = max(start, fetch_start - timedelta(days=7))
+            if fetch_start is None:
                 assembled = source_store.assemble(
                     source_key,
                     instrument=instrument,
@@ -318,20 +338,75 @@ def fetch_bundle(
                     as_of=request.as_of,
                     start=start,
                     end=target,
-                    buffer_minutes=0,
+                    buffer_minutes=buffer,
                 )
-                bundle = (
-                    assembled
-                    if assembled is not None and assembled.bars[-1].session_date == target
-                    else native
-                    if source_timeframe == request.timeframe
-                    else resample_bundle(
-                        native,
-                        request.timeframe,
-                        as_of=request.as_of,
-                        buffer_minutes=0,
-                    )
+                if assembled is not None and current_tail(assembled):
+                    store.remember(lookup_key, assembled)
+                    return assembled
+                fetch_start = max(start, target - timedelta(days=7))
+            try:
+                native = source.fetch(
+                    instrument, fetch_start, target, request.as_of, timeframe=source_timeframe
                 )
+                check_native(native)
+                if not compatible_provider_basis(blocks, native, start, target):
+                    if fetch_start > start:
+                        fetch_start = start
+                        native = source.fetch(
+                            instrument, start, target, request.as_of, timeframe=source_timeframe
+                        )
+                        check_native(native)
+                    if not compatible_provider_basis(blocks, native, start, target):
+                        raise DataError(
+                            "PRICE_BASIS_UNVERIFIED: cached source blocks cannot be aligned"
+                        )
+            except (DataError, SourceError) as exc:
+                source_store.record_failure(
+                    source_key,
+                    tuple(session.date for session in desired if session.date >= fetch_start),
+                    str(exc),
+                )
+                raise
+            coverage_start = native.bars[0].session_date
+            coverage_end = native.bars[-1].session_date
+            source_store.store_bundle(
+                source_key,
+                native,
+                sessions=tuple(
+                    session.date
+                    for session in desired
+                    if coverage_start <= session.date <= coverage_end
+                ),
+                source_timeframe=source_timeframe,
+                session_profile=session_profile,
+                parser_version=parser,
+                calendar_version=calendar.version,
+                requested_start=fetch_start,
+            )
+            if coverage_end < target:
+                source_store.record_failure(
+                    source_key,
+                    tuple(session.date for session in desired if coverage_end < session.date),
+                    "PARTIAL_PROVIDER_COVERAGE",
+                )
+            bundle = source_store.assemble(
+                source_key,
+                instrument=instrument,
+                calendar=calendar,
+                timeframe=request.timeframe,
+                source_timeframe=source_timeframe,
+                as_of=request.as_of,
+                start=start,
+                end=target,
+                buffer_minutes=buffer,
+            )
+            if bundle is None or not current_tail(bundle):
+                error = "STALE_INTRADAY: source blocks lack the required completed bar"
+                source_store.record_failure(source_key, (target,), error)
+                raise DataError(error)
+            lookup_key = digest(
+                [key, source_store.revision_token(source_key, start, target, request.as_of)]
+            )
         else:
             provider_timeframe = "1d" if request.timeframe == "1w" else request.timeframe
             bundle = source.fetch(
@@ -349,5 +424,5 @@ def fetch_bundle(
             raise DataError(
                 "Provider returned a different symbol, feed, timeframe or target session"
             )
-        store.remember(key, bundle)
+        store.remember(lookup_key, bundle)
         return bundle

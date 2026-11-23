@@ -41,7 +41,7 @@ from elliottwaver.evaluation.features import (
     event_feature_order,
     feature_vector,
 )
-from elliottwaver.evaluation.forward import holdout_plan, live_reports
+from elliottwaver.evaluation.forward import holdout_plan, live_receipt_key, live_reports
 from elliottwaver.service import engine_rules_version
 from elliottwaver.util import atomic_write, canonical_json, digest
 
@@ -994,7 +994,12 @@ def _forward_evidence(
         for row in cohort:
             decision = row["decision"]
             receipt = receipts.get(
-                (decision["symbol"], decision["timeframe"], decision["decision_date"])
+                live_receipt_key(
+                    decision["symbol"],
+                    decision["timeframe"],
+                    decision["decision_date"],
+                    decision.get("last_bar_end_at"),
+                )
             )
             if (
                 receipt is None
@@ -1007,7 +1012,7 @@ def _forward_evidence(
                 or not sealed_at < receipt.as_of <= receipt.generated_at < row["label_available_at"]
                 or receipt.outlook is None
                 or not receipt.outlook.periods
-                or receipt.generated_at >= receipt.outlook.periods[0].start_at
+                or receipt.generated_at > receipt.outlook.periods[0].start_at
             ):
                 raise ValueError(
                     "Scored decision lacks a matching live report from the sealed holdout"

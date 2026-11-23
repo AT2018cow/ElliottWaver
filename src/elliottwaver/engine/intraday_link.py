@@ -2,8 +2,14 @@
 
 from __future__ import annotations
 
+from bisect import bisect_left
+from collections import defaultdict
 from datetime import datetime
+from math import isclose
 
+from elliottwaver.data.calendar import load_calendar
+from elliottwaver.data.periods import intraday_windows
+from elliottwaver.data.quality import missing_intervals
 from elliottwaver.engine.hierarchical import match_interval
 from elliottwaver.engine.indicators import calculate
 from elliottwaver.engine.matcher import SearchBudget
@@ -11,6 +17,7 @@ from elliottwaver.engine.templates import allowed_child_templates_advanced
 from elliottwaver.engine.zigzag import extract
 from elliottwaver.schemas.market import MarketDataBundle
 from elliottwaver.schemas.wave import PivotPoint, WaveRelation, WaveStructure
+from elliottwaver.timeframes import minutes
 
 
 def _root(structure: WaveStructure | None):
@@ -28,6 +35,48 @@ def _child_index(bars, pivot: PivotPoint) -> int | None:
         if bar.start_at <= pivot.extreme_at < bar.end_at:
             return index
     return None
+
+
+def _daily_endpoints(parent: MarketDataBundle, child: MarketDataBundle):
+    """Map a native daily extreme only when a complete RTH session corroborates it."""
+    indices = defaultdict(list)
+    for index, bar in enumerate(child.bars):
+        indices[bar.session_date].append(index)
+    calendar = load_calendar(
+        child.instrument, child.bars[0].session_date, child.bars[-1].session_date
+    )
+    duration = minutes(child.timeframe)
+    complete = {
+        session.date: rows
+        for session in calendar.sessions
+        if (rows := indices.get(session.date))
+        and tuple((child.bars[i].start_at, child.bars[i].end_at) for i in rows)
+        == tuple(intraday_windows(session, duration))
+    }
+
+    def endpoint(pivot: PivotPoint) -> int | None:
+        if not 0 <= pivot.index < len(parent.bars):
+            return None
+        parent_bar = parent.bars[pivot.index]
+        parent_raw = parent.raw_bars[pivot.index]
+        side = pivot.kind.lower()
+        rows = complete.get(parent_bar.session_date, ())
+        if not rows:
+            return None
+        extreme = max if side == "high" else min
+        index = extreme(rows, key=lambda i: getattr(child.bars[i], side))
+        raw_price = getattr(parent_raw, side)
+        if (
+            isclose(pivot.price, getattr(child.bars[index], side), rel_tol=1e-9)
+            and isclose(raw_price, getattr(child.raw_bars[index], side), rel_tol=1e-9)
+            and isclose(
+                raw_price, extreme(getattr(child.raw_bars[i], side) for i in rows), rel_tol=1e-9
+            )
+        ):
+            return index
+        return None
+
+    return endpoint
 
 
 def _child_pivot(pivot: PivotPoint, bars, index: int) -> PivotPoint:
@@ -77,6 +126,12 @@ def link_intraday_timeframes(
     if not parent_scenarios or not child_scenarios:
         return ()
     child_scenario = child_scenarios[0]
+    gaps = missing_intervals(child_prepared)
+    native_endpoint = (
+        _daily_endpoints(parent_prepared, child_prepared)
+        if parent_prepared.timeframe == "1d"
+        else None
+    )
     indicators = calculate(child_prepared.bars)
     zigzags = tuple(
         extract(child_prepared.bars, indicators.atr, scale, child_prepared.instrument.tick_size)
@@ -115,8 +170,12 @@ def link_intraday_timeframes(
                 continue
             left = left_point.pivot
             right = right_point.pivot
-            left_index = _child_index(child_prepared.bars, left)
-            right_index = _child_index(child_prepared.bars, right)
+            if native_endpoint is None:
+                left_index = _child_index(child_prepared.bars, left)
+                right_index = _child_index(child_prepared.bars, right)
+            else:
+                left_index = native_endpoint(left)
+                right_index = native_endpoint(right)
             if left_index is None or right_index is None or left_index >= right_index:
                 relations.append(
                     WaveRelation(
@@ -125,12 +184,28 @@ def link_intraday_timeframes(
                         parent_wave_label=label,
                         relation="UNDETERMINED",
                         status="UNDETERMINED",
-                        reason="父腿端点未落在子周期 K 线区间内",
+                        reason="父腿端点无法映射到口径相符的子周期 K 线",
                     )
                 )
                 continue
             allowed = allowed_child_templates_advanced(root.pattern_type, index, root.variant)
             if not allowed:
+                continue
+            first_bar = child_prepared.bars[left_index]
+            last_bar = child_prepared.bars[right_index]
+            gap_index = bisect_left(gaps, first_bar.start_at)
+            if gap_index < len(gaps) and gaps[gap_index] < last_bar.end_at:
+                relations.append(
+                    WaveRelation(
+                        weekly_scenario_id=parent.scenario_id,
+                        daily_scenario_id=child_scenario.scenario_id,
+                        parent_wave_label=label,
+                        relation="UNDETERMINED",
+                        status="UNDETERMINED",
+                        weekly_point_ids=(left_point.point_id, right_point.point_id),
+                        reason="INCOMPLETE_DATA: 父腿区间存在未知子周期缺口",
+                    )
+                )
                 continue
             child_left = _child_pivot(left, child_prepared.bars, left_index)
             child_right = _child_pivot(right, child_prepared.bars, right_index)

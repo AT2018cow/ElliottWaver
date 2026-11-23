@@ -1,10 +1,13 @@
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
+import pytest
+
 from elliottwaver.config import DataConfig, Settings
 from elliottwaver.data.router import route_symbol
 from elliottwaver.data.tushare_provider import TushareProvider
 from elliottwaver.data.workflow import fetch_bundle
+from elliottwaver.errors import DataError
 from elliottwaver.schemas.market import AnalysisRequest
 
 AS_OF = datetime(2024, 6, 3, 15, 5, tzinfo=ZoneInfo("Asia/Shanghai"))
@@ -78,3 +81,30 @@ def test_workflow_routes_cn_index_intraday_to_configured_tushare_feed(tmp_path):
     assert bundle.timeframe == "60m"
     assert bundle.provenance.feed == "tushare-cn-index"
     assert bundle.bars[-1].session_date == date(2024, 6, 3)
+
+
+@pytest.mark.parametrize(
+    "endpoint,symbol,feed",
+    [
+        ("idx_mins", "000300.SH", "tushare-cn-index"),
+        ("stock_mins", "600519.SH", "tushare-cn-equity"),
+        ("adj_factor", "600519.SH", "tushare-cn-equity"),
+    ],
+)
+@pytest.mark.parametrize("wrong_code", ["000001.SH", None])
+def test_tushare_requires_the_requested_code_on_every_row(
+    monkeypatch, endpoint, symbol, feed, wrong_code
+):
+    provider = FakeTushare(feed)
+    request = provider._request
+
+    def bad_identity(api_name, params, fields):
+        rows = request(api_name, params, fields)
+        if api_name == endpoint:
+            rows[-1]["ts_code"] = wrong_code
+        return rows
+
+    monkeypatch.setattr(provider, "_request", bad_identity)
+    day = date(2024, 6, 3)
+    with pytest.raises(DataError, match=f"ASSET_IDENTITY_MISMATCH: Tushare {endpoint}"):
+        provider.fetch(route_symbol(symbol), day, day, AS_OF, timeframe="60m")

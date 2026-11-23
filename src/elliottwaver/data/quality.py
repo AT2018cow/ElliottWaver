@@ -1,5 +1,7 @@
 from collections.abc import Sequence
+from zoneinfo import ZoneInfo
 
+from elliottwaver.data.periods import sina_auction_empty, uses_sparse_sina_auction
 from elliottwaver.errors import DataError
 from elliottwaver.schemas.market import Bar, MarketDataBundle
 
@@ -30,9 +32,10 @@ def missing_intervals(bundle: MarketDataBundle, start=None) -> tuple:
         return missing_sessions(bundle, start) if bundle.timeframe == "1d" else ()
     present = {b.start_at for b in bundle.bars}
     suspended = set(bundle.provenance.known_suspensions)
-    from zoneinfo import ZoneInfo
-
     zone = ZoneInfo(bundle.instrument.timezone)
+    auction_sparse = uses_sparse_sina_auction(
+        bundle.instrument, bundle.timeframe, bundle.provenance.feed
+    )
     first, last = bundle.bars[0].start_at, bundle.bars[-1].start_at
     return tuple(
         stamp
@@ -41,4 +44,5 @@ def missing_intervals(bundle: MarketDataBundle, start=None) -> tuple:
         and (start is None or stamp.astimezone(zone).date() >= start)
         and stamp not in present
         and stamp.astimezone(zone).date() not in suspended
+        and not (auction_sparse and sina_auction_empty(stamp))
     )

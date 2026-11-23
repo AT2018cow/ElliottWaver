@@ -476,11 +476,7 @@ class SettlementStore:
                                 confirmation=event_id.startswith("CONFIRM_FIRST_"),
                             )
                         )
-                    used = tuple(
-                        bar
-                        for day, bar in zip(window.dates, window.bars, strict=True)
-                        if outcome.session is None or day <= outcome.session
-                    )
+                    used = window.observed_bars(outcome)
             observation = {
                 "brief_digest": brief.brief_digest,
                 "event_id": event_id,

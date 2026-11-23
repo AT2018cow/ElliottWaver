@@ -32,15 +32,28 @@ class MassiveIndexProvider:
         self.feed = feed
 
     def _request(self, path: str, params: dict) -> dict:
-        response = requests.get(
-            f"{_API}{path}",
-            params={**params, "apiKey": massive_api_key()},
-            timeout=(10, self.config.request_timeout_seconds),
-        )
-        response.raise_for_status()
-        payload = response.json()
+        try:
+            response = requests.get(
+                f"{_API}{path}",
+                params={**params, "apiKey": massive_api_key()},
+                timeout=(10, self.config.request_timeout_seconds),
+            )
+            response.raise_for_status()
+        except requests.HTTPError as exc:
+            status = exc.response.status_code if exc.response is not None else None
+            if status in {401, 403}:
+                raise SourceError(f"MASSIVE_AUTH: index access denied (HTTP {status})") from None
+            raise SourceError(f"MASSIVE_HTTP: index request failed (HTTP {status})") from None
+        except requests.RequestException:
+            raise SourceError("MASSIVE_HTTP: index transport failed") from None
+        try:
+            payload = response.json()
+        except ValueError:
+            raise SourceError("MASSIVE_RESPONSE: invalid index response") from None
+        if not isinstance(payload, dict):
+            raise SourceError("MASSIVE_RESPONSE: invalid index response")
         if payload.get("status") not in {None, "OK"}:
-            raise SourceError(f"MASSIVE_{payload.get('status')}: index request failed")
+            raise SourceError("MASSIVE_RESPONSE: index request failed")
         return payload
 
     def _rows(
@@ -204,14 +217,8 @@ class MassiveIndexProvider:
         )
         if not bars:
             raise DataError("Massive returned no intraday index bars")
-        if expected:
-            available_expected = tuple(t for t in expected if t <= bars[-1].start_at)
-            if available_expected and available_expected[-1] == bars[-1].start_at:
-                expected = available_expected
-            else:
-                expected = ()
-        if not expected:
-            raise DataError("STALE_INTRADAY: Massive index bars do not align to the session grid")
+        if not expected or expected[-1] != bars[-1].start_at:
+            raise DataError("STALE_INTRADAY: Massive lacks the required completed bar")
         daily_context = tuple(
             bar for bar in daily if bar.usable_at <= as_of and bar.session_date <= target
         )

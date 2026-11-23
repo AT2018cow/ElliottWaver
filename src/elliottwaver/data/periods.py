@@ -11,8 +11,24 @@ from elliottwaver.schemas.market import Bar, Instrument, MarketDataBundle
 from elliottwaver.timeframes import minutes
 from elliottwaver.util import digest
 
+SINA_AUCTION_PROFILE = "cn_sina_1m_auction_sparse_v1"
 
-def intraday_windows(session: Session, duration_minutes: int):
+
+def uses_sparse_sina_auction(instrument: Instrument, timeframe: str, feed: str) -> bool:
+    return (
+        timeframe == "1m"
+        and feed == "sina"
+        and instrument.market == "CN"
+        and instrument.asset_type == "EQUITY"
+    )
+
+
+def sina_auction_empty(opened: datetime) -> bool:
+    local = opened.astimezone(ZoneInfo("Asia/Shanghai"))
+    return local.date() >= date(2018, 8, 20) and local.time() in {time(14, 57), time(14, 58)}
+
+
+def intraday_windows(session: Session, duration_minutes: int, *, auction_sparse=False):
     if duration_minutes < 1:
         raise ValueError("positive interval required")
     segments = [(session.open_at, session.close_at)]
@@ -21,7 +37,8 @@ def intraday_windows(session: Session, duration_minutes: int):
     for start, end in segments:
         while start < end:
             closed = min(start + timedelta(minutes=duration_minutes), end)
-            yield start, closed
+            if not (auction_sparse and duration_minutes == 1 and sina_auction_empty(start)):
+                yield start, closed
             start = closed
 
 
@@ -78,16 +95,10 @@ def expected_starts(
         opened
         for s in calendar.sessions
         if (through is None or s.date <= through) and (since is None or s.date >= since)
-        for opened, closed in intraday_windows(s, duration)
-        if closed + delay <= as_of
-        and not (
-            auction_sparse
-            and timeframe == "1m"
-            and instrument.market == "CN"
-            and s.date >= date(2018, 8, 20)
-            and opened.astimezone(ZoneInfo(instrument.timezone)).time()
-            in {time(14, 57), time(14, 58)}
+        for opened, closed in intraday_windows(
+            s, duration, auction_sparse=auction_sparse and instrument.market == "CN"
         )
+        if closed + delay <= as_of
     )
 
 
@@ -98,6 +109,8 @@ def aggregate_intraday(
     timeframe: str,
     as_of: datetime,
     buffer_minutes=20,
+    *,
+    auction_sparse=False,
 ) -> tuple[Bar, ...]:
     duration = minutes(timeframe)
     if duration is None:
@@ -116,7 +129,14 @@ def aggregate_intraday(
             cursor = opened
             while j < len(bars) and bars[j].start_at < closed:
                 bar = bars[j]
-                if bar.start_at != cursor or bar.end_at > closed:
+                while auction_sparse and cursor < bar.start_at and sina_auction_empty(cursor):
+                    cursor += timedelta(minutes=1)
+                if (
+                    bar.start_at != cursor
+                    or bar.end_at > closed
+                    or not bar.is_final
+                    or bar.usable_at > as_of
+                ):
                     break
                 group.append(bar)
                 cursor = bar.end_at
@@ -197,6 +217,9 @@ def resample_bundle(
         return as_weekly(bundle)
     cutoff = as_of or bundle.as_of
     calendar = load_calendar(bundle.instrument, bundle.sessions[0], bundle.sessions[-1])
+    auction_sparse = uses_sparse_sina_auction(
+        bundle.instrument, source_timeframe, bundle.provenance.feed
+    )
     duration = minutes(target_timeframe)
     if duration is not None:
         bars = aggregate_intraday(
@@ -206,6 +229,7 @@ def resample_bundle(
             target_timeframe,
             cutoff,
             buffer_minutes=buffer_minutes,
+            auction_sparse=auction_sparse,
         )
         raw = aggregate_intraday(
             bundle.raw_bars,
@@ -214,6 +238,7 @@ def resample_bundle(
             target_timeframe,
             cutoff,
             buffer_minutes=buffer_minutes,
+            auction_sparse=auction_sparse,
         )
         expected = expected_starts(
             calendar,
@@ -233,9 +258,19 @@ def resample_bundle(
         bars = []
         raw = []
         for session in calendar.sessions:
-            windows = tuple(intraday_windows(session, source_duration))
-            group = [bar for bar in bundle.bars if bar.session_date == session.date]
-            raw_group = [bar for bar in bundle.raw_bars if bar.session_date == session.date]
+            windows = tuple(
+                intraday_windows(session, source_duration, auction_sparse=auction_sparse)
+            )
+            group = [
+                bar
+                for bar in bundle.bars
+                if bar.session_date == session.date and bar.usable_at <= cutoff
+            ]
+            raw_group = [
+                bar
+                for bar in bundle.raw_bars
+                if bar.session_date == session.date and bar.usable_at <= cutoff
+            ]
             if not windows or [bar.start_at for bar in group] != [opened for opened, _ in windows]:
                 continue
             if [bar.start_at for bar in raw_group] != [bar.start_at for bar in group]:
@@ -305,8 +340,50 @@ def resample_bundle(
             "timeframe": target_timeframe,
             "bars": tuple(bars),
             "raw_bars": tuple(raw),
-            "sessions": tuple(sorted({bar.session_date for bar in bars})),
+            "sessions": calendar.dates,
             "expected_bar_starts": expected,
+            "provenance": provenance,
+        }
+    )
+
+
+def background_bundle(
+    bundle: MarketDataBundle, target_timeframe: str, *, as_of: datetime
+) -> MarketDataBundle:
+    """Use the source's native daily bars for the hourly brief's background."""
+    if target_timeframe != "1d":
+        return resample_bundle(bundle, target_timeframe, as_of=as_of)
+    pairs = tuple(
+        (bar, raw)
+        for bar, raw in zip(bundle.daily_context, bundle.raw_daily_context, strict=True)
+        if bar.is_final and raw.is_final and max(bar.usable_at, raw.usable_at) <= as_of
+    )
+    if not pairs:
+        raise DataError("NATIVE_DAILY_UNAVAILABLE: 截止时刻没有可用的原生日线")
+    bars, raw = zip(*pairs, strict=True)
+    calendar = load_calendar(bundle.instrument, bars[0].session_date, bars[-1].session_date)
+    provenance = bundle.provenance.model_copy(
+        update={
+            "source_timeframe": "1d",
+            "aggregation": "none",
+            "coverage_start": bars[0].session_date,
+            "coverage_end": bars[-1].session_date,
+            "coverage_reason": "NATIVE_DAILY_BACKGROUND",
+            "session_profile": "provider_native_daily",
+            "calendar_version": calendar.version,
+            "price_coordinate_id": digest(
+                ["native-daily-background", bundle.provenance.price_coordinate_id, bars]
+            ),
+            "basis_date": bars[-1].session_date,
+        }
+    )
+    return bundle.model_copy(
+        update={
+            "timeframe": "1d",
+            "bars": bars,
+            "raw_bars": raw,
+            "sessions": calendar.dates,
+            "expected_bar_starts": (),
             "provenance": provenance,
         }
     )

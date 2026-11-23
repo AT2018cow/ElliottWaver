@@ -811,7 +811,7 @@ def test_us_intraday_cache_separates_newly_available_daily_context(tmp_path, cut
         assert result.daily_context[-1].session_date == expected
         assert result.raw_daily_context[-1].session_date == expected
     assert results[0].snapshot_id == results[2].snapshot_id != results[1].snapshot_id
-    assert request_counts == [5, 5, 0]
+    assert request_counts == ([5, 0, 0] if cutoffs[0] == 5 else [5, 5, 0])
 
 
 def test_legacy_alpaca_snapshot_is_rejected_and_cache_is_refetched(tmp_path, monkeypatch):

@@ -1,14 +1,17 @@
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
+
+import pytest
 
 from elliottwaver.config import DataConfig, Settings
 from elliottwaver.data.router import route_symbol
 from elliottwaver.data.workflow import fetch_bundle
 from elliottwaver.data.yahoo_provider import YahooIndexProvider
+from elliottwaver.errors import DataError, SourceError
 from elliottwaver.schemas.market import AnalysisRequest
 
 ET = ZoneInfo("America/New_York")
-AS_OF = datetime(2024, 6, 3, 10, 30, tzinfo=ET)
+AS_OF = datetime(2024, 6, 3, 10, 5, tzinfo=ET)
 
 
 def _stamp(day: date, hour: int, minute: int = 0) -> int:
@@ -44,6 +47,33 @@ class FakeYahoo(YahooIndexProvider):
             "timestamp": stamps,
             "indicators": {"quote": [quote]},
         }
+
+
+@pytest.mark.parametrize("interval", ["1d", "5m"])
+@pytest.mark.parametrize("symbol", ["MSFT", None])
+def test_yahoo_rejects_unverified_chart_identity(interval, symbol):
+    class WrongIdentity(FakeYahoo):
+        def _chart(self, ticker, requested_interval):
+            result = super()._chart(ticker, requested_interval)
+            if requested_interval == interval:
+                result["meta"]["symbol"] = symbol
+            return result
+
+    with pytest.raises(SourceError, match="ASSET_IDENTITY_MISMATCH"):
+        WrongIdentity(DataConfig(), feed="yahoo").fetch(
+            route_symbol("AAPL"), date(2024, 5, 31), AS_OF.date(), AS_OF, timeframe="5m"
+        )
+
+
+def test_yahoo_rejects_same_day_stalled_chart():
+    with pytest.raises(DataError, match="STALE_INTRADAY"):
+        FakeYahoo(DataConfig(), feed="yahoo").fetch(
+            route_symbol("AAPL"),
+            date(2024, 5, 31),
+            AS_OF.date(),
+            AS_OF + timedelta(minutes=5),
+            timeframe="5m",
+        )
 
 
 def test_yahoo_index_5m_uses_free_source_identity():

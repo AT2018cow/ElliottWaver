@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta
-from zoneinfo import ZoneInfo
+from datetime import date, datetime, timedelta
 
 from elliottwaver.data.calendar import load_calendar
-from elliottwaver.data.periods import intraday_windows
+from elliottwaver.data.periods import intraday_windows, uses_sparse_sina_auction
 from elliottwaver.engine.projector import Projection
 from elliottwaver.schemas.brief import BriefCard
 from elliottwaver.schemas.market import MarketDataBundle
@@ -23,19 +22,6 @@ from elliottwaver.timeframes import minutes
 _SLOTS = ("PRIMARY", "ALTERNATE_1", "ALTERNATE_2")
 _DOUBLE_THREE_MARKERS = ("双锯齿", "W终点", "X不可触及", "X端点")
 _INTRADAY_SUFFIX = {"1m": "1M", "5m": "5M", "15m": "15M", "30m": "30M", "60m": "60M"}
-
-
-def _known_empty_slot(prepared: MarketDataBundle, timeframe: str, start_at: datetime) -> bool:
-    """Versioned source rule for the Sina CN equity 1m closing-auction gap."""
-    if (
-        timeframe == "1m"
-        and prepared.provenance.feed == "sina"
-        and prepared.instrument.market == "CN"
-        and prepared.instrument.asset_type == "EQUITY"
-    ):
-        local = start_at.astimezone(ZoneInfo(prepared.instrument.timezone)).time()
-        return local in {time(14, 57), time(14, 58)}
-    return False
 
 
 def _intraday_periods(
@@ -57,9 +43,14 @@ def _intraday_periods(
             last_error = exc
             continue
         periods: list[OutlookPeriod] = []
+        auction_sparse = uses_sparse_sina_auction(
+            prepared.instrument, timeframe, prepared.provenance.feed
+        )
         for session in calendar.sessions:
-            for opened, closed in intraday_windows(session, duration):
-                if opened < issued_at or _known_empty_slot(prepared, timeframe, opened):
+            for opened, closed in intraday_windows(
+                session, duration, auction_sparse=auction_sparse
+            ):
+                if opened < issued_at:
                     continue
                 periods.append(
                     OutlookPeriod(

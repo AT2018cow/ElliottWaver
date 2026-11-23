@@ -7,7 +7,7 @@ from uuid import uuid4
 from elliottwaver import ENGINE_VERSION
 from elliottwaver.config import Settings
 from elliottwaver.data.adjustment import adjust_to_basis
-from elliottwaver.data.periods import as_weekly, resample_bundle
+from elliottwaver.data.periods import as_weekly, background_bundle
 from elliottwaver.data.quality import missing_intervals
 from elliottwaver.data.resample import weekly_bars
 from elliottwaver.data.router import route_symbol
@@ -175,7 +175,7 @@ class AnalysisService:
         target = BACKGROUND_TIMEFRAMES.get(request.timeframe)
         if target is None:
             return None
-        derived = resample_bundle(source, target, as_of=request.as_of)
+        derived = background_bundle(source, target, as_of=request.as_of)
         background_request = request.model_copy(
             update={"timeframe": target, "anchor": None, "anchor_at": None}
         )

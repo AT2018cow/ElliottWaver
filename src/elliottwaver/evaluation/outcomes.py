@@ -5,10 +5,9 @@ from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
-from elliottwaver.data.adjustment import adjust_to_basis
+from elliottwaver.data.adjustment import adjust_from_issuance, adjust_to_basis
 from elliottwaver.data.calendar import load_calendar
 from elliottwaver.data.periods import intraday_windows
-from elliottwaver.data.quality import missing_intervals
 from elliottwaver.data.resample import weekly_bars
 from elliottwaver.errors import DataError
 from elliottwaver.evaluation.events import EventSpec, condition_hit
@@ -43,6 +42,7 @@ class OutcomeWindow:
     observed_at: datetime | None = None
     mismatch_indices: frozenset[int] = frozenset()
     incomplete_indices: frozenset[int] = frozenset()
+    source_bar_ids: tuple[str | None, ...] = ()
 
     def close_bar(self, horizon: int) -> Bar | None:
         if 0 < horizon <= len(self.dates):
@@ -64,9 +64,23 @@ class OutcomeWindow:
             return Outcome("SETTLEMENT_CALENDAR_MISMATCH", day)
         if index in self.incomplete_indices:
             return Outcome("INCOMPLETE_DATA", day)
+        if self.period_starts:
+            return Outcome("RIGHT_CENSORED", day)
         if day is None:
             return Outcome("RIGHT_CENSORED")
         return Outcome("INCOMPLETE_DATA" if day <= self.observed_through else "RIGHT_CENSORED", day)
+
+    def observed_bars(self, outcome: Outcome) -> tuple[Bar, ...]:
+        return tuple(
+            bar
+            for day, bar in zip(self.dates, self.bars, strict=True)
+            if bar is not None
+            and (
+                bar.start_at <= outcome.start_at
+                if self.period_starts and outcome.start_at is not None
+                else outcome.session is None or day <= outcome.session
+            )
+        )
 
 
 def period_dates(sessions: tuple[date, ...], *, weekly: bool) -> tuple[date, ...]:
@@ -309,6 +323,10 @@ def intraday_outlook_window(
         (bar.usable_at for bar in bundle.bars if bar.is_final and bar.usable_at <= cutoff),
         default=None,
     )
+    observed_end = max(
+        (bar.end_at for bar in bundle.bars if bar.is_final and bar.usable_at <= cutoff),
+        default=None,
+    )
     qfq = bundle.provenance.adjustment == "basis_date_qfq"
     source = bundle.raw_bars if qfq else bundle.bars
     wanted = {(period.start_at, period.end_at) for period in selected}
@@ -317,15 +335,15 @@ def intraday_outlook_window(
         for bar in source
         if (bar.start_at, bar.end_at) in wanted and bar.is_final and bar.usable_at <= cutoff
     )
+    source_ids = {bar.start_at: bar.bar_id for bar in eligible}
     if qfq and eligible:
-        factors = bundle.factors
-        if issuance_factors is not None:
-            factors = (
-                *issuance_factors,
-                *(point for point in factors if point.effective_date > decision),
-            )
         try:
-            eligible = adjust_to_basis(eligible, factors, basis_date=decision)
+            eligible = adjust_from_issuance(
+                eligible,
+                bundle.factors,
+                bundle.factors if issuance_factors is None else issuance_factors,
+                decision,
+            )
         except DataError:
             missing = (None,) * len(dates)
             return OutcomeWindow(
@@ -362,7 +380,6 @@ def intraday_outlook_window(
                 expected.update(intraday_windows(session, duration))
         except DataError:
             calendar_ok = False
-    gaps = {gap for gap in missing_intervals(bundle) if gap < cutoff}
     bars: list[Bar | None] = []
     closing: list[Bar | None] = []
     mismatch_indices: set[int] = set()
@@ -375,13 +392,11 @@ def intraday_outlook_window(
             continue
         bar = by_start.get(period.start_at)
         if bar is None or bar.end_at != period.end_at:
-            if observed_at is not None and period.start_at <= observed_at:
+            if observed_end is not None and period.end_at <= observed_end:
                 incomplete_indices.add(index)
             bars.append(None)
             closing.append(None)
             continue
-        if any(gap < period.start_at for gap in gaps):
-            incomplete_indices.add(index)
         bars.append(bar)
         closing.append(bar)
     return OutcomeWindow(
@@ -396,6 +411,7 @@ def intraday_outlook_window(
         observed_at=observed_at,
         mismatch_indices=frozenset(mismatch_indices),
         incomplete_indices=frozenset(incomplete_indices),
+        source_bar_ids=tuple(source_ids.get(start) for start in starts),
     )
 
 
@@ -475,15 +491,16 @@ def _outlook_advance(case: OutlookCase, bar: Bar) -> tuple[bool, tuple[str, ...]
 
 def _bar_outcome(
     status: str,
-    day: date,
+    window: OutcomeWindow,
+    index: int,
     bar: Bar,
     evidence: tuple[str, ...] = (),
 ) -> Outcome:
     return Outcome(
         status,
-        day,
+        window.dates[index],
         evidence=evidence,
-        bar_id=bar.bar_id,
+        bar_id=window.source_bar_ids[index] if window.source_bar_ids else bar.bar_id,
         start_at=bar.start_at,
         end_at=bar.end_at,
     )
@@ -504,19 +521,18 @@ def evaluate_outlook_event(
         if not any(item.role in {"INVALIDATION", "STAGE_EXIT"} for item in case.conditions):
             return Outcome("UNDEFINED_EVENT")
         for index, bar in enumerate(window.bars[: spec.horizon]):
-            day = window.dates[index]
             if bar is None:
                 return window.missing_index(index)
             stop, stop_evidence = _outlook_stop(case, bar)
             advance, advance_evidence = _outlook_advance(case, bar)
             if stop and advance:
                 return _bar_outcome(
-                    "AMBIGUOUS_SAME_BAR", day, bar, stop_evidence + advance_evidence
+                    "AMBIGUOUS_SAME_BAR", window, index, bar, stop_evidence + advance_evidence
                 )
             if stop:
-                return _bar_outcome(stop, day, bar, stop_evidence)
+                return _bar_outcome(stop, window, index, bar, stop_evidence)
             if advance:
-                return _bar_outcome("CONFIRMED_FIRST", day, bar, advance_evidence)
+                return _bar_outcome("CONFIRMED_FIRST", window, index, bar, advance_evidence)
         return _outlook_expiry(window, spec)
     if spec.evaluator == "target_first":
         if case.target is None or not any(
@@ -530,7 +546,6 @@ def evaluate_outlook_event(
         waiting = case.target_mode == "AFTER_ADVANCE"
         target_evidence = (case.target.label,)
         for index, bar in enumerate(window.bars[: spec.horizon]):
-            day = window.dates[index]
             if bar is None:
                 return window.missing_index(index)
             stop, stop_evidence = _outlook_stop(case, bar)
@@ -543,23 +558,25 @@ def evaluate_outlook_event(
             if waiting:
                 if stop and advance:
                     return _bar_outcome(
-                        "AMBIGUOUS_SAME_BAR", day, bar, stop_evidence + advance_evidence
+                        "AMBIGUOUS_SAME_BAR", window, index, bar, stop_evidence + advance_evidence
                     )
                 if stop:
-                    return _bar_outcome(stop, day, bar, stop_evidence)
+                    return _bar_outcome(stop, window, index, bar, stop_evidence)
                 if advance and hit:
                     return _bar_outcome(
-                        "AMBIGUOUS_SAME_BAR", day, bar, stop_evidence + target_evidence
+                        "AMBIGUOUS_SAME_BAR", window, index, bar, advance_evidence + target_evidence
                     )
                 if advance:
                     waiting = False
                 continue
             if stop and hit:
-                return _bar_outcome("AMBIGUOUS_SAME_BAR", day, bar, stop_evidence + target_evidence)
+                return _bar_outcome(
+                    "AMBIGUOUS_SAME_BAR", window, index, bar, stop_evidence + target_evidence
+                )
             if stop:
-                return _bar_outcome(stop, day, bar, stop_evidence)
+                return _bar_outcome(stop, window, index, bar, stop_evidence)
             if hit:
-                return _bar_outcome("TARGET_FIRST", day, bar, target_evidence)
+                return _bar_outcome("TARGET_FIRST", window, index, bar, target_evidence)
         return _outlook_expiry(window, spec)
     return Outcome("UNDEFINED_EVENT")
 

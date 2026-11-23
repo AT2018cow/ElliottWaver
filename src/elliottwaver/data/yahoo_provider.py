@@ -54,13 +54,21 @@ class YahooIndexProvider:
             raise SourceError("YAHOO_CHART: empty result")
         return result
 
+    def _instrument_chart(self, instrument: Instrument, interval: str) -> dict:
+        ticker = self._ticker(instrument)
+        result = self._chart(ticker, interval)
+        symbol = (result.get("meta") or {}).get("symbol")
+        if not isinstance(symbol, str) or symbol.upper() != ticker.upper():
+            raise SourceError("ASSET_IDENTITY_MISMATCH: Yahoo chart lacks the requested symbol")
+        return result
+
     def _daily(
         self,
         instrument: Instrument,
         calendar,
         as_of: datetime,
     ) -> tuple[Bar, ...]:
-        result = self._chart(self._ticker(instrument), "1d")
+        result = self._instrument_chart(instrument, "1d")
         meta = result.get("meta") or {}
         zone = ZoneInfo(meta.get("exchangeTimezoneName", instrument.timezone))
         sessions = {session.date: session for session in calendar.sessions}
@@ -150,7 +158,7 @@ class YahooIndexProvider:
                 source_timeframe="1d",
                 expected=(),
             )
-        result = self._chart(self._ticker(instrument), source_interval)
+        result = self._instrument_chart(instrument, source_interval)
         meta = result.get("meta") or {}
         zone = ZoneInfo(meta.get("exchangeTimezoneName", instrument.timezone))
         sessions = {session.date: session for session in calendar.sessions}
@@ -202,9 +210,8 @@ class YahooIndexProvider:
         )
         if not bars or not expected_source:
             raise DataError("YAHOO_NO_BARS: no completed index bars")
-        expected_source = tuple(item for item in expected_source if item <= bars[-1].start_at)
-        if not expected_source or expected_source[-1] != bars[-1].start_at:
-            raise DataError("STALE_INTRADAY: Yahoo index bars do not align to the session grid")
+        if expected_source[-1] != bars[-1].start_at:
+            raise DataError("STALE_INTRADAY: Yahoo lacks the required completed bar")
         if timeframe != source_interval:
             bars = aggregate_intraday(
                 bars,
@@ -225,9 +232,8 @@ class YahooIndexProvider:
             through=target,
             since=start,
         )
-        expected = tuple(item for item in expected if item <= bars[-1].start_at)
         if not expected or expected[-1] != bars[-1].start_at:
-            raise DataError("STALE_INTRADAY: Yahoo index bars do not align to the session grid")
+            raise DataError("STALE_INTRADAY: Yahoo lacks the required completed bar")
         return self._bundle(
             instrument,
             bars,

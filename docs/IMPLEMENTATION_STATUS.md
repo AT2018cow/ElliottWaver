@@ -1,6 +1,6 @@
-# ElliottWaver 0.6.0 实现与验收状态
+# ElliottWaver 0.7.0 实现与验收状态
 
-更新于 2026-11-22。安装、日常操作和研究流程见[中文使用手册](USER_GUIDE.md)。目标规格见[详细实现方案](IMPLEMENTATION_PLAN.md)和[收盘分析与概率评估实施设计](WAVE_ANALYSIS_DESIGN.md)。
+更新于 2026-11-24。安装、日常操作和研究流程见[中文使用手册](USER_GUIDE.md)。目标规格见[详细实现方案](IMPLEMENTATION_PLAN.md)和[收盘分析与概率评估实施设计](WAVE_ANALYSIS_DESIGN.md)。
 
 ## 已交付范围
 
@@ -13,7 +13,7 @@
 | 沪深京指数行情 | 新浪指数日线（`SH000*`、`SZ399*`、`BJ899*`），日线/周线；无复权，`feed=sina-index`。盘中可配置免费 `data.cn_index_intraday_feed: tencent-cn-index`，无需 Token，1m/5m/15m/30m/60m 真实样本已通过；也可配置 Tushare `idx_mins`，真实权限样本待账户回执 |
 | 美股行情 | Alpaca REST v2 适配器，显式 feed/adjustment/end、全部分页、资产 ID/类别/代码一致性核对、认证错误与重复 token 防护；日线/周线、DST、假期、提前收盘、完整周、raw/all 对齐和 SIP/IEX 分缓存已通过冻结响应与离线入口测试。另提供免费 Yahoo 1m/5m/15m/30m/60m 无 Key 源。AAPL、BRK.B、SPY 的真实 SIP 小样本、IEX 1m/5m/15m/30m/60m 和 Yahoo 免费组合已通过，见[盘中验收](reviews/2026-11-23-intraday-acceptance.md) |
 | 美股指数 | `SPX`、`NDX`、`DJI`、`RUT`、`VIX` 独立路由；配置 `data.us_index_feed: massive-index` 和 `MASSIVE_API_KEY` 后接入 Massive `I:` 指数聚合，保留无成交量、`volume_comparable=False` 和 RTH 会话过滤。假响应验证 5m 原生指数、日线背景和 workflow 路由。免费 Yahoo chart 源已取得真实 SPX/NDX 1m/5m/15m/30m/60m；Massive 真实权限待补 |
-| 主周期 | `1m、5m、15m、30m、60m、1d、1w`，支持 `1h` 别名；两市场合成样本全覆盖，A 股真实样本全周期覆盖；CN 指数默认 `1d / 1w`，配置 Tushare 指数分钟后开放盘中周期；美股指数配置 Massive 后开放原生周期 |
+| 主周期 | `1m、5m、15m、30m、60m、1d、1w`，支持 `1h` 别名。中美合成样本覆盖各周期，沪深真实样本覆盖各周期。沪深指数默认 `1d / 1w`，盘中可配置 Tencent 或 Tushare。美股指数可配置 Yahoo 或 Massive。 |
 | 时间边界 | 不纳入未完成/尚不可用 bar；UTC 与交易所会话分开；节假日、DST、提前收市、午休、小时线尾段与完整周处理已测试 |
 | 复权 | 保存 raw 与因子；A 股基准日乘法复权；先复权日线再聚合周线；美股供应商 all 不进行二次复权 |
 | 分析 | ATR/MACD、三尺度因果 ZigZag、背景锚点与回退、有限 CSP 搜索、端点与完整影线区间硬规则；`--long-term` 20 年窗口/首尾锚点/宽桥接搜索/子浪认证，`--allow-gaps` 显式跳过停牌缺口 |
@@ -21,7 +21,7 @@
 | 评分与点位 | 分项证据、缺失状态、质量/覆盖/相对权重、Top-K 未展示权重、带方向条件、第五浪上限、合法目标带；完成态含 38.2%–100% 回撤目标，低分但硬规则通过的结构以 `EXCLUDED_STRUCTURE` 显式列出；第五浪同时比较浪 5/浪 1 与浪 5/浪 3，含 2.618/4.236 扩展位；按 K 线跨度标注浪级并提示 `MIXED_DEGREE_SCENARIOS` |
 | 产物 | 单周期分析支持 Rich、JSON、Markdown、Plotly HTML、SVG/PNG 备选渲染，完整写入后更新对应周期/feed 的 latest。收盘摘要支持终端、JSON、HTML 和 Markdown，显示数据模式、截止时刻及候选规则证据，使用独立的摘要索引。 |
 | 收盘摘要 | `elliottwaver brief` 首屏用中文显示主备浪型、当前浪、观察期限、目标区及改变判断的条件。「核对依据」集中展示分析范围、子浪与规则状态。默认日线及完整周线背景，长跨度自动选择周线。`--format json` 保留终端文字并只保存 JSON 文件。真实行情概率当前为 `UNCALIBRATED`。 |
-| 盘中简报 | 明确给出盘中快照时自动采用其主周期；`BriefOutlook` 使用 `version=1.1`、`horizon_unit=BARS`、`horizon=5`，只选发行后尚未开始的 5 根主周期 K 线。首屏显示市场当地时间、最后一根已完成 K 线及可用时刻、推进/目标/失效条件和到期时刻。固定背景配对为 `1m→5m`、`5m→60m`、`15m/30m→60m`、`60m→1d`。旧盘中周线观察窗不再生成，结算返回 `SETTLEMENT_WINDOW_TIMEFRAME_MISMATCH`。 |
+| 盘中简报 | 明确给出盘中快照时自动采用其主周期。`BriefOutlook` 使用 `version=1.1`、`horizon_unit=BARS`、`horizon=5`，只选发行后尚未开始的 5 根主周期 K 线。首屏显示市场当地时间、最后一根已完成 K 线及可用时刻、推进、目标、失效条件和到期时刻。固定背景配对为 `1m→5m`、`5m→60m`、`15m/30m→60m`、`60m→1d`。小时背景使用截止已可用的同源原生日线。遇到旧版盘中报告的周线观察窗，结算返回 `SETTLEMENT_WINDOW_TIMEFRAME_MISMATCH`。 |
 | 短期预测增强 | PE-1 至 PE-6 核心：`project_with_gates` 条件角色、`BriefOutlook` 5 会话/2 周观察窗、推进/目标事件注册与评估、特征版本 4、A/B/C/D 对照、`freeze`/`score`、新事件模型作用域、按卡片概率展示、核销回放和终端/HTML/JSON 一致性；P-08 四标的（CN 个股/指数、US 个股/ETF）的 brief/watchlist/history/settle/support-matrix 全流程已通过；独立验收 PO-01 至 PO-09 已修复：推演条件语义、目标硬边界、发行/回放/核销共用冻结观察窗、训练/评分样本作用域、冻结与留出封存、标签语义、批量模型选择、终端精度和旧分析兼容；历史 holdout 已覆盖目标先达、推进和 2 周收盘事件，均正式记录为 INSUFFICIENT_EVIDENCE；旧评分产物只作回顾性研究留存，不用于批准。[实施记录](reviews/2026-11-21-prediction-outlook-protocols.md) · [独立验收修复](reviews/2026-11-21-prediction-outlook-review-followup.md) |
 | 历史与自选 | `elliottwaver history` 查询已发布摘要，原摘要记录上次判断及变化，区分 `CONFIG_CHANGED`、`DATA_REVISED` 和 `NOT_COMPARABLE`。新增 `timeframe`、`feed`、`adjustment`、`last_bar_end_at`、`last_bar_id` 和 `last_bar_available_at`，同日盘中摘要按最后一根 K 线排序；`history --timeframe` 可筛选。`elliottwaver watchlist` 批量生成 JSON 摘要，支持有限重试、有界并发、模型注册表回退和单标的失败隔离。 |
 | 结算与支持矩阵 | `elliottwaver settle` 使用本地快照，按 `(brief_digest,event_id,scope)` 去重并增量结算，行情修订追加版本，保留最初观察。盘中事件使用冻结的 5 个精确时隙和同一个观察窗解析器，记录触发 `bar_id`、起止时刻和价格口径；同根目标/失效、未知缺口和右删失分别保留状态。`elliottwaver support-matrix` 增加 5 个盘中周期和 5B 事件行，传入训练汇总后显示支持状态和原因。 |
@@ -34,10 +34,10 @@
 
 ## 验证结果
 
-以下为 `v0.6.0` 基线加本轮盘中增量后的验证结果。详细证据、快照 ID 和逐项命令见[盘中验收记录](reviews/2026-11-23-intraday-acceptance.md)。
+以下为 `v0.7.0` 的验证结果。真实行情取数范围和九项审查修复的复验证据分别记录。 [盘中来源验收](reviews/2026-11-23-intraday-acceptance.md) · [独立审查修复](reviews/2026-11-24-intraday-code-review-repair.md)
 
 ```text
-python -m pytest tests -q              568 passed
+python -m pytest tests -q              604 passed
 ruff check src tests scripts           PASS
 ruff format --check src tests scripts  PASS
 pip check                             No broken requirements found

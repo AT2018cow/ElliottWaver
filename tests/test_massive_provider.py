@@ -1,14 +1,18 @@
 from datetime import UTC, date, datetime, time
 from zoneinfo import ZoneInfo
 
+import pytest
+import requests
+
 from elliottwaver.config import DataConfig, Settings
 from elliottwaver.data.massive_provider import MassiveIndexProvider
 from elliottwaver.data.router import route_symbol
 from elliottwaver.data.workflow import fetch_bundle
+from elliottwaver.errors import SourceError
 from elliottwaver.schemas.market import AnalysisRequest
 
 ET = ZoneInfo("America/New_York")
-AS_OF = datetime(2024, 6, 3, 10, 30, tzinfo=ET)
+AS_OF = datetime(2024, 6, 3, 10, 5, tzinfo=ET)
 
 
 def _ms(day: date, hour: int, minute: int = 0) -> int:
@@ -39,6 +43,27 @@ def test_us_index_symbols_route_to_index_asset_type():
     assert route_symbol("SPX").asset_type == "INDEX"
     assert route_symbol("NDX").asset_type == "INDEX"
     assert route_symbol("SPY").asset_type == "EQUITY"
+
+
+@pytest.mark.parametrize("status", [401, 403, None])
+def test_massive_failures_redact_request_credentials(monkeypatch, status):
+    key = "fixture-only-do-not-log"
+
+    def get(*args, **kwargs):
+        if status is None:
+            raise requests.Timeout(key)
+        response = requests.Response()
+        response.status_code = status
+        response.url = f"https://fixture.invalid/index?apiKey={key}"
+        response.reason = "Forbidden"
+        return response
+
+    monkeypatch.setattr("elliottwaver.data.massive_provider.massive_api_key", lambda: key)
+    monkeypatch.setattr("elliottwaver.data.massive_provider.requests.get", get)
+    with pytest.raises(SourceError, match="MASSIVE_(HTTP|AUTH)") as error:
+        MassiveIndexProvider(DataConfig())._request("/fixture", {})
+    assert key not in str(error.value)
+    assert error.value.__suppress_context__
 
 
 def test_massive_index_5m_keeps_native_identity_and_no_volume():

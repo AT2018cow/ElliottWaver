@@ -24,6 +24,7 @@ from elliottwaver.timeframes import minutes
 from elliottwaver.util import digest
 
 _API = "https://api.tushare.pro"
+PARSER_VERSION = "tushare-v2"
 _FREQ = {"1m": "1min", "5m": "5min", "15m": "15min", "30m": "30min", "60m": "60min"}
 
 
@@ -32,6 +33,11 @@ def _date(value) -> date:
     if "-" in text:
         return date.fromisoformat(text[:10])
     return datetime.strptime(text[:8], "%Y%m%d").date()
+
+
+def _require_symbol(rows: list[dict], symbol: str, endpoint: str) -> None:
+    if any(row.get("ts_code") != symbol for row in rows):
+        raise DataError(f"ASSET_IDENTITY_MISMATCH: Tushare {endpoint} expected {symbol}")
 
 
 class TushareProvider:
@@ -72,6 +78,7 @@ class TushareProvider:
             },
             "ts_code,trade_date,adj_factor",
         )
+        _require_symbol(rows, instrument.canonical_symbol, "adj_factor")
         return tuple(
             sorted(
                 (
@@ -109,6 +116,7 @@ class TushareProvider:
             },
             "ts_code,trade_time,open,high,low,close,vol,amount",
         )
+        _require_symbol(rows, instrument.canonical_symbol, api_name)
         duration = timedelta(minutes=minutes(timeframe))
         observed = datetime.now(UTC)
         bars = []
@@ -187,7 +195,7 @@ class TushareProvider:
                     ["tushare", self.feed, adjustment, target, [bar.bar_id for bar in adjusted]]
                 ),
                 factor_hash=digest(factors),
-                parser_version="tushare-v1",
+                parser_version=PARSER_VERSION,
                 source_timeframe=timeframe,
                 aggregation="none",
                 coverage_start=coverage_start,

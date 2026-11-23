@@ -4,9 +4,9 @@
 
 **中文终端摘要直接显示主备浪型、当前浪、短期目标区和需要重新数浪的价位。** 日线观察接下来的 5 个完整交易日，周线观察 2 个完整交易周，盘中周期观察发行后尚未开始的 5 根主周期 K 线。需要查看单周期候选细节或长历史时，用 `elliottwaver analyze`。CLI 也支持历史查询、自选批量和到期结算。 [版本说明](CHANGELOG.md)
 
-当前版本为 **0.6.0**。已有环境可安装新版 wheel 或从源码升级。用 `elliottwaver --version` 查看包版本，用报告中的 `engine_version` 核对分析规则。 [升级步骤](docs/USER_GUIDE.md#从已有安装升级)
+当前版本为 **0.7.0**。已有环境可安装新版 wheel 或从源码升级。用 `elliottwaver --version` 查看包版本，用报告中的 `engine_version` 核对分析规则。 [升级步骤](docs/USER_GUIDE.md#从已有安装升级)
 
-发布验收覆盖日线、完整周线和盘中 `1m/5m/15m/30m/60m`；`1h` 是 `60m` 的别名。沪深指数使用 `sina-index` 无复权日线，盘中指数需显式配置 Tushare 指数分钟源。美股样本覆盖上市个股和 ETF，SIP/IEX 分别保留来源身份。候选权重表示相对评分，盘中事件概率保持未校准。完整范围见[实现及验收状态](docs/IMPLEMENTATION_STATUS.md)。
+发布验收覆盖日线、完整周线和盘中 `1m/5m/15m/30m/60m`，`1h` 是 `60m` 的别名。沪深指数使用新浪无复权日线，盘中可配置免费 Tencent 或授权 Tushare。美股可用 Alpaca SIP/IEX 或免费 Yahoo，指数单独配置 Yahoo 或 Massive。候选权重表示相对评分，盘中事件概率保持未校准。 [来源与验收范围](docs/IMPLEMENTATION_STATUS.md)
 
 评分默认使用 `ew_score_v2`；配置 `scoring.profile: ew_score_v1` 可以保留原第五浪评分公式。评分版本参与配置摘要，结果中的 `engine_version` 末尾追加当前 profile，完整结果身份参与摘要。
 
@@ -64,7 +64,7 @@ python3 -m venv .venv
 .venv/bin/elliottwaver brief 000300.SH --timeframe 1w --format json
 ```
 
-在终端先核对行情日期和状态，再查看主备浪型、目标区、推进与失效条件。「核对依据」列出分析范围、子浪证据与规则通过情况。默认以日线为主，附最近完整的周线背景。指定周线、使用周线快照，或在自动模式下请求超过五年的跨度时，以周线作为主分析周期。明确给出盘中快照时，`brief` 自动采用该快照的分钟周期，并按固定配对生成 `1m→5m`、`5m→60m`、`15m/30m→60m`、`60m→1d` 背景。`--format json` 保留终端文字且只保存 JSON 文件。要将终端输出改为结构化 JSON，再加 `--json`。
+在终端先核对行情日期和状态，再查看主备浪型、目标区、推进与失效条件。「核对依据」列出分析范围、子浪证据与规则通过情况。默认以日线为主，附最近完整的周线背景。指定周线、使用周线快照，或在自动模式下请求超过五年的跨度时，以周线作为主分析周期。明确给出盘中快照时，`brief` 自动采用该快照的分钟周期，并按固定配对生成 `1m→5m`、`5m→60m`、`15m/30m→60m`、`60m→1d` 背景。小时线使用快照中截至决策时刻已可用的同源原生日线。`--format json` 保留终端文字且只保存 JSON 文件。要将终端输出改为结构化 JSON，再加 `--json`。
 
 ```bash
 .venv/bin/elliottwaver brief 600519.SH --timeframe 60m --format json

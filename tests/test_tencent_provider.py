@@ -2,11 +2,13 @@ from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 import pandas as pd
+import pytest
 
 from elliottwaver.config import DataConfig, Settings
 from elliottwaver.data.router import route_symbol
 from elliottwaver.data.tencent_provider import TencentProvider
 from elliottwaver.data.workflow import fetch_bundle
+from elliottwaver.errors import DataError
 from elliottwaver.schemas.market import AnalysisRequest
 
 CST = ZoneInfo("Asia/Shanghai")
@@ -56,17 +58,16 @@ def test_tencent_index_60m_maps_bar_end_labels_to_windows():
     assert bundle.instrument.name == "测试指数"
 
 
-def test_tencent_index_5m_trims_expected_to_last_completed_bar():
+def test_tencent_index_5m_rejects_missing_completed_tail():
     provider = FakeTencent(DataConfig(cn_index_intraday_feed="tencent-cn-index"))
-    bundle = provider.fetch(
-        route_symbol("000300.SH"),
-        date(2024, 6, 3),
-        date(2024, 6, 3),
-        datetime(2024, 6, 3, 10, 0, tzinfo=CST),
-        timeframe="5m",
-    )
-    assert len(bundle.bars) == 3
-    assert bundle.expected_bar_starts[-1] == bundle.bars[-1].start_at
+    with pytest.raises(DataError, match="STALE_INTRADAY"):
+        provider.fetch(
+            route_symbol("000300.SH"),
+            date(2024, 6, 3),
+            date(2024, 6, 3),
+            datetime(2024, 6, 3, 10, 0, tzinfo=CST),
+            timeframe="5m",
+        )
 
 
 def test_workflow_routes_cn_index_to_tencent_when_configured(tmp_path):

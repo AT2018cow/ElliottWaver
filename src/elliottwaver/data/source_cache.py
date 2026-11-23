@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import fcntl
 import json
+import math
 import sqlite3
 from collections import defaultdict
 from contextlib import closing, contextmanager
@@ -18,7 +19,8 @@ from pathlib import Path
 
 from elliottwaver.data.adjustment import adjust_to_basis
 from elliottwaver.data.calendar import TradingCalendar
-from elliottwaver.data.periods import aggregate_intraday, expected_starts
+from elliottwaver.data.periods import aggregate_intraday, expected_starts, uses_sparse_sina_auction
+from elliottwaver.errors import DataError
 from elliottwaver.schemas.market import (
     Bar,
     FactorPoint,
@@ -42,12 +44,57 @@ class SourceBlock:
     cutoff: datetime
 
 
+def _same_provider_scale(raw: Bar, adjusted: Bar, new_raw: Bar, new_adjusted: Bar) -> bool:
+    return all(
+        math.isclose(
+            getattr(adjusted, field) / getattr(raw, field),
+            getattr(new_adjusted, field) / getattr(new_raw, field),
+            rel_tol=1e-8,
+            abs_tol=0,
+        )
+        for field in ("open", "high", "low", "close")
+    )
+
+
+def compatible_provider_basis(
+    blocks: dict[date, SourceBlock], bundle: MarketDataBundle, start: date, end: date
+) -> bool:
+    """Check provider-adjusted overlap before combining retained and revised sessions."""
+    if bundle.provenance.adjustment != "provider_all":
+        return True
+    revised = {
+        (bar.start_at, bar.end_at): (raw, bar)
+        for raw, bar in zip(bundle.raw_bars, bundle.bars, strict=True)
+    }
+    kept = overlap = False
+    changed = False
+    for day, block in blocks.items():
+        if not start <= day <= end:
+            continue
+        pairs = [
+            (raw, bar, revised.get((bar.start_at, bar.end_at)))
+            for raw, bar in zip(block.raw_bars, block.bars, strict=True)
+            if bar.usable_at <= bundle.as_of
+        ]
+        # A partial response keeps the entire old session block.
+        kept |= any(pair is None for _, _, pair in pairs)
+        for raw, bar, pair in pairs:
+            if pair is None:
+                continue
+            overlap = True
+            new_raw, new_bar = pair
+            changed |= not _same_provider_scale(raw, bar, new_raw, new_bar)
+    if kept and (changed or not overlap):
+        return False
+    return True
+
+
 class SourceBlockStore:
     def __init__(self, root: Path):
         self.root = root
         self.root.mkdir(parents=True, exist_ok=True)
         self.path = self.root / "source-cache.sqlite3"
-        with closing(sqlite3.connect(self.path)) as db:
+        with self.lock("init"), closing(sqlite3.connect(self.path)) as db:
             db.execute("PRAGMA journal_mode=WAL")
             db.execute(
                 """
@@ -63,10 +110,14 @@ class SourceBlockStore:
                     calendar_version TEXT NOT NULL,
                     first_session TEXT,
                     last_session TEXT,
+                    requested_start TEXT,
                     updated_at TEXT NOT NULL
                 )
                 """
             )
+            meta_columns = {row[1] for row in db.execute("PRAGMA table_info(source_meta)")}
+            if "requested_start" not in meta_columns:
+                db.execute("ALTER TABLE source_meta ADD COLUMN requested_start TEXT")
             db.execute(
                 """
                 CREATE TABLE IF NOT EXISTS source_blocks (
@@ -154,16 +205,19 @@ class SourceBlockStore:
     def record_failure(self, source_key: str, sessions: tuple[date, ...], reason: str) -> None:
         now = datetime.now(UTC).isoformat()
         with closing(sqlite3.connect(self.path)) as db:
-            for session in sessions:
-                db.execute(
-                    """
-                    INSERT OR REPLACE INTO source_failures
-                    (source_key, session_date, reason, fetched_at)
-                    VALUES (?, ?, ?, ?)
-                    """,
-                    (source_key, session.isoformat(), reason[:500], now),
-                )
+            self._record_failures(db, source_key, sessions, reason, now)
             db.commit()
+
+    @staticmethod
+    def _record_failures(db, source_key, sessions, reason, now) -> None:
+        db.executemany(
+            """
+            INSERT OR REPLACE INTO source_failures
+            (source_key, session_date, reason, fetched_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            [(source_key, session.isoformat(), reason[:500], now) for session in sessions],
+        )
 
     def failures(self, source_key: str) -> tuple[dict, ...]:
         with closing(sqlite3.connect(self.path)) as db:
@@ -180,6 +234,20 @@ class SourceBlockStore:
             return None, None
         return min(blocks), max(blocks)
 
+    def requested_start(self, source_key: str) -> date | None:
+        with closing(sqlite3.connect(self.path)) as db:
+            row = db.execute(
+                "SELECT requested_start FROM source_meta WHERE source_key = ?", (source_key,)
+            ).fetchone()
+        return date.fromisoformat(row[0]) if row and row[0] else None
+
+    def context_through(self, source_key: str) -> date | None:
+        with closing(sqlite3.connect(self.path)) as db:
+            end = db.execute(
+                "SELECT MAX(context_end) FROM source_context WHERE source_key = ?", (source_key,)
+            ).fetchone()[0]
+        return date.fromisoformat(end) if end else None
+
     def revision_count(self, source_key: str, session: date | None = None) -> int:
         query = "SELECT COUNT(*) FROM source_blocks WHERE source_key = ?"
         values: list[object] = [source_key]
@@ -188,6 +256,33 @@ class SourceBlockStore:
             values.append(session.isoformat())
         with closing(sqlite3.connect(self.path)) as db:
             return int(db.execute(query, values).fetchone()[0])
+
+    def revision_token(self, source_key: str, start: date, end: date, as_of: datetime) -> str:
+        """Hash the current blocks and only the daily context available at this cutoff."""
+        with closing(sqlite3.connect(self.path)) as db:
+            blocks = db.execute(
+                """
+                SELECT session_date, block_hash FROM source_blocks b
+                WHERE source_key = ? AND session_date BETWEEN ? AND ?
+                  AND revision = (
+                    SELECT MAX(revision) FROM source_blocks x
+                    WHERE x.source_key = b.source_key AND x.session_date = b.session_date
+                  )
+                ORDER BY session_date
+                """,
+                (source_key, start.isoformat(), end.isoformat()),
+            ).fetchall()
+            context = self._context_row(db, source_key)
+        visible_context = [
+            [
+                {key: value for key, value in row.items() if key != "observed_at"}
+                for row in json.loads(series)
+                if date.fromisoformat(row["session_date"]) <= end
+                and datetime.fromisoformat(row["available_at"] or row["end_at"]) <= as_of
+            ]
+            for series in context or ()
+        ]
+        return digest([blocks, visible_context if any(visible_context) else ()])
 
     def store_bundle(
         self,
@@ -199,6 +294,7 @@ class SourceBlockStore:
         session_profile: str,
         parser_version: str,
         calendar_version: str,
+        requested_start: date | None = None,
     ) -> int:
         bars_by_session: dict[date, list[Bar]] = defaultdict(list)
         raw_by_session: dict[date, list[Bar]] = defaultdict(list)
@@ -206,17 +302,50 @@ class SourceBlockStore:
             bars_by_session[bar.session_date].append(bar)
         for bar in bundle.raw_bars:
             raw_by_session[bar.session_date].append(bar)
-        targets = sessions or tuple(sorted(set(bars_by_session) | set(raw_by_session)))
+        targets = sessions if sessions is not None else tuple(sorted(bars_by_session))
+        covered = tuple(session for session in targets if bars_by_session.get(session))
         inserted = 0
-        now = datetime.now(bundle.as_of.tzinfo).isoformat()
+        now = datetime.now(UTC).isoformat()
+        requested = (requested_start or bundle.provenance.requested_start).isoformat()
+        daily, adjusted_daily = (), ()
+        if bundle.daily_context:
+            old_raw, old_adjusted = self._context(
+                source_key, date.max, datetime.max.replace(tzinfo=UTC)
+            )
+            if old_raw and bundle.provenance.adjustment == "provider_all":
+                old = {
+                    bar.start_at: (raw, bar) for raw, bar in zip(old_raw, old_adjusted, strict=True)
+                }
+                overlaps = [
+                    (*old[bar.start_at], raw, bar)
+                    for raw, bar in zip(bundle.raw_daily_context, bundle.daily_context, strict=True)
+                    if bar.start_at in old
+                ]
+                if not overlaps or not all(_same_provider_scale(*pair) for pair in overlaps):
+                    old_raw, old_adjusted = (), ()
+
+            def merge(previous, incoming):
+                by_start = {bar.start_at: bar for bar in (*previous, *incoming)}
+                return tuple(by_start[start] for start in sorted(by_start))
+
+            daily = merge(old_raw, bundle.raw_daily_context)
+            adjusted_daily = merge(old_adjusted, bundle.daily_context)
         with closing(sqlite3.connect(self.path)) as db:
+            previous = db.execute(
+                "SELECT instrument_json FROM source_meta WHERE source_key = ?", (source_key,)
+            ).fetchone()
+            if previous and (
+                Instrument.model_validate_json(previous[0]).instrument_id
+                != bundle.instrument.instrument_id
+            ):
+                raise DataError("ASSET_IDENTITY_MISMATCH: source-block asset identity changed")
             db.execute(
                 """
                 INSERT INTO source_meta
                 (source_key, instrument_json, provenance_json, source_timeframe, feed,
                  adjustment, session_profile, parser_version, calendar_version,
-                 first_session, last_session, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 first_session, last_session, requested_start, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(source_key) DO UPDATE SET
                     instrument_json=excluded.instrument_json,
                     provenance_json=excluded.provenance_json,
@@ -236,6 +365,8 @@ class SourceBlockStore:
                         WHEN excluded.last_session IS NULL THEN source_meta.last_session
                         ELSE MAX(source_meta.last_session, excluded.last_session)
                     END,
+                    requested_start=MIN(COALESCE(source_meta.requested_start, excluded.requested_start),
+                                        excluded.requested_start),
                     updated_at=excluded.updated_at
                 """,
                 (
@@ -248,34 +379,60 @@ class SourceBlockStore:
                     session_profile,
                     parser_version,
                     calendar_version,
-                    min(targets).isoformat() if targets else None,
-                    max(targets).isoformat() if targets else None,
+                    min(covered).isoformat() if covered else None,
+                    max(covered).isoformat() if covered else None,
+                    requested,
                     now,
                 ),
             )
             for session in sorted(targets):
                 bars = tuple(sorted(bars_by_session.get(session, ()), key=lambda b: b.start_at))
                 raw = tuple(sorted(raw_by_session.get(session, ()), key=lambda b: b.start_at))
+                if not bars or [(b.start_at, b.end_at) for b in bars] != [
+                    (b.start_at, b.end_at) for b in raw
+                ]:
+                    self._record_failures(
+                        db, source_key, (session,), "PARTIAL_PROVIDER_COVERAGE", now
+                    )
+                    continue
                 factors = tuple(
                     point for point in bundle.factors if point.effective_date <= session
                 )
                 block_hash = digest(
                     [
-                        [bar.model_dump(mode="json") for bar in bars],
-                        [bar.model_dump(mode="json") for bar in raw],
+                        [bar.bar_id for bar in bars],
+                        [bar.bar_id for bar in raw],
                         [point.model_dump(mode="json") for point in factors],
                     ]
                 )
                 latest = db.execute(
                     """
-                    SELECT revision, block_hash FROM source_blocks
+                    SELECT revision, block_hash, bars_json FROM source_blocks
                     WHERE source_key = ? AND session_date = ?
                     ORDER BY revision DESC LIMIT 1
                     """,
                     (source_key, session.isoformat()),
                 ).fetchone()
+                if latest is not None:
+                    previous_slots = {
+                        (
+                            datetime.fromisoformat(bar["start_at"]),
+                            datetime.fromisoformat(bar["end_at"]),
+                        )
+                        for bar in json.loads(latest[2])
+                    }
+                    received_slots = {(bar.start_at, bar.end_at) for bar in bars}
+                    if not previous_slots <= received_slots:
+                        self._record_failures(
+                            db, source_key, (session,), "PARTIAL_PROVIDER_COVERAGE", now
+                        )
+                        continue
                 if latest is not None and latest[1] == block_hash:
-                    db.commit()
+                    db.execute(
+                        "UPDATE source_blocks SET cutoff = MAX(cutoff, ?) "
+                        "WHERE source_key = ? AND session_date = ? AND revision = ?",
+                        (bundle.as_of.isoformat(), source_key, session.isoformat(), latest[0]),
+                    )
                     continue
                 revision = (latest[0] + 1) if latest is not None else 1
                 db.execute(
@@ -298,9 +455,8 @@ class SourceBlockStore:
                     ),
                 )
                 inserted += 1
-                db.commit()
-            if bundle.daily_context or bundle.raw_daily_context:
-                context_end = bundle.bars[-1].session_date.isoformat()
+            if adjusted_daily:
+                context_end = adjusted_daily[-1].session_date.isoformat()
                 db.execute(
                     """
                     INSERT OR REPLACE INTO source_context
@@ -310,37 +466,41 @@ class SourceBlockStore:
                     (
                         source_key,
                         context_end,
-                        canonical_json(list(bundle.raw_daily_context)),
-                        canonical_json(list(bundle.daily_context)),
+                        canonical_json(list(daily)),
+                        canonical_json(list(adjusted_daily)),
                         now,
                     ),
                 )
             db.commit()
         return inserted
 
+    @staticmethod
+    def _context_row(db, source_key: str) -> tuple[str, str] | None:
+        return db.execute(
+            """
+            SELECT raw_json, adjusted_json FROM source_context
+            WHERE source_key = ?
+            ORDER BY context_end DESC LIMIT 1
+            """,
+            (source_key,),
+        ).fetchone()
+
     def _context(
         self, source_key: str, end: date, as_of: datetime
     ) -> tuple[tuple[Bar, ...], tuple[Bar, ...]]:
         with closing(sqlite3.connect(self.path)) as db:
-            row = db.execute(
-                """
-                SELECT raw_json, adjusted_json FROM source_context
-                WHERE source_key = ? AND context_end <= ?
-                ORDER BY context_end DESC LIMIT 1
-                """,
-                (source_key, end.isoformat()),
-            ).fetchone()
+            row = self._context_row(db, source_key)
         if row is None:
             return (), ()
         raw = tuple(
             bar
             for bar in (Bar.model_validate(item) for item in json.loads(row[0]))
-            if bar.usable_at <= as_of
+            if bar.session_date <= end and bar.usable_at <= as_of
         )
         adjusted = tuple(
             bar
             for bar in (Bar.model_validate(item) for item in json.loads(row[1]))
-            if bar.usable_at <= as_of
+            if bar.session_date <= end and bar.usable_at <= as_of
         )
         return raw, adjusted
 
@@ -383,10 +543,11 @@ class SourceBlockStore:
             instrument = stored_instrument
         provenance = Provenance.model_validate(json.loads(meta[1]))
         adjustment = meta[2]
+        auction_sparse = uses_sparse_sina_auction(instrument, source_timeframe, provenance.feed)
         if adjustment == "basis_date_qfq":
             try:
                 bars = adjust_to_basis(raw, factors_tuple, basis_date=raw[-1].session_date)
-            except Exception:
+            except DataError:
                 return None
         if timeframe != source_timeframe:
             bars = aggregate_intraday(
@@ -395,7 +556,8 @@ class SourceBlockStore:
                 instrument,
                 timeframe,
                 as_of,
-                buffer_minutes=0,
+                buffer_minutes=buffer_minutes,
+                auction_sparse=auction_sparse and source_timeframe == "1m",
             )
             raw = aggregate_intraday(
                 raw,
@@ -403,7 +565,8 @@ class SourceBlockStore:
                 instrument,
                 timeframe,
                 as_of,
-                buffer_minutes=0,
+                buffer_minutes=buffer_minutes,
+                auction_sparse=auction_sparse and source_timeframe == "1m",
             )
         if not bars or len(bars) != len(raw):
             return None
@@ -415,11 +578,11 @@ class SourceBlockStore:
                 instrument,
                 as_of,
                 timeframe,
-                buffer_minutes=0,
+                buffer_minutes=buffer_minutes,
                 through=end,
                 since=start,
+                auction_sparse=auction_sparse,
             )
-            proposed = tuple(item for item in proposed if item <= bars[-1].start_at)
             if proposed and proposed[-1] == bars[-1].start_at:
                 expected = proposed
             else:
@@ -430,7 +593,7 @@ class SourceBlockStore:
                 adjusted_context = adjust_to_basis(
                     raw_context, factors_tuple, basis_date=bars[-1].session_date
                 )
-            except Exception:
+            except DataError:
                 return None
         aggregation = (
             "none" if timeframe == source_timeframe else f"{source_timeframe}->{timeframe}"
@@ -438,6 +601,9 @@ class SourceBlockStore:
         provenance = provenance.model_copy(
             update={
                 "basis_date": bars[-1].session_date,
+                "calendar_version": calendar.version,
+                "requested_start": start,
+                "requested_end": end,
                 "source_timeframe": source_timeframe,
                 "aggregation": aggregation,
                 "coverage_start": bars[0].session_date,

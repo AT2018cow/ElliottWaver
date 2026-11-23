@@ -1,6 +1,6 @@
 # ElliottWaver 中文使用手册
 
-适用于 ElliottWaver 0.6.0。日用分析覆盖沪深个股与指数、美股个股与 ETF 的日线和周线。逐腿结构树和日周关联通过增强配置启用。 [升级步骤](#从已有安装升级)
+适用于 ElliottWaver 0.7.0。覆盖沪深与美股的日线、周线、小时线和分钟线。指数的盘中周期需要配置对应行情源。逐腿结构树和跨周期关联通过增强配置启用。 [升级步骤](#从已有安装升级)
 
 ElliottWaver 从股票和指数的 K 线中识别波浪候选，给出规则检查、推进价、失效价和目标区。日常用 `brief` 直接在终端看数浪和短期推演，单周期深入分析用 `analyze`。需要图表时，可另行打开 HTML 摘要。
 
@@ -75,15 +75,16 @@ python3 -m venv .venv
 mv .cache/eliotbot .cache/elliottwaver
 ```
 
-`brief`、`analyze`、`history` 和自选批量的参数与结果格式保持兼容。原 `config.yaml` 中如仍写着旧缓存目录，可继续使用，也可改为 `.cache/elliottwaver`。 [版本说明](../CHANGELOG.md#060--2026-11-22)
+`brief`、`analyze`、`history` 和自选批量的原有入口继续可用。原 `config.yaml` 中如仍写着旧缓存目录，可继续使用，也可改为 `.cache/elliottwaver`。 [版本说明](../CHANGELOG.md#070--2026-11-24)
 
 ### 从发布 Wheel 安装
 
-将发布文件 `elliottwaver-0.6.0-py3-none-any.whl` 放到当前目录。安装依赖需能访问所用 Python 包源。首次运行请在有写权限的工作目录执行。
+从 GitHub Release 下载 `elliottwaver-0.7.0-py3-none-any.whl` 和同名 `.sha256` 文件，放到当前目录。安装依赖需能访问所用 Python 包源。首次运行请在有写权限的工作目录执行。
 
 ```bash
 python3 -m venv .venv
-.venv/bin/python -m pip install './elliottwaver-0.6.0-py3-none-any.whl[cn,us]'
+sha256sum -c elliottwaver-0.7.0-py3-none-any.whl.sha256
+.venv/bin/python -m pip install './elliottwaver-0.7.0-py3-none-any.whl[cn,us]'
 .venv/bin/elliottwaver --version
 .venv/bin/elliottwaver demo --symbol 600519.SH
 ```
@@ -147,7 +148,7 @@ elliottwaver analyze 600519 --timeframe 1d
 | 深证指数 | `SZ399*` | `399001.SZ`、`399006.SZ` |
 | 北证指数 | `BJ899*` | `899050.BJ` |
 
-`SZ000*` 仍是深市个股，`SH688*` / `SH689*` 仍是科创板个股。`SH880*` 同花顺行业指数当前不接入。指数默认只支持日线和周线；配置 `data.cn_index_intraday_feed: tushare-cn-index` 并提供 `TUSHARE_TOKEN` 后，才开放指数分钟线。未配置时请求指数分钟线返回 `INDEX_INTRADAY_UNSUPPORTED`。
+`SZ000*` 仍是深市个股，`SH688*` / `SH689*` 仍是科创板个股。`SH880*` 同花顺行业指数当前不接入。沪深指数默认使用日线和周线。配置 `data.cn_index_intraday_feed: tencent-cn-index` 可免费使用盘中周期，也可选择 `tushare-cn-index` 并提供 `TUSHARE_TOKEN`。未配置盘中源时返回 `INDEX_INTRADAY_UNSUPPORTED`。
 
 当前线上范围为沪深 A 股、沪深京指数与美股个股；北交所个股尚未接通，港股尚未实现。
 
@@ -161,7 +162,7 @@ elliottwaver analyze 600519 --timeframe 1d
 | 5 分钟 | `5m` | `elliottwaver analyze 600519 --timeframe 5m` |
 | 1 分钟 | `1m` | `elliottwaver analyze 600519 --timeframe 1m` |
 
-表格中的短命令需要先激活虚拟环境。月线和 4 小时线不能作为当前主分析周期。指数默认只支持 `1d` 和 `1w`；配置 Tushare 指数分钟源后可请求 `1m/5m/15m/30m/60m`。沪深个股默认使用新浪分钟源，也可配置 `data.cn_equity_intraday_feed: tushare-cn-equity`。
+表格中的短命令需要先激活虚拟环境。月线和 4 小时线不能作为当前主分析周期。指数的分钟线和小时线需要配置相应盘中行情源。沪深个股默认使用新浪分钟源，也可配置 Tencent、BaoStock 或 Tushare。 [免费配置示例](../config.free.example.yaml)
 
 每次调用分析一个主周期。A 股小时线不跨午休；美股分钟/小时线从常规交易时段（RTH）开盘对齐，收市前可能保留不足整小时的尾段。周线先对日线进行复权，再聚合完整交易周，尚未结束的周不会纳入。
 
@@ -269,11 +270,15 @@ Yahoo 免费源 1m 只覆盖最近约 7 天，5m/15m/30m/60m 约 60 天；15m/30
 .venv/bin/elliottwaver analyze 000688.SH --timeframe 1w --start 2020-01-01
 ```
 
-长期数浪还需要按需提高 `analysis.max_analysis_bars`（默认 600，最大 5000），否则锚点搜索只覆盖最近约 600 根 K 线。指数分钟线尚未启用；请求 `5m` 等周期会返回 `INDEX_INTRADAY_UNSUPPORTED`。
+长期数浪还需要按需提高 `analysis.max_analysis_bars`（默认 600，最大 5000），否则锚点搜索只覆盖最近约 600 根 K 线。使用免费配置可直接尝试盘中指数摘要。
+
+```bash
+.venv/bin/elliottwaver brief 000300.SH --timeframe 5m --config config.free.example.yaml --format json
+```
 
 ### 4.3.1 高级多浪级引擎（实验）
 
-日用默认采用 `classic_v4`。需要逐腿结构树或日周关联时，可直接传入 `--config config.advanced.example.yaml`。样例在源码包根目录，使用 wheel 时可把样例复制到当前工作目录。增强模式支持日线和周线。自定义时复制样例配置并修改所需参数。
+日用默认采用 `classic_v4`。需要逐腿结构树或跨周期关联时，可直接传入 `--config config.advanced.example.yaml`。样例在源码包根目录，使用 wheel 时可把样例复制到当前工作目录。增强模式支持日线、周线和盘中周期。自定义时复制样例配置并修改所需参数。
 
 ```yaml
 analysis:
@@ -339,6 +344,8 @@ A 股老指数/老股票原始数据可到 1990/1991 年；引擎日历从 **199
 ```
 
 默认 `--timeframe auto` 选择日线。输入原生周线快照，或 `--start` 到截止时刻超过 5 × 365 天时，自动选周线。输入盘中快照时，自动采用该快照的分钟周期。显式指定 `--timeframe 1d`、`1w` 或 `1m/5m/15m/30m/60m` 可锁定周期，`1h` 等价于 `60m`。`--start` 设置搜索下界，`--anchor YYYY-MM-DD` 指定起浪日；盘中还可使用带时区的精确锚点。需要 `--long-term` 等搜索预设时，使用前文的 `analyze` 示例。
+
+小时线的日线背景使用同源快照中截至决策时刻已可用的原生日线。原生日线不足时仍可查看小时线，简报会提示背景不可用。父子浪关联有未知子周期缺口时显示待核，即使使用了 `--allow-gaps`。
 
 盘中示例：
 
@@ -714,7 +721,7 @@ SNAPSHOT_ID='替换为刚才返回的完整snapshot_id'
 
 默认快照目录为 `.cache/elliottwaver/`。快照文件及元数据会校验 SHA256，不要直接修改其中的文件。
 
-`analyze --offline` 默认沿用快照周期和截止时间。`brief` 在明确给出盘中快照时自动采用该快照的主周期；没有盘中快照时仍按日线/周线自动选择。标的和 feed 必须匹配快照。日线快照可以派生周线；盘中背景按固定配对从同一底层行情派生，主分析需要对应周期的快照。
+`analyze --offline` 默认沿用快照周期和截止时间。`brief` 在明确给出盘中快照时自动采用该快照的主周期；没有盘中快照时仍按日线/周线自动选择。标的和 feed 必须匹配快照。日线快照可以派生周线。盘中背景使用同源行情，小时线的日线背景取自快照携带的原生日线。主分析需要对应周期的快照。
 
 若通过配置修改了缓存目录，取数、分析、历史查询和回放时都传同一份 `--config`。验收时使用的 `.cache/live-smoke/` 与默认缓存是两个目录。
 

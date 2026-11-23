@@ -29,7 +29,7 @@ from elliottwaver.evaluation.features import (
     decision_features,
     outlook_features,
 )
-from elliottwaver.evaluation.forward import live_reports
+from elliottwaver.evaluation.forward import live_receipt_key, live_reports
 from elliottwaver.evaluation.outcomes import (
     close_band,
     evaluate_outlook_event,
@@ -397,11 +397,7 @@ def _window_source_hash(window, outcome, *, close_horizon: int | None = None) ->
     if close_horizon is not None:
         used = (window.close_bar(close_horizon),) if outcome.value is not None else ()
     else:
-        used = tuple(
-            bar
-            for day, bar in zip(window.dates, window.bars, strict=True)
-            if outcome.session is None or day <= outcome.session
-        )
+        used = window.observed_bars(outcome)
     return digest(
         [bar.model_dump(mode="json", exclude={"observed_at"}) for bar in used if bar is not None]
     )
@@ -818,6 +814,8 @@ def evaluate_protocol(
                 "source_snapshot_id": snapshot_id,
                 "as_of": decision_bar.usable_at.isoformat() if decision_bar is not None else None,
             }
+            if timeframe.endswith("m") and decision_bar is not None:
+                identity["last_bar_end_at"] = decision_bar.end_at.isoformat()
             if decision_bar is None:
                 decisions.append(
                     {
@@ -831,14 +829,16 @@ def evaluate_protocol(
                 previous_pivots = previous_decision = None
                 continue
             receipt = (
-                receipts.get((symbol, timeframe, str(decision_bar.session_date)))
+                receipts.get(
+                    live_receipt_key(
+                        symbol, timeframe, decision_bar.session_date, decision_bar.end_at
+                    )
+                )
                 if receipts
                 else None
             )
             if receipts is not None and receipt is None:
-                raise InputError(
-                    f"No live decision receipt for {symbol} on {decision_bar.session_date}"
-                )
+                raise InputError(f"No live decision receipt for {symbol} at {decision_marker}")
             issue_source = store.load(receipt.source_snapshot_id) if receipt is not None else bundle
             decision_cutoff = receipt.as_of if receipt is not None else decision_bar.usable_at
             request = AnalysisRequest(
@@ -854,6 +854,9 @@ def evaluate_protocol(
                     request,
                     issue_source,
                     settings,
+                    intraday_issued_at=receipt.outlook.issued_at
+                    if receipt is not None and receipt.outlook is not None
+                    else None,
                     include_weekly=receipt is None or receipt.weekly_state != "NOT_REQUESTED",
                     check_windows=advanced
                     if receipt is None
@@ -1046,7 +1049,7 @@ def evaluate_protocol(
                 if analyzable and result.status != "SEARCH_LIMITED":
                     price_scale = 1.0
                     if receipt is not None and receipt.adjustment == "provider_all":
-                        bridge = provider_price_scale(prepared, bundle, decision_day)
+                        bridge = provider_price_scale(prepared, bundle, result.market_asof)
                         if bridge is None:
                             raise DataError("PRICE_BASIS_UNVERIFIED")
                         price_scale = bridge

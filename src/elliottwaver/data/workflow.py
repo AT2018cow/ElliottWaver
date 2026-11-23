@@ -221,6 +221,9 @@ def fetch_bundle(
                     )
                 else:
                     fetch_start = start
+            if fetch_start is not None:
+                # Give providers enough prior daily context for the tail session.
+                fetch_start = max(start, fetch_start - timedelta(days=7))
             if fetch_start is None:
                 assembled = source_store.assemble(
                     source_key,

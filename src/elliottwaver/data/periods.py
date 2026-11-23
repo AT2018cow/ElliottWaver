@@ -223,6 +223,8 @@ def resample_bundle(
             buffer_minutes=buffer_minutes,
             since=bundle.sessions[0],
         )
+        if bars:
+            expected = tuple(item for item in expected if item <= bars[-1].start_at)
         aggregation = f"{source_timeframe}->{target_timeframe}"
     elif target_timeframe == "1d":
         source_duration = minutes(source_timeframe)

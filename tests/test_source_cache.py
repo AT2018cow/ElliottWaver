@@ -1,5 +1,5 @@
 import sqlite3
-from datetime import date
+from datetime import date, timedelta
 
 from elliottwaver.config import Settings
 from elliottwaver.data.demo import demo_bundle
@@ -107,7 +107,7 @@ def test_tail_refresh_only_fetches_last_session_and_preserves_revision(tmp_path)
     provider.revise_last(1.0)
     refreshed = fetch_bundle(request, settings, provider=provider, refresh=True)
     assert len(provider.calls) == 2
-    assert provider.calls[-1][0] == session
+    assert session - timedelta(days=7) <= provider.calls[-1][0] <= session
     assert SourceBlockStore(tmp_path).revision_count(source_key, session) == before + 1
     assert refreshed.bars[-1].close == first.bars[-1].close + 1.0
 

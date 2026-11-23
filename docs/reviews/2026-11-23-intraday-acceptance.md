@@ -14,7 +14,7 @@
 | IN-03 精确锚点、多周期背景和逐腿证据 | 完成（盘中腿映射） | 支持带时区的精确 `--anchor`；固定配对 `1m→5m`、`5m→60m`、`15m/30m→60m`、`60m→1d` 已接入 `resample_bundle` 和简报背景；`hierarchical_v1` 允许盘中结构计算；新增 `engine/intraday_link.py`，按精确 K 线区间把父结构腿映射到子结构，复用 `match_interval`、子模板许可、深度和共享预算。合成 5m/60m 关系测试通过；长区间重叠的真实逐腿证据待补。 |
 | IN-04 盘中简报与冻结观察窗 | 完成 | 发行后尚未开始的 5 根主周期 K 线；跨午休、周末和休市；最后一根 K 线结束/可用时刻；市场当地时间；`1h`/`60m` 同路径；`brief --timeframe auto` 对盘中快照自动采用快照周期。 |
 | IN-05 同日历史、结算和评估 | 完成 | SQLite 增加周期/feed/复权/最后 K 线字段和索引；同日按最后 K 线排序；5B 事件注册；盘中观察窗解析器与结算/评估共用；同根目标/失效、未知缺口、右删失、拆股换算和未来修订测试通过。 |
-| IN-06 自动化、真实行情、性能和发布 | 部分完成 | 全量 553 项测试、Ruff、格式、`pip check`、`git diff --check` 和 wheel 构建通过。真实 CN 个股 1m/5m/15m/30m/60m 与美股 NVDA 60m SIP 简报已核对；1m 因数据不足未发行，KSTR 5m SIP 也因数据不足未发行；CN 指数、Tushare 真实权限、Massive 真实权限、IEX 全周期和真实冷/热取数未完成；合成简报 p50/p95 已记录。 |
+| IN-06 自动化、真实行情、性能和发布 | 部分完成 | 全量 553 项测试、Ruff、格式、`pip check`、`git diff --check` 和 wheel 构建通过。真实 CN 个股 1m/5m/15m/30m/60m、美股 NVDA 60m SIP 和 AAPL 5m IEX 简报已核对；CN 1m 与 KSTR 5m SIP 因数据不足未发行；CN 指数、Tushare 真实权限、Massive 真实权限、其余 IEX 周期和真实冷/热取数未完成；合成简报 p50/p95 已记录。 |
 | IN-07 原生美股指数 | 代码完成，真实权限阻塞 | 已接入 Massive `I:` 指数聚合接口、`SPX`/`NDX` 路由、`us_index_feed: massive-index` 和 `MASSIVE_API_KEY`；假响应验证 5m 原生指数、无成交量证据和 workflow 路由。真实 Massive 账户凭证未取得，未提交真实指数验收。 |
 
 ## 2. 改动文件
@@ -77,6 +77,7 @@
 | 品种 | 周期 | feed | 快照 ID | 最后 K 线 | 结果 |
 | --- | --- | --- | --- | --- | --- |
 | NVDA | 60m | sip | `a994efbaf82a5e98cf41e224d7e64f0cba7824f268d52f0dae95f77005b19725` | 2026-11-20 16:00 ET | `OK`，5B 观察窗，事件 `ADVANCE_FIRST_60M_5B_V1`、`OUTLOOK_TARGET_FIRST_60M_5B_V1` |
+| AAPL | 5m | iex | `8b3b30874041c6a1d0369f60d34909a63a60efe500faf967827b63c4439f40ed` | 2026-11-20 15:40 ET | `OK`，7016 根，5B 观察窗，事件 `ADVANCE_FIRST_5M_5B_V1`、`OUTLOOK_TARGET_FIRST_5M_5B_V1` |
 | KSTR | 5m | sip | `c013a72635bea06eb20f56cf40abe594b19eae97df477afc8095db58f9dbe36e` | 2026-11-19 16:00 ET | `INSUFFICIENT_DATA`，仍输出 5B 观察窗状态；不发行事件 |
 
 KSTR 5m 的真实快照未覆盖足够完整的历史/缺口，按方案继续完成可独立验证的部分，未把它解释为通过。IEX 真实样本本轮未取得；SIP/IEX 分离仍由既有冻结响应和入口测试覆盖。
@@ -129,7 +130,7 @@ Wheel：
 
 ```text
 elliottwaver-0.6.0-py3-none-any.whl
-sha256 8b99764552a8da00fd5edee9f94ffdd75075a457f6f4aa2462b1f6c4fedc98c0
+sha256 94a4d397308bf237256d5a45fa361679e7bf9e5c3ba5d5c5c9354f181785419d
 ```
 
 ## 7. 未完成项与原因

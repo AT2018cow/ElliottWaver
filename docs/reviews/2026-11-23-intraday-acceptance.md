@@ -11,7 +11,7 @@
 | IN-00 盘中简报停止周线观察窗 | 完成 | 60m/5m 合成与真实快照均输出 `version=1.1`、`horizon_unit=BARS`、`horizon=5`，不再出现 `2W` 事件。旧盘中 `1.0` 周线观察窗在结算时返回 `SETTLEMENT_WINDOW_TIMEFRAME_MISMATCH`。 |
 | IN-01 行情适配、会话和聚合 | 部分完成 | 新浪/`sina-index` 和 Alpaca SIP/IEX 路径保留；新增 Tushare `stock_mins`/`idx_mins` 适配器、CN 盘中 feed 配置、覆盖范围和来源字段。Tushare 只用假响应验证，真实账户权限未取得。CN 指数盘中默认仍拒绝，配置 `cn_index_intraday_feed: tushare-cn-index` 后才路由。 |
 | IN-02 历史覆盖与增量缓存 | 完成（盘中源块） | 新增 `SourceBlockStore`，按资产、feed、源周期、session profile、复权、parser、日历版本和日线背景结束日缓存每个交易日的源块；保留不可变修订。冷取数、热命中、尾段刷新、跨周期共享 5m 源块和精确截止零请求均有计数假供应商测试。整段权限失败保留、源级锁和日/周源块仍未覆盖。 |
-| IN-03 精确锚点、多周期背景和逐腿证据 | 部分完成 | 支持带时区的精确 `--anchor`；固定配对 `1m→5m`、`5m→60m`、`15m/30m→60m`、`60m→1d` 已接入 `resample_bundle` 和简报背景；`hierarchical_v1` 已允许盘中结构计算。日周专用的 `timeframe_link` 尚未泛化为盘中父子腿映射，盘中高级关联仍标记为不可用。 |
+| IN-03 精确锚点、多周期背景和逐腿证据 | 完成（盘中腿映射） | 支持带时区的精确 `--anchor`；固定配对 `1m→5m`、`5m→60m`、`15m/30m→60m`、`60m→1d` 已接入 `resample_bundle` 和简报背景；`hierarchical_v1` 允许盘中结构计算；新增 `engine/intraday_link.py`，按精确 K 线区间把父结构腿映射到子结构，复用 `match_interval`、子模板许可、深度和共享预算。合成 5m/60m 关系测试通过；长区间重叠的真实逐腿证据待补。 |
 | IN-04 盘中简报与冻结观察窗 | 完成 | 发行后尚未开始的 5 根主周期 K 线；跨午休、周末和休市；最后一根 K 线结束/可用时刻；市场当地时间；`1h`/`60m` 同路径；`brief --timeframe auto` 对盘中快照自动采用快照周期。 |
 | IN-05 同日历史、结算和评估 | 完成 | SQLite 增加周期/feed/复权/最后 K 线字段和索引；同日按最后 K 线排序；5B 事件注册；盘中观察窗解析器与结算/评估共用；同根目标/失效、未知缺口、右删失、拆股换算和未来修订测试通过。 |
 | IN-06 自动化、真实行情、性能和发布 | 部分完成 | 全量 547 项测试、Ruff、格式、`pip check`、`git diff --check` 和 wheel 构建通过。真实 CN 个股 60m/5m 与美股 NVDA 60m SIP 简报通过；KSTR 5m SIP 因数据不足未发行；CN 指数、Tushare 真实权限、Massive 真实权限和真实冷/热取数未完成；合成简报 p50/p95 已记录。 |
@@ -21,7 +21,7 @@
 
 - 盘中模型与简报：`src/elliottwaver/outlook.py`、`schemas/outlook.py`、`schemas/brief.py`、`brief.py`、`visualization/brief_text.py`、`visualization/brief_formatter.py`、`cli/console_render.py`、`cli/main.py`。
 - 行情与会话：`data/tushare_provider.py`（新增）、`data/source_cache.py`（新增）、`data/sina_provider.py`、`data/alpaca_provider.py`、`data/workflow.py`、`data/periods.py`、`schemas/market.py`、`config.py`、`config.example.yaml`、`config.advanced.example.yaml`、`.env.example`。
-- 锚点与引擎：`engine/span_selector.py`、`engine/matcher.py`、`service.py`、`timeframes.py`、`schemas/wave.py`。
+- 锚点与引擎：`engine/span_selector.py`、`engine/matcher.py`、`engine/intraday_link.py`（新增）、`service.py`、`timeframes.py`、`schemas/wave.py`。
 - 历史、结算与评估：`history.py`、`settlement.py`、`evaluation/events.py`、`evaluation/outcomes.py`、`evaluation/decisions.py`、`forecast.py`。
 - 测试：`tests/test_intraday.py`（新增）、`tests/test_tushare_provider.py`（新增）、`tests/test_massive_provider.py`（新增）、`tests/test_source_cache.py`（新增）、`tests/test_settlement.py`（支持矩阵行数）。
 - 文档：`README.md`、`docs/USER_GUIDE.md`、`docs/IMPLEMENTATION_STATUS.md`、`docs/ROADMAP.md`、`docs/reviews/README.md`、本记录。
@@ -115,7 +115,7 @@ IN-07 代码完成、真实权限阻塞：已按 Massive 官方 `GET /v2/aggs/ti
 ## 6. 验证命令与结果
 
 ```text
-.venv/bin/python -m pytest tests -q              552 passed
+.venv/bin/python -m pytest tests -q              553 passed
 .venv/bin/ruff check src tests scripts           PASS
 .venv/bin/ruff format --check src tests scripts  PASS
 .venv/bin/python -m pip check                    No broken requirements found
@@ -126,13 +126,13 @@ Wheel：
 
 ```text
 elliottwaver-0.6.0-py3-none-any.whl
-sha256 5a896dff8495264e8bfb4035bc77d6b18897d8149f94e5b72ecda55788cd613c
+sha256 8b99764552a8da00fd5edee9f94ffdd75075a457f6f4aa2462b1f6c4fedc98c0
 ```
 
 ## 7. 未完成项与原因
 
 1. **IN-02 剩余边界**：盘中源块、尾段刷新、修订和跨周期共享已完成；源级锁仍复用整包缓存锁，供应商中途失败时只保留已完成源块，不保存部分页面级覆盖原因；日线和周线仍走整包快照缓存。
-2. **IN-03 盘中父子腿映射**：`hierarchical_v1` 已能计算盘中结构，`resample_bundle` 已提供固定背景配对；`timeframe_link` 仍按日/周 ISO 周分组，未泛化为盘中区间包含映射。盘中高级关联暂不声称通过。
+2. **IN-03 剩余边界**：盘中父子腿映射已实现并通过合成关系测试；尚未取得足够长、父子区间重叠的真实快照来逐腿确认 VERIFIED 比例。日周 `timeframe_link` 保持原路径。
 3. **IN-06 真实覆盖**：CN 指数、Tushare 真实权限、IEX 真实样本、BRK.B/SPY 全五周期和真实冷/热取数请求次数未完成。原因：账户权限/凭证和样本时间限制。合成简报 p50/p95 已记录。
 4. **IN-07 真实权限**：Massive 指数适配器和假响应测试已完成；真实 `MASSIVE_API_KEY`/指数计划回执未取得，真实 SPX/NDX 逐周期证据待补。
 

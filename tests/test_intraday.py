@@ -11,6 +11,8 @@ from elliottwaver.config import Settings
 from elliottwaver.data.demo import demo_bundle
 from elliottwaver.data.periods import resample_bundle
 from elliottwaver.data.snapshots import SnapshotStore
+from elliottwaver.engine.intraday_link import link_intraday_timeframes
+from elliottwaver.engine.matcher import SearchBudget
 from elliottwaver.evaluation.decisions import evaluate_protocol
 from elliottwaver.evaluation.events import EVENT_SPECS
 from elliottwaver.evaluation.outcomes import OutcomeWindow, evaluate_outlook_event
@@ -19,7 +21,7 @@ from elliottwaver.history import HistoryStore
 from elliottwaver.schemas.market import AnalysisRequest, Bar, MarketDataBundle
 from elliottwaver.schemas.outlook import OutlookCase, OutlookCondition
 from elliottwaver.schemas.wave import LevelCondition, PriceZone
-from elliottwaver.service import AnalysisService
+from elliottwaver.service import AnalysisService, prepare_bundle
 from elliottwaver.settlement import SettlementStore, event_specs
 from elliottwaver.visualization.brief_formatter import publish_brief
 
@@ -164,6 +166,49 @@ def test_hierarchical_engine_accepts_intraday_timeframes():
     assert result.schema_version == "1.1"
     assert result.scenarios
     assert result.scenarios[0].structure is not None
+
+
+def test_intraday_parent_child_linker_returns_typed_relations():
+    settings = Settings(
+        analysis={"engine_profile": "hierarchical_v1"},
+        search={"max_subwave_depth": 1},
+    )
+    service = AnalysisService(settings)
+    child = demo_bundle("AAPL", timeframe="5m")
+    parent = demo_bundle("AAPL", timeframe="60m")
+    child_request = AnalysisRequest(
+        symbol="AAPL",
+        as_of=child.as_of,
+        timeframe="5m",
+        mode="FROZEN_DATA_REPLAY",
+    )
+    parent_request = AnalysisRequest(
+        symbol="AAPL",
+        as_of=parent.as_of,
+        timeframe="60m",
+        mode="FROZEN_DATA_REPLAY",
+    )
+    child_context = service.analyze_with_context(
+        child_request, prepare_bundle(child_request, child)
+    )
+    parent_context = service.analyze_with_context(
+        parent_request, prepare_bundle(parent_request, parent)
+    )
+    relations = link_intraday_timeframes(
+        parent_context,
+        prepare_bundle(parent_request, parent),
+        child_context,
+        prepare_bundle(child_request, child),
+        as_of=child.as_of,
+        depth=1,
+        budget=SearchBudget(20000),
+        scales=settings.analysis.scales,
+    )
+    assert relations
+    assert all(
+        item.status in {"VERIFIED", "PROVISIONAL", "UNDETERMINED", "INCOMPATIBLE"}
+        for item in relations
+    )
 
 
 def test_intraday_replay_uses_only_bars_available_at_each_prefix():

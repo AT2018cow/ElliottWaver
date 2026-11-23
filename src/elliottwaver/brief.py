@@ -12,6 +12,7 @@ from elliottwaver.data.adjustment import provider_price_scale
 from elliottwaver.data.periods import resample_bundle
 from elliottwaver.data.quality import missing_intervals
 from elliottwaver.engine.indicators import calculate
+from elliottwaver.engine.intraday_link import link_intraday_timeframes
 from elliottwaver.engine.matcher import SearchBudget
 from elliottwaver.engine.timeframe_link import link_timeframes
 from elliottwaver.errors import DataError
@@ -633,7 +634,18 @@ def build_brief(
     )
     outlook = build_outlook(cards, result, prepared, context.projections, issued_at=issued_at)
     wave_relations = ()
-    if advanced and weekly_context is not None and weekly_prepared is not None:
+    if advanced and background_context is not None and background_prepared is not None:
+        wave_relations = link_intraday_timeframes(
+            background_context,
+            background_prepared,
+            context,
+            prepared,
+            as_of=request.as_of,
+            depth=settings.search.max_subwave_depth,
+            budget=SearchBudget(settings.search.max_expansions),
+            scales=settings.analysis.scales,
+        )
+    elif advanced and weekly_context is not None and weekly_prepared is not None:
         wave_relations = link_timeframes(
             context,
             prepared,

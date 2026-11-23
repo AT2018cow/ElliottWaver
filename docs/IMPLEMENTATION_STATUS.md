@@ -26,7 +26,7 @@
 | 历史与自选 | `elliottwaver history` 查询已发布摘要，原摘要记录上次判断及变化，区分 `CONFIG_CHANGED`、`DATA_REVISED` 和 `NOT_COMPARABLE`。新增 `timeframe`、`feed`、`adjustment`、`last_bar_end_at`、`last_bar_id` 和 `last_bar_available_at`，同日盘中摘要按最后一根 K 线排序；`history --timeframe` 可筛选。`elliottwaver watchlist` 批量生成 JSON 摘要，支持有限重试、有界并发、模型注册表回退和单标的失败隔离。 |
 | 结算与支持矩阵 | `elliottwaver settle` 使用本地快照，按 `(brief_digest,event_id,scope)` 去重并增量结算，行情修订追加版本，保留最初观察。盘中事件使用冻结的 5 个精确时隙和同一个观察窗解析器，记录触发 `bar_id`、起止时刻和价格口径；同根目标/失效、未知缺口和右删失分别保留状态。`elliottwaver support-matrix` 增加 5 个盘中周期和 5B 事件行，传入训练汇总后显示支持状态和原因。 |
 | 离线评估 | `scripts/evaluate_briefs.py` 输出日线/周线/盘中 decisions/events/summary/manifest；支持收盘区间、确认或推进先达、目标先达事件；盘中协议使用 `EVERY_BAR` 和 `step`，决策 ID 含精确 bar 开始时刻，事件保留 `decision_at`、`due_at`、`period_starts`、`period_ends`、`trigger_bar_id` 和触发时刻；summary 按标的、资产类型、周期、浪型和期限分解，并包含已确认拐点改写数、极值至确认 K 线数、相邻主选切换率、预测覆盖、确认延迟和搜索截断；`scripts/merge_evaluations.py` 可合并单样本分批结果 |
-| 多浪级引擎 | `engine_profile=hierarchical_v1` 显式启用 `hierarchical-rules-v3`。递归子浪选择按实际可证明的深度排序，历史日周关系也遵循请求深度。摘要包含日周关联与历史触发证据，评估使用正式摘要的首选结构键和比较模式。 [修复复验](reviews/2026-11-21-wave-engine-followup-repair.md) |
+| 多浪级引擎 | `engine_profile=hierarchical_v1` 显式启用 `hierarchical-rules-v3`。递归子浪选择按实际可证明的深度排序，历史日周关系也遵循请求深度。盘中新增 `engine/intraday_link.py`，按精确 K 线区间映射父结构腿到子结构，复用 `match_interval`、子模板许可、深度和共享预算。摘要包含日周/盘中关联与历史触发证据，评估使用正式摘要的首选结构键和比较模式。 [修复复验](reviews/2026-11-21-wave-engine-followup-repair.md) |
 | 概率研究 | 30 只沪深个股和 7 个指数的 2026 留出检验中，8 项日线事件均未获批。修正训练入口后，指数 20 日目标先达的价格基线对照与校准均未过。2023–2025 开发期已完成滚动校准、目标几何和失效审计；C 按 A 参照入选，但相对含目标几何的价格基线无增量，波浪结构增益未建立。没有新增独立前向留出，状态为研究完成、待新留出，未注册模型。[留出重算](reviews/2026-11-20-cn-index-probability-recheck.md) · [开发期验收](reviews/2026-11-19-cn-index-target-accuracy.md) · [前向验收](protocols/cn-index-target-forward.md) |
 | 端点复核 | `scripts/review_wave_cases.py` 用校验后的日线逐段复核盲标端点，输出规则证据。56 个案例中 18 个至少通过一个端点模板，38 个保留待定。[日用版验收](reviews/2026-11-19-release-preparation.md) |
 | 标注研究 | `scripts/label_wave_cases.py export/import/score/direction/predict` 支持从已发布 brief/daily 自动生成分层盲标 case（含无候选、`EXCLUDED_STRUCTURE`/拒绝候选和歧义分层）、标的涨跌标签、标签导入、按 case 均权独立判读认可概率、双阳性/双阴性、原始一致率、Cohen κ、split 分组；`scripts/train_label_models.py` 训练每模板独立二项模型并接入 E 式留出校准和 50/10/10/κ≥0.60 门槛 |
@@ -37,7 +37,7 @@
 以下为 `v0.6.0` 基线加本轮盘中增量后的验证结果。详细证据、快照 ID 和逐项命令见[盘中验收记录](reviews/2026-11-23-intraday-acceptance.md)。
 
 ```text
-python -m pytest tests -q              552 passed
+python -m pytest tests -q              553 passed
 ruff check src tests scripts           PASS
 ruff format --check src tests scripts  PASS
 pip check                             No broken requirements found

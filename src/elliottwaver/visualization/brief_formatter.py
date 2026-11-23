@@ -118,11 +118,21 @@ def structure_evidence(structure: WaveStructure) -> tuple[str, ...]:
 
 def relation_evidence(brief: Brief) -> tuple[str, ...]:
     daily = {card.scenario_id: card_role(index) for index, card in enumerate(brief.cards)}
-    weekly_cards = brief.weekly.cards if brief.weekly else ()
-    weekly = {card.scenario_id: card_role(index) for index, card in enumerate(weekly_cards)}
+    background_cards = (
+        brief.background.cards if brief.background else brief.weekly.cards if brief.weekly else ()
+    )
+    background = {card.scenario_id: card_role(index) for index, card in enumerate(background_cards)}
+    parent_label = (
+        timeframe_text(brief.background.timeframe)
+        if brief.background
+        else timeframe_text(brief.cross_timeframe.background_timeframe)
+        if brief.cross_timeframe and brief.cross_timeframe.background_timeframe
+        else "周线"
+    )
+    child_label = timeframe_text(brief.timeframe)
     lines = []
     for item in brief.wave_relations:
-        parent = weekly.get(item.weekly_scenario_id or "", "其他候选")
+        parent = background.get(item.weekly_scenario_id or "", "其他候选")
         child = (
             daily.get(item.daily_scenario_id, "其他候选") if item.daily_scenario_id else "历史区间"
         )
@@ -130,7 +140,10 @@ def relation_evidence(brief: Brief) -> tuple[str, ...]:
         for key, value in PATTERN.items():
             reason = reason.replace(key, value)
         wave = f"浪 {item.parent_wave_label}" if item.parent_wave_label else "浪段待定"
-        lines.append(f"周线{parent} · {wave} · 日线{child} · {status_text(item.status)} · {reason}")
+        lines.append(
+            f"{parent_label}{parent} · {wave} · {child_label}{child}"
+            f" · {status_text(item.status)} · {reason}"
+        )
     return tuple(lines)
 
 

@@ -16,7 +16,7 @@ from elliottwaver.evaluation.events import EVENT_SPECS
 from elliottwaver.evaluation.outcomes import OutcomeWindow, evaluate_outlook_event
 from elliottwaver.evaluation.replay import replay
 from elliottwaver.history import HistoryStore
-from elliottwaver.schemas.market import AnalysisRequest, Bar
+from elliottwaver.schemas.market import AnalysisRequest, Bar, MarketDataBundle
 from elliottwaver.schemas.outlook import OutlookCase, OutlookCondition
 from elliottwaver.schemas.wave import LevelCondition, PriceZone
 from elliottwaver.service import AnalysisService
@@ -127,6 +127,22 @@ def test_background_resample_refuses_an_incomplete_coarse_window():
     broken = bundle.model_copy(update={"bars": tuple(bars), "raw_bars": tuple(bars)})
     result = resample_bundle(broken, "60m", as_of=broken.as_of)
     assert all(not (bar.start_at <= removed.start_at < bar.end_at) for bar in result.bars)
+
+
+def test_snapshot_identity_ignores_default_provenance_coverage_fields():
+    bundle = demo_bundle("AAPL")
+    payload = bundle.model_dump(mode="json")
+    for key in (
+        "source_timeframe",
+        "aggregation",
+        "coverage_start",
+        "coverage_end",
+        "coverage_reason",
+        "asset_id",
+    ):
+        payload["provenance"].pop(key, None)
+    legacy = MarketDataBundle.model_validate(payload)
+    assert legacy.snapshot_id == bundle.snapshot_id
 
 
 def test_hierarchical_engine_accepts_intraday_timeframes():

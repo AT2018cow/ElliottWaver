@@ -78,4 +78,4 @@
 
 ## 小时线与分钟线
 
-个股已有单周期盘中分析入口。新增工作覆盖沪深指数盘中行情、分段回补、精确起浪点、盘中终端简报、同日历史对比和结算。按市场、品种、周期及实际 feed 验收，实测结果登记到验收索引。 [盘中实施方案](INTRADAY_IMPLEMENTATION_PLAN.md) · [验收记录](reviews/README.md)
+个股已有单周期盘中分析入口。新增工作覆盖沪深指数盘中行情、分段回补、精确起浪点、盘中终端简报、同日历史对比和结算。按市场、品种、周期及实际 feed 验收，实测结果登记到验收索引。 [盘中实施方案](INTRADAY_IMPLEMENTATION_PLAN.md) · [盘中验收](reviews/2026-11-23-intraday-acceptance.md) · [验收索引](reviews/README.md)

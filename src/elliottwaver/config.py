@@ -73,6 +73,7 @@ class ScoringConfig(Section):
 
 class DataConfig(Section):
     us_feed: Literal["sip", "iex"] = "sip"
+    us_index_feed: Literal["", "massive-index"] = ""
     cn_equity_intraday_feed: Literal["sina", "tushare-cn-equity"] = "sina"
     cn_index_intraday_feed: Literal["", "tushare-cn-index"] = ""
     request_timeout_seconds: float = Field(20, gt=0, le=60)
@@ -186,6 +187,16 @@ def alpaca_credentials() -> tuple[SecretStr, SecretStr]:
     if not key or not (secret or alias):
         raise InputError("Set ALPACA_API_KEY and ALPACA_API_SECRET in the environment or .env")
     return SecretStr(key), SecretStr(secret or alias)
+
+
+def massive_api_key() -> str:
+    from dotenv import dotenv_values
+
+    local = dotenv_values(".env")
+    token = os.environ.get("MASSIVE_API_KEY", local.get("MASSIVE_API_KEY", ""))
+    if not token:
+        raise InputError("Set MASSIVE_API_KEY in the environment or .env")
+    return token
 
 
 def tushare_token() -> str:

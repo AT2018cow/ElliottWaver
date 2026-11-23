@@ -24,6 +24,7 @@ scoring:
   temperature: 12.0
 data:
   us_feed: sip
+  us_index_feed: ""
   cn_equity_intraday_feed: sina
   cn_index_intraday_feed: ""
   request_timeout_seconds: 20

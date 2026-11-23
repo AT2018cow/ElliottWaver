@@ -15,7 +15,7 @@
 | IN-04 盘中简报与冻结观察窗 | 完成 | 发行后尚未开始的 5 根主周期 K 线；跨午休、周末和休市；最后一根 K 线结束/可用时刻；市场当地时间；`1h`/`60m` 同路径；`brief --timeframe auto` 对盘中快照自动采用快照周期。 |
 | IN-05 同日历史、结算和评估 | 完成 | SQLite 增加周期/feed/复权/最后 K 线字段和索引；同日按最后 K 线排序；5B 事件注册；盘中观察窗解析器与结算/评估共用；同根目标/失效、未知缺口、右删失、拆股换算和未来修订测试通过。 |
 | IN-06 自动化、真实行情、性能和发布 | 部分完成 | 全量 543 项测试、Ruff、格式、`pip check`、`git diff --check` 和 wheel 构建通过。真实 CN 个股 60m/5m 与美股 NVDA 60m SIP 简报通过；KSTR 5m SIP 因数据不足未发行；CN 指数、Tushare 真实权限、Massive 和性能 p50/p95 未完成。 |
-| IN-07 原生美股指数 | 阻塞 | 未取得 Massive 指数 API 凭证和可核对的接口回执，未写入未经验证的端点。路由、配置和独立验收保留为后续工作。 |
+| IN-07 原生美股指数 | 代码完成，真实权限阻塞 | 已接入 Massive `I:` 指数聚合接口、`SPX`/`NDX` 路由、`us_index_feed: massive-index` 和 `MASSIVE_API_KEY`；假响应验证 5m 原生指数、无成交量证据和 workflow 路由。真实 Massive 账户凭证未取得，未提交真实指数验收。 |
 
 ## 2. 改动文件
 
@@ -86,7 +86,7 @@ KSTR 5m 的真实快照未覆盖足够完整的历史/缺口，按方案继续�
 
 ### 4.4 原生美股指数
 
-IN-07 阻塞：未取得 Massive 指数 API 凭证和接口回执。没有用 ETF 或合成行情冒充原生指数，也没有写入未经验证的端点。该组合保留为后续独立验收。
+IN-07 代码完成、真实权限阻塞：已按 Massive 官方 `GET /v2/aggs/ticker/I:{indicesTicker}/range/{multiplier}/{timespan}/{from}/{to}` 接入 `SPX`/`NDX`，指数无成交量时保留 `volume_comparable=False`。假响应验证了 5m 会话过滤、日线背景、`I:` 身份和 workflow 路由。真实 `MASSIVE_API_KEY` 和指数计划回执未取得，未用 ETF 或合成行情冒充原生指数。
 
 ## 5. A-01 至 A-07 独立预期与实测
 
@@ -103,7 +103,7 @@ IN-07 阻塞：未取得 Massive 指数 API 凭证和接口回执。没有用 ET
 ## 6. 验证命令与结果
 
 ```text
-.venv/bin/python -m pytest tests -q              544 passed
+.venv/bin/python -m pytest tests -q              547 passed
 .venv/bin/ruff check src tests scripts           PASS
 .venv/bin/ruff format --check src tests scripts  PASS
 .venv/bin/python -m pip check                    No broken requirements found
@@ -114,7 +114,7 @@ Wheel：
 
 ```text
 elliottwaver-0.6.0-py3-none-any.whl
-sha256 1dee7c7cc802382b2edba39f58e934b9c19cb8b1b6e72da5fb43243a594c5197
+sha256 4607aeb67b4c67ba139ddd929b1fe5e09382fd8986e82011b98054ce3db5c12e
 ```
 
 ## 7. 未完成项与原因
@@ -122,6 +122,6 @@ sha256 1dee7c7cc802382b2edba39f58e934b9c19cb8b1b6e72da5fb43243a594c5197
 1. **IN-02 源块缓存/尾段增量**：当前仍是整包快照缓存。已加入覆盖范围、日线背景结束日和精确截止缓存键，但没有按交易日保存可复用源块、没有 `--refresh` 只取尾段、没有冲突修订表。原因：需要新增源块 schema、锁粒度和跨周期合并，本轮优先保证简报/结算/评估链路正确。
 2. **IN-03 盘中父子腿映射**：`hierarchical_v1` 已能计算盘中结构，`resample_bundle` 已提供固定背景配对；`timeframe_link` 仍按日/周 ISO 周分组，未泛化为盘中区间包含映射。盘中高级关联暂不声称通过。
 3. **IN-06 真实覆盖**：CN 指数、Tushare 真实权限、IEX 真实样本、BRK.B/SPY 全五周期和性能 p50/p95 未完成。原因：账户权限/凭证和样本时间限制。
-4. **IN-07**：Massive 指数 API 凭证和接口回执未取得，未实现未经验证的端点。
+4. **IN-07 真实权限**：Massive 指数适配器和假响应测试已完成；真实 `MASSIVE_API_KEY`/指数计划回执未取得，真实 SPX/NDX 逐周期证据待补。
 
 这些限制不影响已经通过的离线 5B 观察窗、同日历史、结算、评估和旧快照兼容路径；后续取得权限后按同一记录追加真实组合。

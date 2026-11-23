@@ -12,7 +12,8 @@
 | 沪深 A 股行情 | 新浪日线、因子、1/5/15/30/60 分钟；版本兼容与有期限的隔离进程；通过真实数据子集验证 |
 | 沪深京指数行情 | 新浪指数日线（`SH000*`、`SZ399*`、`BJ899*`），日线/周线；无复权，`feed=sina-index`。配置 `data.cn_index_intraday_feed: tushare-cn-index` 后接入 Tushare `idx_mins`，按 8000 行上限和交易时段回补；真实权限样本待账户回执 |
 | 美股行情 | Alpaca REST v2 适配器，显式 feed/adjustment/end、全部分页、资产 ID/类别/代码一致性核对、认证错误与重复 token 防护；日线/周线、DST、假期、提前收盘、完整周、raw/all 对齐和 SIP/IEX 分缓存已通过冻结响应与离线入口测试。AAPL、BRK.B、SPY 的真实 SIP 小样本和 AAPL 的 IEX 样本已通过，见[验收记录](reviews/2026-11-20-us-equity-acceptance.md) |
-| 主周期 | `1m、5m、15m、30m、60m、1d、1w`，支持 `1h` 别名；两市场合成样本全覆盖，A 股真实样本全周期覆盖；指数默认 `1d / 1w`，配置 Tushare 指数分钟后开放盘中周期 |
+| 美股指数 | `SPX`、`NDX`、`DJI`、`RUT`、`VIX` 独立路由；配置 `data.us_index_feed: massive-index` 和 `MASSIVE_API_KEY` 后接入 Massive `I:` 指数聚合，保留无成交量、`volume_comparable=False` 和 RTH 会话过滤。假响应验证 5m 原生指数、日线背景和 workflow 路由；真实 Massive 指数权限待补 |
+| 主周期 | `1m、5m、15m、30m、60m、1d、1w`，支持 `1h` 别名；两市场合成样本全覆盖，A 股真实样本全周期覆盖；CN 指数默认 `1d / 1w`，配置 Tushare 指数分钟后开放盘中周期；美股指数配置 Massive 后开放原生周期 |
 | 时间边界 | 不纳入未完成/尚不可用 bar；UTC 与交易所会话分开；节假日、DST、提前收市、午休、小时线尾段与完整周处理已测试 |
 | 复权 | 保存 raw 与因子；A 股基准日乘法复权；先复权日线再聚合周线；美股供应商 all 不进行二次复权 |
 | 分析 | ATR/MACD、三尺度因果 ZigZag、背景锚点与回退、有限 CSP 搜索、端点与完整影线区间硬规则；`--long-term` 20 年窗口/首尾锚点/宽桥接搜索/子浪认证，`--allow-gaps` 显式跳过停牌缺口 |
@@ -36,7 +37,7 @@
 以下为 `v0.6.0` 基线加本轮盘中增量后的验证结果。详细证据、快照 ID 和逐项命令见[盘中验收记录](reviews/2026-11-23-intraday-acceptance.md)。
 
 ```text
-python -m pytest tests -q              544 passed
+python -m pytest tests -q              547 passed
 ruff check src tests scripts           PASS
 ruff format --check src tests scripts  PASS
 pip check                             No broken requirements found

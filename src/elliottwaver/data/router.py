@@ -49,15 +49,17 @@ def route_symbol(symbol: str) -> Instrument:
     # Only these explicitly supported share-class aliases are normalized.
     aliases = {"BRK-B": "BRK.B", "BRK-A": "BRK.A", "BF-B": "BF.B", "BF-A": "BF.A"}
     canonical = aliases.get(text, text)
+    asset_type = asset_type_for("US", canonical)
     return Instrument(
-        instrument_id=f"US:{canonical}",
+        instrument_id=f"US_INDEX:{canonical}" if asset_type == "INDEX" else f"US:{canonical}",
         input_symbol=symbol,
         canonical_symbol=canonical,
         provider_symbol=canonical,
         market="US",
-        exchange="UNKNOWN",
+        exchange="US_INDEX" if asset_type == "INDEX" else "UNKNOWN",
         currency="USD",
         timezone="America/New_York",
+        tick_size=0.01,
     )
 
 

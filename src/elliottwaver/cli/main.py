@@ -22,6 +22,7 @@ from elliottwaver.config import (
     large_degree_settings,
     load_settings,
     long_term_settings,
+    massive_api_key,
     tushare_token,
 )
 from elliottwaver.data.calendar import parse_as_of
@@ -1038,6 +1039,11 @@ def run_doctor(market="US"):
         tushare_credentials = True
     except InputError:
         tushare_credentials = False
+    try:
+        massive_api_key()
+        massive_credentials = True
+    except InputError:
+        massive_credentials = False
     settings = load_settings()
     print(
         json.dumps(
@@ -1047,12 +1053,15 @@ def run_doctor(market="US"):
                 "packages": packages,
                 "alpaca_credentials_configured": credentials,
                 "tushare_token_configured": tushare_credentials,
+                "massive_api_key_configured": massive_credentials,
                 "cn_equity_intraday_feed": settings.data.cn_equity_intraday_feed,
                 "cn_index_intraday_feed": settings.data.cn_index_intraday_feed or None,
+                "us_index_feed": settings.data.us_index_feed or None,
                 "network_smoke": "NOT_RUN",
                 "supported_timeframes": TIMEFRAMES,
                 "index_timeframes": list(TIMEFRAMES)
                 if settings.data.cn_index_intraday_feed
+                or (market == "US" and settings.data.us_index_feed)
                 else ["1d", "1w"],
                 "supported_patterns": [template.name for template in TEMPLATES],
                 "bj_live": "INDEX_ONLY",

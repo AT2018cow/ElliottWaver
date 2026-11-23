@@ -15,8 +15,13 @@ class Contract(BaseModel):
     )
 
 
+US_INDEX_SYMBOLS = {"SPX", "NDX", "DJI", "RUT", "VIX"}
+
+
 def asset_type_for(market: str, canonical_symbol: str) -> Literal["EQUITY", "INDEX"]:
     """Derive the asset class from the exchange code without changing snapshots."""
+    if market == "US":
+        return "INDEX" if canonical_symbol in US_INDEX_SYMBOLS else "EQUITY"
     if market != "CN":
         return "EQUITY"
     code, _, exchange = canonical_symbol.partition(".")

@@ -6,6 +6,7 @@ from importlib.metadata import PackageNotFoundError, version
 from elliottwaver.config import Settings
 from elliottwaver.data.alpaca_provider import AlpacaProvider
 from elliottwaver.data.calendar import latest_analyzable, load_calendar
+from elliottwaver.data.massive_provider import MassiveIndexProvider
 from elliottwaver.data.periods import as_weekly, expected_starts, target_session
 from elliottwaver.data.router import route_symbol
 from elliottwaver.data.sina_provider import SinaProvider
@@ -39,7 +40,13 @@ def fetch_bundle(
     if request.start and request.start > target:
         raise InputError("Analysis start follows the latest available session")
     intraday = request.timeframe.endswith("m")
-    if instrument.market == "US":
+    if instrument.market == "US" and instrument.asset_type == "INDEX":
+        if not settings.data.us_index_feed:
+            raise DataError(
+                "US_INDEX_FEED_UNCONFIGURED: 配置 data.us_index_feed: massive-index 后才可请求原生美股指数"
+            )
+        feed = settings.data.us_index_feed
+    elif instrument.market == "US":
         feed = request.feed or settings.data.us_feed
     elif instrument.asset_type == "INDEX":
         if intraday:
@@ -52,10 +59,12 @@ def fetch_bundle(
             feed = "sina-index"
     else:
         feed = settings.data.cn_equity_intraday_feed if intraday else "sina"
-    if instrument.market == "CN" and request.feed:
+    if (instrument.market == "CN" or instrument.asset_type == "INDEX") and request.feed:
         raise InputError("--feed sip/iex applies only to US equities")
     try:
-        if instrument.market == "US":
+        if instrument.market == "US" and instrument.asset_type == "INDEX":
+            parser = "massive-v1"
+        elif instrument.market == "US":
             parser = "alpaca-rest-v1"
         elif feed.startswith("tushare"):
             parser = "tushare-v1"
@@ -65,13 +74,19 @@ def fetch_bundle(
             parser = "sina-v2/" + version("akshare")
     except PackageNotFoundError:
         parser = "unavailable"
-    if instrument.market == "US":
+    if instrument.market == "US" and instrument.asset_type == "INDEX":
+        adjustment_key = "none"
+    elif instrument.market == "US":
         adjustment_key = "all"
     elif instrument.asset_type == "INDEX":
         adjustment_key = "none"
     else:
         adjustment_key = "basis_date_qfq"
-    if instrument.market == "US":
+    if instrument.market == "US" and instrument.asset_type == "INDEX":
+        source_timeframe = request.timeframe if intraday else "1d"
+        aggregation = "none"
+        session_profile = "us_index_rth"
+    elif instrument.market == "US":
         source_timeframe = "1m" if request.timeframe == "1m" else "5m"
         aggregation = (
             "none"
@@ -151,7 +166,9 @@ def fetch_bundle(
                 ):
                     return store.save_at_cutoff(cached, request.as_of)
         source = provider or (
-            AlpacaProvider(settings.data, feed=feed)
+            MassiveIndexProvider(settings.data, feed=feed)
+            if instrument.market == "US" and instrument.asset_type == "INDEX"
+            else AlpacaProvider(settings.data, feed=feed)
             if instrument.market == "US"
             else TushareProvider(settings.data, feed=feed)
             if feed.startswith("tushare")

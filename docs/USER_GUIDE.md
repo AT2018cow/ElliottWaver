@@ -218,6 +218,20 @@ live 端点为 `https://api.alpaca.markets`。配置文件从当前工作目录�
 
 当前美股适配器已通过冻结响应、身份错配、分页、DST、假期、提前收盘、完整周、复权和离线入口测试；AAPL、BRK.B、SPY 的真实 SIP 小样本和 AAPL 的 IEX 样本也已通过，验收状态见[美股日用版验收](reviews/2026-11-20-us-equity-acceptance.md)。
 
+原生美股指数（`SPX`、`NDX`、`DJI`、`RUT`、`VIX`）与 ETF 分开路由。配置 `data.us_index_feed: massive-index` 并提供 `MASSIVE_API_KEY` 后，使用 Massive `I:` 指数聚合接口：
+
+```dotenv
+MASSIVE_API_KEY=你的密钥
+```
+
+```bash
+.venv/bin/elliottwaver doctor --market US
+.venv/bin/elliottwaver analyze SPX --timeframe 5m
+.venv/bin/elliottwaver brief NDX --timeframe 1h --format json
+```
+
+指数聚合不提供成交量，报告把 `volume_comparable` 标为 `False`，不会用 ETF 成交量替代。未配置 `us_index_feed` 时，请求 `SPX`/`NDX` 返回 `US_INDEX_FEED_UNCONFIGURED`。
+
 ### 4.3 沪深京指数
 
 无需 API key。指数使用新浪指数日线，来源标记为 `sina-index`，调整口径为 `none`，不计算复权因子。目前支持日线和周线：

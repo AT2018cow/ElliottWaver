@@ -31,6 +31,21 @@ index_guidance:
   max_chase_atr: 0.5
   near_tie_score: 3.0
   near_tie_min_coverage: 0.70
+  market_context: true
+  event_context: true
+  references: {}  # 例如 {"000688.SH": "000300.SH"}
+  context_files: {}  # 主指数代码对应本地 1.0 版事件与成分 JSON
+  context_sessions: 20
+  min_volatility_windows: 20
+  breadth_min_coverage: 0.70
+  intraday_tracking: true
+  intraday_trigger_timeframe: 15m
+  intraday_trigger: CLOSE  # CLOSE | TOUCH | RETEST
+  retest_tolerance_points: 0
+  intraday_max_age_minutes: 45
+  background_max_age_minutes: 180
+  volume_history_sessions: 20
+  min_volume_sessions: 5
 data:
   us_feed: sip
   us_equity_feed: alpaca  # alpaca | yahoo

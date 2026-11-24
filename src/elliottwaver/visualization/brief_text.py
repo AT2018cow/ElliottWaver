@@ -575,3 +575,116 @@ def guidance_sections(brief: Brief) -> tuple[tuple[str, tuple[str, ...]], ...]:
             lines.append("执行工具未配置")
         results.append((title, tuple(lines)))
     return tuple(results)
+
+
+CONTEXT_STATUS_TEXT = {
+    "AVAILABLE": "可用",
+    "NOT_CONFIGURED": "未配置",
+    "INPUT_MISSING": "等待数据",
+    "PERCENTILE_HISTORY_INSUFFICIENT": "分位样本不足",
+    "INSUFFICIENT_HISTORY": "历史不足",
+    "INCOMPLETE_HISTORY": "存在行情缺口",
+    "REFERENCE_SNAPSHOT_REQUIRED": "等待固定参照快照",
+    "REFERENCE_INPUT_UNAVAILABLE": "参照行情不可用",
+    "STALE_REFERENCE": "参照行情晚到或过期",
+    "SAME_INDEX": "参照与主指数相同",
+    "NOT_COMPARABLE": "标的、币种或价格口径不可比",
+    "INCOMPLETE_COMMON_SESSIONS": "共同交易日有缺口",
+    "CALENDAR_MISMATCH": "交易日历不一致",
+    "COVERAGE_UNAVAILABLE": "日历覆盖未提供",
+    "INSUFFICIENT_COVERAGE": "覆盖不足",
+    "MEMBERSHIP_UNAVAILABLE": "成分名单或行情不足",
+    "NO_DAILY_PLAN": "暂无已发行日线预案",
+    "PARENT_INACTIVE": "日线预案不可激活",
+    "PARENT_RECEIPT_UNAVAILABLE": "日线发行回执待核",
+    "PARENT_NOT_VISIBLE": "日线预案当时尚未发行",
+    "POLICY_NOT_FROZEN": "旧预案缺少冻结的盘中规则",
+    "RECEIPT_NOT_VISIBLE": "盘中行情尚未收到",
+    "BACKGROUND_60M_NOT_READY": "等待可用的 60 分钟背景",
+    "PRICE_BASIS_UNVERIFIED": "待核对日线与盘中指数点位",
+    "MISSING_15M_SLOT": "15 分钟行情有缺口",
+    "STALE_15M": "15 分钟行情过期",
+    "STALE_CROSSING": "触及时的证据晚到",
+    "PARENT_INVALIDATED": "日线预案盘中已失效",
+    "PARENT_EXPIRED": "已超过日线预案激活期限",
+    "TRIGGERED": "指数点位已触发",
+    "WAITING": "等待盘中确认",
+    "AMBIGUOUS": "同根先后待核",
+    "CHASE_LIMIT": "超过指数追价上限",
+    "VOLUME_NOT_COMPARABLE": "量能口径不可比",
+}
+
+
+def index_context_sections(brief: Brief) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    context = brief.index_context
+    if context is None:
+        return ()
+
+    def label(status):
+        return CONTEXT_STATUS_TEXT.get(status, status)
+
+    sections = []
+    trend = context.trend
+    reference = context.reference
+    breadth = context.breadth
+    if trend:
+        lines = []
+        if trend.return_pct is None:
+            lines.append(f"主指数背景 · {label(trend.status)}")
+        else:
+            lines.append(
+                f"{trend.start} 至 {trend.end} · {trend.sessions} 会话收益 {trend.return_pct:+.2f}%"
+            )
+            if trend.volatility_percentile is not None:
+                lines.append(
+                    f"日波动历史分位 {trend.volatility_percentile:.1f}% · {trend.prior_windows} 个参考窗口"
+                )
+            if trend.latest_overnight_gap_pct is not None:
+                lines.append(f"最近已观测隔夜跳空 {trend.latest_overnight_gap_pct:+.2f}%")
+        if reference and reference.symbol:
+            lines.append(
+                f"较 {reference.symbol} 的收益差 {reference.spread_pp:+.2f} 个百分点"
+                if reference.spread_pp is not None
+                else f"参照 {reference.symbol} · {label(reference.status)}"
+            )
+        if breadth and breadth.members:
+            lines.append(
+                f"成分上涨 {breadth.rising}/{breadth.comparable} · 可比成分 {breadth.comparable}/{breadth.members} · {label(breadth.status)}"
+            )
+        sections.append(("市场背景", tuple(lines)))
+    if context.intraday:
+        intraday = context.intraday
+        methods = {"TOUCH": "触价", "CLOSE": "收盘确认", "RETEST": "突破回踩"}
+        lines = [f"60 分钟背景 {intraday.background_bias}"]
+        for track in intraday.tracks:
+            horizon = "短线" if track.horizon == "SHORT" else "波段"
+            threshold = (
+                f" · 门槛 {price_text(track.threshold)}" if track.threshold is not None else ""
+            )
+            mode = f"15 分钟{methods[track.selected_method]} · " if track.selected_method else ""
+            lines.append(f"{horizon} · {mode}{label(track.status)}{threshold}")
+        if intraday.volume.value is not None:
+            lines.append(
+                f"同源同槽相对量 {intraday.volume.value:.2f} 倍 · {intraday.volume.sample_days} 日"
+            )
+        sections.append(("日线预案盘中跟踪", tuple(lines)))
+    if context.events:
+        lines = []
+        for window in context.events:
+            horizon = "短线" if window.horizon == "SHORT" else "波段"
+            lines.append(
+                f"{horizon} {window.start} 至 {window.end} · 调样 {label(window.rebalance_status)} · 业绩 {label(window.earnings_status)}"
+            )
+            if window.closed_weekdays:
+                lines.append("工作日休市 " + "、".join(map(str, window.closed_weekdays)))
+            if window.earnings_event_weight is not None:
+                lines.append(f"已知业绩披露权重 {window.earnings_event_weight:.1%}")
+            for row in window.events:
+                kind = "指数调样" if row.kind == "REBALANCE" else "业绩披露"
+                lines.append(
+                    f"{row.symbol} {kind} · {market_time_text(row.window_timestamp(brief.as_of), brief.symbol)}"
+                )
+        if next_open := context.events[0].next_open_at:
+            lines.append(f"下次开市 {market_time_text(next_open, brief.symbol)}")
+        sections.append(("持有期已知事件", tuple(lines)))
+    return tuple(sections)

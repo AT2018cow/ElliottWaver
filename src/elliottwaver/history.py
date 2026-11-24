@@ -9,7 +9,9 @@ from contextlib import closing
 from datetime import UTC, date, datetime
 from pathlib import Path
 
+from elliottwaver.errors import DataError
 from elliottwaver.schemas.brief import Brief
+from elliottwaver.schemas.index_plan import IndexPlan
 from elliottwaver.util import canonical_json, digest
 from elliottwaver.visualization.brief_formatter import read_brief_report, read_issuance
 
@@ -87,6 +89,24 @@ class HistoryStore:
                     """
                     CREATE TABLE IF NOT EXISTS live_issuances (
                         request_key TEXT PRIMARY KEY, brief_digest TEXT NOT NULL, report_path TEXT NOT NULL
+                    )
+                    """
+                )
+                db.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS index_plan_issuances (
+                        plan_digest TEXT NOT NULL, brief_digest TEXT NOT NULL,
+                        plan_id TEXT NOT NULL, revision INTEGER NOT NULL,
+                        PRIMARY KEY(plan_digest, brief_digest)
+                    )
+                    """
+                )
+                db.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS intraday_index_alerts (
+                        transition_id TEXT PRIMARY KEY, symbol TEXT NOT NULL, brief_digest TEXT NOT NULL,
+                        mode TEXT NOT NULL, first_seen_at TEXT NOT NULL,
+                        acknowledged_at TEXT, payload TEXT NOT NULL
                     )
                     """
                 )
@@ -183,6 +203,64 @@ class HistoryStore:
             )
         db.commit()
 
+    def plan_origin(
+        self,
+        symbol: str,
+        mode: str,
+        plan_id: str,
+        revision: int,
+        *,
+        plan: IndexPlan | None = None,
+        retrospective: bool = False,
+    ) -> dict | None:
+        identity = digest(plan) if plan else None
+        lineage = digest([symbol, "retrospective"] if retrospective else [symbol])
+        with closing(sqlite3.connect(self.path)) as db:
+            db.row_factory = sqlite3.Row
+            row = db.execute(
+                """
+                SELECT b.* FROM index_plan_issuances AS p JOIN briefs AS b USING (brief_digest)
+                WHERE b.symbol = ? AND b.mode = ? AND b.base_lineage_key = ?
+                AND p.plan_id = ? AND p.revision = ? AND (? IS NULL OR p.plan_digest = ?)
+                ORDER BY b.observed_at, b.brief_digest LIMIT 1
+                """,
+                (symbol, mode, lineage, plan_id, revision, identity, identity),
+            ).fetchone()
+            if row is not None:
+                return dict(row)
+            archived = db.execute(
+                """
+                SELECT * FROM briefs WHERE symbol = ? AND mode = ? AND base_lineage_key = ?
+                AND timeframe = '1d' AND (? IS NULL OR as_of = ?)
+                ORDER BY observed_at, brief_digest
+                """,
+                (
+                    symbol,
+                    mode,
+                    lineage,
+                    plan.decision_at.isoformat() if plan else None,
+                    plan.decision_at.isoformat() if plan else None,
+                ),
+            ).fetchall()
+        for row in archived:
+            try:
+                brief = self.load(row)
+            except DataError:
+                continue
+            if brief.index_guidance is not None and any(
+                track.plan is not None
+                and track.plan.plan_id == plan_id
+                and track.plan.revision == revision
+                and (plan is None or track.plan == plan)
+                and any(
+                    t.reason == "PLAN_ISSUED" and t.plan_id == plan_id and t.revision == revision
+                    for t in track.transitions
+                )
+                for track in brief.index_guidance.tracks
+            ):
+                return dict(row)
+        return None
+
     def lookup_issuance(self, key: str) -> tuple[Path, str] | None:
         with closing(sqlite3.connect(self.path)) as db:
             row = db.execute(
@@ -233,6 +311,25 @@ class HistoryStore:
                     (request_key, brief.brief_digest, str(report_path)),
                 )
             if brief.index_guidance is not None:
+                db.executemany(
+                    "INSERT OR IGNORE INTO index_plan_issuances VALUES (?, ?, ?, ?)",
+                    (
+                        (
+                            digest(track.plan),
+                            brief.brief_digest,
+                            track.plan.plan_id,
+                            track.plan.revision,
+                        )
+                        for track in brief.index_guidance.tracks
+                        if track.plan is not None
+                        and any(
+                            item.reason == "PLAN_ISSUED"
+                            and item.plan_id == track.plan.plan_id
+                            and item.revision == track.plan.revision
+                            for item in track.transitions
+                        )
+                    ),
+                )
                 first_seen = (visible_at or datetime.now(UTC)).isoformat()
                 db.executemany(
                     """
@@ -255,6 +352,39 @@ class HistoryStore:
                         )
                         for track in brief.index_guidance.tracks
                         for item in track.transitions
+                    ),
+                )
+            context = brief.index_context
+            if context is not None and context.intraday is not None:
+                first_seen = (visible_at or datetime.now(UTC)).isoformat()
+                db.executemany(
+                    """
+                    INSERT INTO intraday_index_alerts
+                    (transition_id, symbol, brief_digest, mode, first_seen_at, payload)
+                    VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(transition_id) DO NOTHING
+                    """,
+                    (
+                        (
+                            item.transition_id,
+                            brief.symbol,
+                            brief.brief_digest,
+                            brief.mode,
+                            first_seen,
+                            canonical_json(
+                                {
+                                    "horizon": track.horizon,
+                                    "plan_id": track.plan_id,
+                                    "revision": track.revision,
+                                    **item.model_dump(mode="json"),
+                                }
+                            ),
+                        )
+                        for track in context.intraday.tracks
+                        if track.status == "TRIGGERED"
+                        for item in track.variants
+                        if item.method
+                        == (track.selected_method or context.intraday.selected_method)
+                        and item.transition_id is not None
                     ),
                 )
             db.commit()
@@ -298,6 +428,53 @@ class HistoryStore:
             for row in rows
         ]
 
+    def intraday_alerts(self, symbol: str, *, brief_digest: str) -> list[dict]:
+        with closing(sqlite3.connect(self.path)) as db:
+            rows = db.execute(
+                """SELECT payload, first_seen_at, acknowledged_at FROM intraday_index_alerts
+                   WHERE symbol = ? AND brief_digest = ? ORDER BY first_seen_at DESC, transition_id""",
+                (symbol, brief_digest),
+            ).fetchall()
+        return [
+            {**json.loads(payload), "first_seen_at": seen, "acknowledged_at": ack}
+            for payload, seen, ack in rows
+        ]
+
+    def pending_intraday_alerts(
+        self,
+        symbol: str,
+        *,
+        mode: str | None = None,
+        as_of: date | None = None,
+    ) -> list[dict]:
+        with closing(sqlite3.connect(self.path)) as db:
+            rows = db.execute(
+                """
+                SELECT a.payload, a.first_seen_at, a.brief_digest, a.mode
+                FROM intraday_index_alerts AS a JOIN briefs AS b USING (brief_digest)
+                WHERE a.symbol = ? AND a.acknowledged_at IS NULL
+                AND (? IS NULL OR a.mode = ?) AND (? IS NULL OR b.market_asof <= ?)
+                ORDER BY a.first_seen_at DESC, a.transition_id
+                """,
+                (
+                    symbol,
+                    mode,
+                    mode,
+                    as_of.isoformat() if as_of else None,
+                    as_of.isoformat() if as_of else None,
+                ),
+            ).fetchall()
+        return [
+            {
+                **json.loads(payload),
+                "first_seen_at": seen,
+                "acknowledged_at": None,
+                "brief_digest": identity,
+                "mode": mode,
+            }
+            for payload, seen, identity, mode in rows
+        ]
+
     def acknowledge_reminder(self, symbol: str, transition_id: str, *, mode: str | None) -> bool:
         with closing(sqlite3.connect(self.path)) as db:
             cursor = db.execute(
@@ -307,6 +484,14 @@ class HistoryStore:
                 """,
                 (datetime.now(UTC).isoformat(), symbol, transition_id, mode, mode),
             )
+            if not cursor.rowcount:
+                cursor = db.execute(
+                    """
+                    UPDATE intraday_index_alerts SET acknowledged_at = COALESCE(acknowledged_at, ?)
+                    WHERE symbol = ? AND transition_id = ? AND (? IS NULL OR mode = ?)
+                    """,
+                    (datetime.now(UTC).isoformat(), symbol, transition_id, mode, mode),
+                )
             db.commit()
             return bool(cursor.rowcount)
 
@@ -318,6 +503,7 @@ class HistoryStore:
         mode: str | None = None,
         timeframe: str | None = None,
         limit: int = 50,
+        retrospective: bool | None = None,
     ) -> list[dict]:
         clauses = ["symbol = ?"]
         values: list[object] = [symbol]
@@ -330,6 +516,9 @@ class HistoryStore:
         if timeframe is not None:
             clauses.append("timeframe = ?")
             values.append(timeframe)
+        if retrospective is not None:
+            clauses.append("base_lineage_key = ?")
+            values.append(digest([symbol, "retrospective"] if retrospective else [symbol]))
         values.append(limit)
         with closing(sqlite3.connect(self.path)) as db:
             db.row_factory = sqlite3.Row

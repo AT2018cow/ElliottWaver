@@ -100,10 +100,41 @@ class IndexGuidanceConfig(Section):
     near_tie_score: float = Field(3.0, ge=0, le=100)
     near_tie_min_coverage: float = Field(0.7, ge=0, le=1)
     sizing: dict[str, IndexSizingInput] = Field(default_factory=dict)
+    market_context: bool = True
+    event_context: bool = True
+    references: dict[str, str] = Field(default_factory=dict)
+    context_files: dict[str, Path] = Field(default_factory=dict)
+    context_sessions: int = Field(20, ge=2, le=60)
+    min_volatility_windows: int = Field(20, ge=2, le=500)
+    breadth_min_coverage: float = Field(0.7, ge=0, le=1)
+    intraday_tracking: bool = True
+    intraday_trigger_timeframe: Literal["15m"] = "15m"
+    intraday_trigger: Literal["TOUCH", "CLOSE", "RETEST"] = "CLOSE"
+    retest_tolerance_points: float = Field(0, ge=0)
+    intraday_max_age_minutes: int = Field(45, ge=15, le=240)
+    background_max_age_minutes: int = Field(180, ge=60, le=480)
+    volume_history_sessions: int = Field(20, ge=3, le=60)
+    min_volume_sessions: int = Field(5, ge=3, le=60)
+
+    @model_validator(mode="after")
+    def volume_window(self):
+        if self.min_volume_sessions > self.volume_history_sessions:
+            raise ValueError("minimum volume sessions exceeds the history window")
+        return self
 
     @property
     def policy_hash(self) -> str:
-        return digest(["single-index-daily-v1", self.model_dump(exclude={"sizing", "enabled"})])
+        fields = {
+            "short_sessions",
+            "swing_sessions",
+            "activation_sessions",
+            "daily_trigger",
+            "near_atr",
+            "max_chase_atr",
+            "near_tie_score",
+            "near_tie_min_coverage",
+        }
+        return digest(["single-index-daily-v1", self.model_dump(include=fields)])
 
 
 class CacheConfig(Section):

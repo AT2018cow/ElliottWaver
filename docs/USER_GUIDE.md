@@ -397,6 +397,23 @@ A 股老指数/老股票原始数据可到 1990/1991 年；引擎日历从 **199
 
 如有明确有效期的手工工具和账户输入，可在 `index_guidance.sizing` 下以主指数代码填入 `instrument`、`as_of`、`valid_until`、`risk_budget`、`risk_per_unit`、`cost_per_unit`、`cash`、`liquidity_limit`、`lot_size`、`sellable_quantity`。结果按风险、现金和流动性三者的限额取最小值后按整手向下取整，可卖数量采用输入值。含账户输入的简报留在本地受控目录。
 
+### 4.6.2 单指数的盘中确认与市场背景
+
+默认日线简报增加主指数近 20 会话收益、日波动历史分位和当时已能观察到的隔夜跳空。可在 `index_guidance.references` 为主指数指定一个同市场、同币种的参照。实时模式使用配置的数据源。离线模式可同时提供 `--reference-snapshot`，比较两边共同的连续交易日，结果单位为百分点。
+
+```bash
+.venv/bin/elliottwaver brief 000688.SH --offline \
+  --snapshot "$MAIN_SNAPSHOT" --reference-snapshot "$REFERENCE_SNAPSHOT"
+.venv/bin/elliottwaver brief 000688.SH --timeframe 15m
+.venv/bin/elliottwaver history 000688.SH --timeframe 15m --json
+```
+
+15 分钟简报从本地同一模式的历史查找在当时已经发行的日线预案。日线、60 分钟和 15 分钟数据各自保存来源及可用时刻。默认用完整 15 分钟收盘确认，同时记录触价和回踩的备选观察。背景待齐、点位不可比、缺口、追价越限、同根冲突及父预案失效都有各自状态。跨 feed 需要两天完整的重叠原始指数行情核对。相对量使用同源且同一当地时段的历史中位量。原有 5 根盘中事件观察窗可独立结算。日线预案发行时冻结触发方式、回踩容差及数据时效，之后的配置调整只影响新预案。实时扫描使用实际接收时刻核对完整证据，隔夜仍有效的预案继续追踪前一会话的突破。未确认的盘中提醒可在历史页单独查到。
+
+可选事件与广度输入由 `index_guidance.context_files` 指定。每份 1.0 版 JSON 绑定主指数代码，支持 `membership`（成分生效时间、权重、公告和接收时刻）、`closes`（成分每日收盘、可用时点和价格口径）、`events`（调样或业绩、预计/实际时间、版本与撤回）和 `event_coverage`（来源覆盖区间和标的）。使用带时区的 ISO 8601 时间。导入后在缓存中按内容摘要留档。休市窗口始终按交易日历显示，公告和业绩覆盖缺失时显示对应状态。窗口内用每一天当时已知的同一组成分权重计算暴露和覆盖，分别报告最高暴露及最低覆盖。收市后，无有效预案的持有期从下一场交易会话计数，当天的已知事件仍可显示。
+
+配置中的 `market_context`、`event_context` 和 `intraday_tracking` 可独立开启或关闭。背景与事件只用于展示。盘中触发结果以指数点位及原始 K 线留证。
+
 ### 4.7 自选批量
 
 ```bash

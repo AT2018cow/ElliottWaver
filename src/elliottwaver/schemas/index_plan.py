@@ -102,6 +102,13 @@ class DevelopingEvidence(Contract):
         return self
 
 
+class IntradayPlanPolicy(Contract):
+    method: Literal["TOUCH", "CLOSE", "RETEST"]
+    retest_tolerance_points: float = Field(ge=0)
+    max_age_minutes: int = Field(ge=15)
+    background_max_age_minutes: int = Field(ge=60)
+
+
 class IndexPlan(Contract):
     plan_id: str
     revision: int = Field(ge=1)
@@ -139,6 +146,7 @@ class IndexPlan(Contract):
     near_atr: float = Field(ge=0)
     max_entry_index_price: float = Field(gt=0)
     confirmation: ConfirmationEvidence
+    intraday_policy: IntradayPlanPolicy | None = Field(None, exclude_if=lambda value: value is None)
 
     @model_validator(mode="after")
     def verify_policy(self):

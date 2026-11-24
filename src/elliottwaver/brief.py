@@ -1426,6 +1426,8 @@ def attach_previous(
             "previous": True,
             "generated_at": True,
             "index_guidance": True,
+            "index_context": True,
+            "schema_version": True,
             "outlook": {"issued_at"},
         }
         if (

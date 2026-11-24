@@ -18,6 +18,7 @@ from rich.table import Table
 from elliottwaver import __version__
 from elliottwaver.brief import attach_previous, build_brief
 from elliottwaver.cli.console_render import render_brief, render_result
+from elliottwaver.cli.index_context import attach_index_context, resolve_index_context
 from elliottwaver.config import (
     alpaca_credentials,
     large_degree_settings,
@@ -207,6 +208,7 @@ def _run_brief_core(
     symbol,
     *,
     snapshot=None,
+    reference_snapshot=None,
     offline=False,
     as_of=None,
     start=None,
@@ -337,6 +339,14 @@ def _run_brief_core(
     formats = tuple(format.split(",")) if format is not None else settings.output.formats
     formats = tuple(x.strip() for x in formats if x.strip() and x.strip() != "json")
     output_root = Path(output_dir) if output_dir else settings.output.directory
+    context = resolve_index_context(
+        run,
+        request,
+        settings,
+        history,
+        store,
+        reference_snapshot=reference_snapshot,
+    )
     request_key = (
         digest(
             [
@@ -347,6 +357,7 @@ def _run_brief_core(
                 settings.computation_hash,
                 settings.index_guidance,
                 brief_options,
+                context.identity if context is not None else None,
                 output_root.resolve(),
                 sorted(set(formats)),
                 renderer,
@@ -384,6 +395,7 @@ def _run_brief_core(
                 current_source=run.source,
                 previous_result=previous_result,
             )
+            run = attach_index_context(run, context, settings)
             store.save(run.source)
             store.save(run.prepared)
             if run.weekly_prepared is not None:
@@ -417,6 +429,7 @@ def run_brief(
     symbol,
     *,
     snapshot=None,
+    reference_snapshot=None,
     offline=False,
     as_of=None,
     start=None,
@@ -443,6 +456,7 @@ def run_brief(
     run, output = _run_brief_core(
         symbol,
         snapshot=snapshot,
+        reference_snapshot=reference_snapshot,
         offline=offline,
         as_of=as_of,
         start=start,
@@ -903,6 +917,16 @@ def run_history(
                     "path": row["report_path"],
                     **(
                         {
+                            "index_context": brief.index_context,
+                            "intraday_alerts": store.intraday_alerts(
+                                canonical, brief_digest=brief.brief_digest
+                            ),
+                        }
+                        if brief.index_context is not None
+                        else {}
+                    ),
+                    **(
+                        {
                             "index_guidance": brief.index_guidance,
                             "reminders": store.reminders(
                                 canonical, brief_digest=brief.brief_digest
@@ -933,7 +957,17 @@ def run_history(
                     "error": str(exc),
                 }
             )
+    pending = (
+        store.pending_intraday_alerts(canonical, mode=mode_value, as_of=_day(as_of))
+        if timeframe_value in {None, "15m"} and route_symbol(canonical).asset_type == "INDEX"
+        else []
+    )
     if json_output:
+        if pending:
+            if records:
+                records[0]["pending_intraday_alerts"] = pending
+            else:
+                records.append({"pending_intraday_alerts": pending})
         print(canonical_json(records))
     else:
         table = Table("周期", "行情截止", "模式", "状态", "主选", "上次变化", "摘要")
@@ -965,6 +999,13 @@ def run_history(
                     item["acknowledged_at"] or "—",
                 )
             Console().print(alerts)
+        if pending:
+            pending_table = Table("未查看的盘中提醒", "预案", "可用时刻")
+            for alert in pending:
+                pending_table.add_row(
+                    alert["transition_id"], alert["plan_id"], alert["observable_at"]
+                )
+            Console().print(pending_table)
         if not records:
             Console().print("没有找到历史摘要。")
     return records
@@ -1417,6 +1458,7 @@ else:
     def brief_command(
         symbol: str,
         snapshot: str | None = None,
+        reference_snapshot: str | None = None,
         offline: bool = False,
         as_of: str | None = None,
         start: str | None = None,

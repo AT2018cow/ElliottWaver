@@ -16,6 +16,7 @@ from elliottwaver.visualization.brief_text import (
     feed_text,
     forecast_row,
     guidance_sections,
+    index_context_sections,
     market_time_text,
     mode_text,
     omission_text,
@@ -125,6 +126,10 @@ def render_brief(brief: Brief, result: AnalysisResult | None = None) -> None:
             console.print(name, style="bold", markup=False)
             for line in lines:
                 console.print(f"  {line}", markup=False)
+    for name, lines in index_context_sections(brief):
+        console.print(name, style="bold", markup=False)
+        for line in lines:
+            console.print(f"  {line}", markup=False)
     render_outlook(brief, console=console)
     console.print()
     for line in comparison_text(brief):

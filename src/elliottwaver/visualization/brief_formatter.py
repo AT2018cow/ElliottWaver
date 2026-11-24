@@ -32,6 +32,7 @@ from elliottwaver.visualization.brief_text import (
     feed_text,
     forecast_row,
     guidance_sections,
+    index_context_sections,
     market_time_text,
     mode_text,
     omission_text,
@@ -78,7 +79,7 @@ def read_issuance(directory: Path, brief: Brief) -> datetime | None:
     manifest_bytes = (directory / "manifest.json").read_bytes()
     manifest = json.loads(manifest_bytes)
     if manifest["schema_version"] != "1.3" and not (
-        manifest["schema_version"] == "1.4" and manifest.get("mode") == "LIVE"
+        manifest["schema_version"] in {"1.4", "1.5"} and manifest.get("mode") == "LIVE"
     ):
         return None
     receipt = json.loads((directory / ISSUANCE_FILE).read_bytes())
@@ -310,6 +311,8 @@ def brief_markdown(brief: Brief, result: AnalysisResult | None = None) -> str:
         lines += ["## 单指数预案", ""]
         for name, content in sections:
             lines += [f"### {name}", "", *_md_items(content), ""]
+    for name, content in index_context_sections(brief):
+        lines += [f"## {name}", "", *_md_items(content), ""]
     if (heading := outlook_heading(brief)) is not None:
         lines += [f"## {heading}", ""]
     for title, content in summary_cards(brief):
@@ -382,6 +385,10 @@ def brief_html(brief: Brief, result: AnalysisResult | None = None) -> str:
         )
         if sections
         else ""
+    )
+    context = "".join(
+        f"<section><h2>{html.escape(name)}</h2>{_item_list(content)}</section>"
+        for name, content in index_context_sections(brief)
     )
     heading = outlook_heading(brief)
     outlook = f"<h2>{html.escape(heading)}</h2>" if heading else ""
@@ -456,7 +463,7 @@ th,td{{border:1px solid #d8e2ea;padding:8px;text-align:left}}
 <p>{html.escape(mode_text(brief.mode))} · {html.escape(feed_text(brief.feed))} ·
 {html.escape(adjustment_text(brief.adjustment))}</p>
 <p>分析价格 {price_text(brief.latest_price)}</p></header>
-{guidance}{outlook}{cards}{comparisons}{retrospective}
+{guidance}{context}{outlook}{cards}{comparisons}{retrospective}
 <p>{html.escape(forecast_message(brief.forecast_status))}</p>{forecasts}
 <p><a href="daily.html">打开 K 线图</a></p>
 <h2>核对依据</h2>{metrics}<p>{html.escape(omission_text(brief))}</p>
@@ -487,12 +494,12 @@ def read_brief_report(
         allowed = required | {"weekly.json", "report.md", "index.html", "daily.html", "weekly.html"}
         control_files = {"manifest.json"}
         requires_receipt = manifest["schema_version"] == "1.3" or (
-            manifest["schema_version"] == "1.4" and manifest.get("mode") == "LIVE"
+            manifest["schema_version"] in {"1.4", "1.5"} and manifest.get("mode") == "LIVE"
         )
         if requires_receipt:
             control_files.add(ISSUANCE_FILE)
         if (
-            manifest["schema_version"] not in {"1.0", "1.1", "1.2", "1.3", "1.4"}
+            manifest["schema_version"] not in {"1.0", "1.1", "1.2", "1.3", "1.4", "1.5"}
             or not required <= set(files) <= allowed
             or {p.name for p in directory.iterdir()} != set(files) | control_files
         ):
@@ -543,10 +550,23 @@ def read_brief_report(
         result = checked_analysis("daily.json", brief)
         if brief.weekly is not None:
             checked_analysis("weekly.json", brief.weekly)
-        if (manifest["schema_version"] == "1.4") != (brief.index_guidance is not None) or (
-            manifest["schema_version"] == "1.4" and manifest.get("mode") != brief.mode
+        planned_version = (
+            "1.5"
+            if brief.index_context is not None
+            else "1.4"
+            if brief.index_guidance is not None
+            else None
+        )
+        actual_version = manifest["schema_version"]
+        if (
+            (actual_version if actual_version in {"1.4", "1.5"} else None) != planned_version
+            or (planned_version is not None and manifest.get("mode") != brief.mode)
+            or (
+                brief.index_context is not None
+                and brief.index_context.main_snapshot_id != brief.input_snapshot_id
+            )
         ):
-            raise ValueError("invalid index guidance report version or mode")
+            raise ValueError("invalid index guidance report version, mode or input")
         if requires_receipt:
             read_issuance(directory, brief)
         return brief, result
@@ -584,6 +604,7 @@ def publish_brief(
         render_identity.append(PLOTLY_RENDER_VERSION)
     live = run.brief.mode == "LIVE"
     with_guidance = run.brief.index_guidance is not None
+    with_context = run.brief.index_context is not None
     if live:
         render_identity.append("live-issuance-v1")
     now = clock or (lambda: datetime.now(UTC))
@@ -627,7 +648,9 @@ def publish_brief(
             canonical_json(
                 {
                     "schema_version": (
-                        "1.4"
+                        "1.5"
+                        if with_context
+                        else "1.4"
                         if with_guidance
                         else (
                             "1.3"
@@ -635,7 +658,7 @@ def publish_brief(
                             else ("1.2" if run.brief.schema_version == "1.2" else "1.1")
                         )
                     ),
-                    **({"mode": run.brief.mode} if with_guidance else {}),
+                    **({"mode": run.brief.mode} if with_guidance or with_context else {}),
                     "renderer": renderer,
                     "brief_digest": run.brief.brief_digest,
                     "source_snapshot_id": run.brief.source_snapshot_id,

@@ -23,6 +23,7 @@ from elliottwaver.schemas.index_plan import (
     IndexSizing,
     IndexSizingInput,
     IndexTrack,
+    IntradayPlanPolicy,
     NextIndexPrice,
     PlanObservation,
     PlanState,
@@ -329,6 +330,12 @@ def build_index_guidance(
                 )
             )
             continue
+        intraday_policy = IntradayPlanPolicy(
+            method=policy.intraday_trigger,
+            retest_tolerance_points=policy.retest_tolerance_points,
+            max_age_minutes=policy.intraday_max_age_minutes,
+            background_max_age_minutes=policy.background_max_age_minutes,
+        )
         plan = IndexPlan(
             plan_id=digest(
                 [
@@ -342,6 +349,9 @@ def build_index_guidance(
                     primary.structure_key,
                     brief.last_bar_id,
                     periods[0].start_at,
+                    brief.as_of,
+                    brief.input_snapshot_id,
+                    intraday_policy,
                 ]
             )[:24],
             revision=1,
@@ -377,6 +387,7 @@ def build_index_guidance(
             near_atr=policy.near_atr,
             max_entry_index_price=ceiling,
             confirmation=confirmation,
+            intraday_policy=intraday_policy,
         )
         state = _wait_state(plan, brief.latest_price)
         tracks.append(

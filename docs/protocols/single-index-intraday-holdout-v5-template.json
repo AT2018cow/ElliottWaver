@@ -1,0 +1,29 @@
+{
+  "protocol_version": "1",
+  "protocol_id": "single-index-intraday-v5-template",
+  "feature_version": "5",
+  "data_status": "AWAITING_FORWARD_SNAPSHOT",
+  "cache_root": ".cache/elliottwaver",
+  "allow_gaps": false,
+  "samples": [
+    {
+      "symbol": "SPX",
+      "asset_type": "INDEX",
+      "source_timeframe": "60m",
+      "snapshot_id": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ],
+  "events": ["OUTLOOK_TARGET_FIRST_60M_5B_V1"],
+  "grid": {
+    "start": "2027-01-11",
+    "end": "2027-02-26",
+    "cadence": "EVERY_BAR",
+    "step": 1,
+    "outcome_as_of": "2027-03-02T22:00:00Z"
+  },
+  "release": {
+    "min_test_rows": 50,
+    "min_test_dates": 10,
+    "min_test_symbols": 5
+  }
+}

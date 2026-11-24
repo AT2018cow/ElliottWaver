@@ -259,3 +259,224 @@ def test_registry_queries_by_event_and_outlook_slot(tmp_path):
     assert registry.load_event_at(at, "OUTLOOK_TARGET_FIRST_5D_V1", "ALTERNATE_1")
     assert registry.active_event_at(at, "OUTLOOK_TARGET_FIRST_5D_V1", "PRIMARY") is None
     assert registry.active_event_at(at, "UNKNOWN_EVENT", "PRIMARY") is None
+
+
+def test_v5_intraday_registry_enforces_exact_scope_and_serves_only_approved_slot(tmp_path):
+    from datetime import UTC, date, datetime, timedelta
+
+    from elliottwaver.evaluation.events import EVENT_SPECS
+    from elliottwaver.forecast import ModelRegistry
+    from elliottwaver.service import engine_rules_version
+
+    event_id = "OUTLOOK_TARGET_FIRST_60M_5B_V1"
+    settings = Settings()
+    model = _model(event_id=event_id)
+    model.update(
+        feature_version="5",
+        engine_version=engine_rules_version(settings),
+        config_hash=settings.computation_hash,
+        expires_at="2024-03-01T00:00:00Z",
+        actual_span={"label_available_at": "2024-01-20T01:00:00Z"},
+    )
+    model["scope"].update(
+        timeframes=["60m"],
+        symbols=["SPX"],
+        asset_types=["INDEX"],
+        outlook_version="1.1",
+    )
+    model["splits"]["test"]["end"] = "2024-01-19"
+    entry = model["models"][event_id]
+    order = event_feature_order(event_id, "5")
+    entry.update(
+        feature_order=order,
+        mean=[0.0] * len(order),
+        scale=[1.0] * len(order),
+        weights=[[0.0, 0.0] for _ in order],
+        event_contract=EVENT_SPECS[event_id].horizon_contract,
+        index_holdout={"SPX": {"eligible": True}},
+    )
+    with pytest.raises(ValueError, match="support_bins class mismatch"):
+        validate_model(model, operational=True)
+    entry["index_holdout"]["SPX"]["support_bins"] = {
+        "NO": [{**entry["support_bins"]["NO"][0], "low": 0.2, "high": 0.4}],
+        "YES": [{**entry["support_bins"]["YES"][0], "low": 0.6, "high": 0.8}],
+    }
+    from math import log
+
+    entry["intercept"] = [0.0, log(7 / 3)]
+    assert validate_model(model, operational=True)
+    entry["event_contract"] = {**entry["event_contract"], "unit": "SESSIONS"}
+    with pytest.raises(ValueError, match="wrong event horizon"):
+        validate_model(model, operational=True)
+    entry["event_contract"] = EVENT_SPECS[event_id].horizon_contract
+    model["model_id"] = digest({k: v for k, v in model.items() if k != "model_id"})
+    artifact = tmp_path / "approved-fixture.json"
+    artifact.write_text(json.dumps(model))
+    registry = ModelRegistry(tmp_path / "registry")
+    approved = datetime(2024, 2, 10, tzinfo=UTC)
+    registry.register(artifact, approved_at=approved)
+    bundle = demo_bundle("SPX", timeframe="60m")
+    bar = next(b for b in bundle.bars if b.session_date == date(2024, 2, 21))
+    assert registry.active_event_at(approved - timedelta(seconds=1), event_id) is None
+    assert registry.active_event_at(model["expires_at"], event_id) is None
+    assert registry.active_models_at(model["expires_at"]) == []
+
+    assert registry.active_event_at(bar.usable_at, event_id, "ALTERNATE_1") is None
+    assert registry.active_event_at(bar.usable_at, event_id, "PRIMARY", feed="OTHER") is None
+    assert registry.active_event_at(bar.usable_at, event_id, "PRIMARY", timeframe="30m") is None
+    active = registry.active_event_at(bar.usable_at, event_id, "PRIMARY", timeframe="60m")
+    run = build_brief(
+        AnalysisRequest(
+            symbol="SPX", as_of=bar.usable_at, mode="FROZEN_DATA_REPLAY", timeframe="60m"
+        ),
+        bundle,
+        settings,
+        check_windows=False,
+        model=active["model"],
+    )
+    (forecast,) = run.brief.forecasts
+    assert forecast.status == "APPROVED"
+    assert forecast.outlook_slot == "PRIMARY" and forecast.horizon_unit == "BARS"
+    assert forecast.probabilities == pytest.approx({"NO": 0.3, "YES": 0.7})
+    outside = active["model"]
+    outside["models"][event_id]["intercept"] = [0.0, log(9)]
+    rerun = build_brief(
+        AnalysisRequest(
+            symbol="SPX", as_of=bar.usable_at, mode="FROZEN_DATA_REPLAY", timeframe="60m"
+        ),
+        bundle,
+        settings,
+        check_windows=False,
+        model=outside,
+    )
+    (forecast,) = rerun.brief.forecasts
+    assert forecast.status == "UNSUPPORTED_BIN" and forecast.probabilities is None
+
+
+def test_registry_approval_waits_for_last_label_receipt(tmp_path):
+    from elliottwaver.forecast import ModelRegistry
+
+    model = _model()
+    model["actual_span"] = {"label_available_at": "2024-03-02T01:00:00Z"}
+    model["model_id"] = digest({k: v for k, v in model.items() if k != "model_id"})
+    artifact = tmp_path / "model.json"
+    artifact.write_text(json.dumps(model))
+    registry = ModelRegistry(tmp_path / "registry")
+    with pytest.raises(ValueError, match="last holdout label receipt"):
+        registry.register(artifact, approved_at="2024-03-02T00:00:00Z")
+    registry.register(artifact, approved_at="2024-03-02T01:00:00Z")
+    assert registry.active_at("2024-03-02T00:59:59Z") is None
+    assert registry.active_at("2024-03-02T01:00:00Z")
+
+
+def test_live_brief_rechecks_expiry_when_cases_stay_the_same(monkeypatch):
+    from datetime import datetime, timedelta
+
+    import elliottwaver.brief as brief_module
+
+    bundle = demo_bundle("AAPL")
+    model = _model(event_id="OUTLOOK_TARGET_FIRST_5D_V1")
+    expiry = bundle.as_of + timedelta(seconds=2)
+    model["expires_at"] = expiry.isoformat()
+    now = expiry - timedelta(seconds=1)
+    forecasted = []
+
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return now.astimezone(tz)
+
+    actual = brief_module.forecasts_for_brief
+
+    def forecast(*args, **kwargs):
+        nonlocal now
+        computed = actual(*args, **kwargs)
+        forecasted.append((kwargs["outlook"].cases, computed))
+        now = expiry + timedelta(seconds=1)
+        return computed
+
+    monkeypatch.setattr(brief_module, "datetime", Clock)
+    monkeypatch.setattr(brief_module, "forecasts_for_brief", forecast)
+    live = build_brief(
+        AnalysisRequest(symbol="AAPL", as_of=bundle.as_of),
+        bundle,
+        Settings(),
+        include_weekly=False,
+        check_windows=False,
+        model=model,
+    ).brief
+    first, final = forecasted
+    assert first[0] == final[0]
+    assert any(item.status == "APPROVED" for item in first[1])
+    assert live.outlook.issued_at == now
+    assert not live.forecasts and all(not card.forecasts for card in live.cards)
+
+
+def test_cli_rerenders_if_model_expires_during_receipt_publication(tmp_path, monkeypatch):
+    from datetime import datetime, timedelta
+
+    import elliottwaver.brief as brief_module
+    import elliottwaver.cli.main as cli
+    from elliottwaver.forecast import ModelRegistry
+    from elliottwaver.history import HistoryStore
+    from elliottwaver.service import engine_rules_version
+    from elliottwaver.visualization import brief_formatter as formatter
+
+    bundle = demo_bundle("AAPL")
+    settings = Settings()
+    model = _model(event_id="OUTLOOK_TARGET_FIRST_5D_V1")
+    expiry = bundle.as_of + timedelta(seconds=2)
+    now = expiry - timedelta(seconds=1)
+    model.update(
+        expires_at=expiry.isoformat(),
+        config_hash=settings.computation_hash,
+        engine_version=engine_rules_version(settings),
+    )
+    model["model_id"] = digest({k: v for k, v in model.items() if k != "model_id"})
+    file = tmp_path / "model.json"
+    file.write_text(json.dumps(model))
+    registry = ModelRegistry(tmp_path / "registry")
+    registry.register(file, approved_at=bundle.as_of - timedelta(days=1))
+    original_write = formatter.atomic_write
+    receipt_writes = []
+
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return now.astimezone(tz)
+
+    def write(path, value):
+        nonlocal now
+        original_write(path, value)
+        if path.name == formatter.ISSUANCE_FILE:
+            receipt_writes.append(path)
+            now = expiry
+
+    def publish(run, *args):
+        return formatter.publish_brief(run, *args, clock=lambda: now)
+
+    cache, reports = tmp_path / "cache", tmp_path / "reports"
+    config = tmp_path / "config.yaml"
+    config.write_text(f"cache:\n  directory: {cache}\n")
+    monkeypatch.setattr(brief_module, "datetime", Clock)
+    monkeypatch.setattr(cli, "fetch_bundle", lambda *_args, **_kwargs: bundle)
+    monkeypatch.setattr(cli, "parse_as_of", lambda *_args, **_kwargs: bundle.as_of)
+    monkeypatch.setattr(cli, "publish_brief", publish)
+    monkeypatch.setattr(formatter, "atomic_write", write)
+    issued, path = cli._run_brief_core(
+        "AAPL",
+        config=config,
+        output_dir=reports,
+        format="json",
+        weekly=False,
+        window_check=False,
+        model_registry=registry.root,
+    )
+    assert len(receipt_writes) == 2 and receipt_writes[0] != receipt_writes[1]
+    assert not receipt_writes[0].exists()
+    assert not issued.brief.forecasts and all(not card.forecasts for card in issued.brief.cards)
+    assert list(reports.rglob("brief.json")) == [path / "brief.json"]
+    assert formatter.read_issuance(path, issued.brief) == expiry
+    assert [row["brief_digest"] for row in HistoryStore(cache).query("AAPL")] == [
+        issued.brief.brief_digest,
+    ]

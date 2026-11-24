@@ -8,8 +8,9 @@ import json
 import sys
 from bisect import bisect_left
 from collections import Counter, defaultdict
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pyarrow.parquet as pq
@@ -32,9 +33,11 @@ from elliottwaver.evaluation.decisions import (
     read_evaluation_manifest,
     split_windows,
 )
+from elliottwaver.evaluation.events import EVENT_SPECS
 from elliottwaver.evaluation.features import (
     FEATURE_VERSION,
     OUTLOOK_PRICE_FEATURES,
+    OUTLOOK_V5_PRICE_FEATURES,
     PATTERNS,
     STAGES,
     TARGET_FEATURES,
@@ -45,23 +48,9 @@ from elliottwaver.evaluation.forward import holdout_plan, live_receipt_key, live
 from elliottwaver.service import engine_rules_version
 from elliottwaver.util import atomic_write, canonical_json, digest
 
-CLOSE_EVENTS = {
-    "CLOSE_BAND_5D_V1",
-    "CLOSE_BAND_20D_V1",
-    "CLOSE_BAND_5W_V1",
-    "CLOSE_BAND_20W_V1",
-    "CLOSE_BAND_2W_V1",
-}
-CANDIDATE_EVENTS = {
-    "CONFIRM_FIRST_20D_V1",
-    "TARGET_FIRST_20D_V1",
-    "CONFIRM_FIRST_8W_V1",
-    "TARGET_FIRST_8W_V1",
-    "ADVANCE_FIRST_5D_V1",
-    "ADVANCE_FIRST_2W_V1",
-    "OUTLOOK_TARGET_FIRST_5D_V1",
-    "OUTLOOK_TARGET_FIRST_2W_V1",
-}
+CLOSE_EVENTS = {key for key, spec in EVENT_SPECS.items() if spec.scope == "SYMBOL"}
+CANDIDATE_EVENTS = {key for key, spec in EVENT_SPECS.items() if spec.scope == "CARD"}
+NEW_OUTLOOK_EVENTS = {key for key, spec in EVENT_SPECS.items() if spec.outlook}
 PRICE_FEATURES = ["log_return_20", "missing_return", "atr_ratio"]
 MOMENTUM_FEATURES = ["log_return_20"]
 DEFAULT_RELEASE = {
@@ -93,14 +82,15 @@ def _load_rows(directory: Path) -> tuple[dict[str, dict], list[dict]]:
 
 def _price_order(event_id: str, feature_version: str = FEATURE_VERSION) -> list[str]:
     order = list(PRICE_FEATURES)
-    if event_id in CANDIDATE_EVENTS:
+    spec = EVENT_SPECS[event_id]
+    if spec.scope == "CARD":
         order += ["confirm_distance", "invalidation_distance"]
-    if feature_version in {"3", "4"} and event_id.startswith(
-        ("TARGET_FIRST_", "OUTLOOK_TARGET_FIRST_")
-    ):
-        order += TARGET_FEATURES
-    if feature_version == "4" and event_id in CANDIDATE_EVENTS:
-        order += OUTLOOK_PRICE_FEATURES
+        if feature_version in {"3", "4", "5"} and spec.evaluator == "target_first":
+            order += TARGET_FEATURES
+        if feature_version in {"4", "5"}:
+            order += OUTLOOK_PRICE_FEATURES
+        if feature_version == "5" and spec.unit == "BARS":
+            order += OUTLOOK_V5_PRICE_FEATURES
     return order
 
 
@@ -108,44 +98,77 @@ def _features(event: dict, decision: dict, feature_order: list[str]) -> list[flo
     return feature_vector(feature_order, decision["features"], event.get("features"))
 
 
-NEW_OUTLOOK_EVENTS = {
-    event
-    for event in CANDIDATE_EVENTS
-    if event.startswith(("ADVANCE_FIRST_", "OUTLOOK_TARGET_FIRST_"))
-}
-
-
 def _label(event_id: str, status: str) -> int | None:
-    if event_id in CLOSE_EVENTS:
-        return {"UP": 0, "RANGE": 1, "DOWN": 2}.get(status)
-    if event_id in CANDIDATE_EVENTS:
-        if status in {"CONFIRMED_FIRST", "TARGET_FIRST"}:
-            return 1
-        if status in {"INVALIDATED_FIRST", "EXPIRED"}:
-            return 0
-        if event_id in NEW_OUTLOOK_EVENTS and status in {
-            "STAGE_EXIT_FIRST",
-            "AMBIGUOUS_SAME_BAR",
-        }:
-            return 0
-    return None
-
-
-def _event_horizon(event_id: str) -> int:
-    if "20D" in event_id or "20W" in event_id:
-        return 20
-    if "8W" in event_id:
-        return 8
-    if "2W" in event_id:
-        return 2
-    return 5
+    spec = EVENT_SPECS.get(event_id)
+    return spec.label(status) if spec else None
 
 
 def _block_size(event_id: str, cadence: str) -> int:
-    horizon = _event_horizon(event_id)
-    if event_id.endswith("D_V1") and cadence == "LAST_SESSION_OF_WEEK":
-        return max(1, (horizon + 4) // 5)
-    return horizon
+    spec = EVENT_SPECS[event_id]
+    if spec.unit == "BARS":
+        return 1  # All minute decisions in a market session share one bootstrap cluster.
+    if spec.unit == "SESSIONS" and cadence == "LAST_SESSION_OF_WEEK":
+        return max(1, (spec.horizon + 4) // 5)
+    return spec.horizon
+
+
+def _timestamp(value: str) -> datetime:
+    stamp = datetime.fromisoformat(value)
+    if stamp.utcoffset() is None:
+        raise ValueError("An intraday decision, due time or label requires an explicit timezone")
+    return stamp.astimezone(UTC)
+
+
+def _market_zone(decision: dict) -> ZoneInfo:
+    return ZoneInfo("Asia/Shanghai" if decision.get("market") == "CN" else "America/New_York")
+
+
+def _intraday_times(event: dict, decision: dict) -> dict | None:
+    spec = EVENT_SPECS[event["event_id"]]
+    if spec.timeframe != decision.get("timeframe"):
+        raise ValueError("Event timeframe does not match its decision")
+    if spec.unit != "BARS":
+        return {}
+    if (
+        event.get("horizon") != spec.horizon
+        or event.get("horizon_unit", spec.unit) != spec.unit
+        or event.get("outlook_version") != spec.outlook_version
+        or event.get("slot") not in {"PRIMARY", "ALTERNATE_1", "ALTERNATE_2"}
+    ):
+        raise ValueError("Intraday event does not match its registered horizon or slot")
+    if not event.get("due_at") or not event.get("label_available_at"):
+        return None
+    ready = _timestamp(decision.get("decision_at") or decision["as_of"])
+    ends = tuple(_timestamp(end) for end in event.get("period_ends") or ())
+    starts = tuple(_timestamp(start) for start in event.get("period_starts") or ())
+    due = _timestamp(event["due_at"])
+    label = _timestamp(event["label_available_at"])
+    bar_end = _timestamp(decision["last_bar_end_at"])
+    if (
+        len(ends) != spec.horizon
+        or len(starts) != spec.horizon
+        or bar_end > ready
+        or ready > starts[0]
+        or any(start >= end for start, end in zip(starts, ends, strict=True))
+        or any(a > b for a, b in zip(ends, starts[1:], strict=False))
+        or not ready < due == ends[-1] <= label
+        or due.astimezone(_market_zone(decision)).date().isoformat() != event["due_date"]
+    ):
+        raise ValueError("Intraday event timestamps do not match its complete frozen window")
+    return {"decision_at": ready, "due_at": due, "label_available_at": label}
+
+
+def _label_within_cutoff(event: dict, decision: dict, cutoff: str) -> bool:
+    received_at = _as_utc(datetime.fromisoformat(event["label_available_at"]))
+    if len(cutoff) == 10:
+        last_day = date.fromisoformat(cutoff)
+        return (
+            date.fromisoformat(event["due_date"]) <= last_day
+            and received_at.astimezone(_market_zone(decision)).date() <= last_day
+        )
+    last_instant = _timestamp(cutoff)
+    due_at = event.get("due_at")
+    return received_at <= last_instant and (due_at is None or _timestamp(due_at) <= last_instant)
 
 
 def _split_rows(rows, windows):
@@ -156,7 +179,13 @@ def _split_rows(rows, windows):
             if not (start <= row["decision_date"] <= row["due_date"] <= end):
                 continue
             available = row.get("label_available_at")
-            if available and date.fromisoformat(str(available)[:10]) > end:
+            if row.get("decision_at") is not None:
+                zone = _market_zone(row["decision"])
+                lower = datetime.combine(start, time.min, zone)
+                upper = datetime.combine(end + timedelta(days=1), time.min, zone)
+                if not lower <= row["decision_at"] < row["due_at"] <= available < upper:
+                    continue
+            elif available and date.fromisoformat(str(available)[:10]) > end:
                 continue
             selected.append(row)
         output[name] = selected
@@ -216,6 +245,9 @@ def _metrics(probabilities: np.ndarray, y: np.ndarray) -> dict:
 def _release(protocol: dict) -> dict:
     release = dict(DEFAULT_RELEASE)
     release.update(protocol.get("release", {}))
+    if any(EVENT_SPECS[event].unit == "BARS" for event in protocol["events"]):
+        for name in ("min_test_rows", "min_test_dates", "min_test_symbols"):
+            release[name] = max(release[name], DEFAULT_RELEASE[name])
     release["reliability_bins"] = [float(value) for value in release["reliability_bins"]]
     return release
 
@@ -487,11 +519,14 @@ def train(
         decision = decisions[event["decision_id"]]
         if event["event_id"] not in protocol["events"]:
             continue
+        if event["symbol"] != decision["symbol"]:
+            raise ValueError("Event does not match decision or training protocol")
         label = _label(event["event_id"], event["status"])
         if label is None or not decision.get("features") or not event.get("due_date"):
             continue
-        if event["symbol"] != decision["symbol"]:
-            raise ValueError("Event does not match decision or training protocol")
+        timestamps = _intraday_times(event, decision)
+        if timestamps is None:
+            continue
         if event["event_id"] in NEW_OUTLOOK_EVENTS and event.get("slot") != outlook_slot:
             continue
         cohorts[tuple(decision[key] for key in COHORT_KEYS)].append(
@@ -504,6 +539,7 @@ def train(
                 "features": event.get("features"),
                 "slot": event.get("slot"),
                 "label_available_at": event.get("label_available_at"),
+                **timestamps,
                 "y": label,
             }
         )
@@ -551,14 +587,13 @@ def _train_cohort(protocol, windows, manifest, cohort, rows, output_dir, *, symb
     models = {}
     timeframe = cohort[2]
     for event_id in sorted(
-        event
-        for event in protocol["events"]
-        if event.endswith("D_V1" if timeframe == "1d" else "W_V1")
+        event for event in protocol["events"] if EVENT_SPECS[event].timeframe == timeframe
     ):
         subset = [row for row in rows if row["event_id"] == event_id]
         split = _split_rows(subset, windows)
         train_rows, cal_rows, test_rows = (split[name] for name in ("train", "calibration", "test"))
-        n_classes = 3 if event_id in CLOSE_EVENTS else 2
+        spec = EVENT_SPECS[event_id]
+        n_classes = 3 if spec.scope == "SYMBOL" else 2
         classes = ["UP", "RANGE", "DOWN"] if n_classes == 3 else ["NO", "YES"]
         counts = {
             "train": len(train_rows),
@@ -570,6 +605,7 @@ def _train_cohort(protocol, windows, manifest, cohort, rows, output_dir, *, symb
                 "status": "INSUFFICIENT_EVIDENCE",
                 "event_id": event_id,
                 "event_version": "V1",
+                "event_contract": spec.horizon_contract,
                 "reason": "insufficient split rows or a missing training class",
                 "reasons": ["insufficient split rows or a missing training class"],
                 "sample_counts": counts,
@@ -642,6 +678,7 @@ def _train_cohort(protocol, windows, manifest, cohort, rows, output_dir, *, symb
             **evidence,
             "event_id": event_id,
             "event_version": "V1",
+            "event_contract": spec.horizon_contract,
             "feature_order": feature_order,
             "encoding": {
                 "patterns": PATTERNS if event_id in CANDIDATE_EVENTS else [],
@@ -673,7 +710,12 @@ def _train_cohort(protocol, windows, manifest, cohort, rows, output_dir, *, symb
     scope = {key: [value] for key, value in zip(SCOPE_KEYS, cohort, strict=True)}
     scope["symbols"] = list(symbols)
     if any(event_id in NEW_OUTLOOK_EVENTS for event_id in models):
-        scope.update({"outlook_version": "1.0", "outlook_slot": outlook_slot})
+        scope.update(
+            {
+                "outlook_version": "1.1" if timeframe.endswith("m") else "1.0",
+                "outlook_slot": outlook_slot,
+            }
+        )
     model = {
         "schema_version": "1.2",
         "feature_version": feature_version,
@@ -757,10 +799,9 @@ def _label_available_bounds(
     except (OSError, ValueError, KeyError):
         return None, None
     grid_end = date.fromisoformat(protocol["grid"]["end"])
-    cutoff_value = protocol["grid"].get("outcome_as_of")
-    cutoff = date.fromisoformat(cutoff_value) if cutoff_value else grid_end
+    cutoff_value = protocol["grid"].get("outcome_as_of") or grid_end.isoformat()
     cutoffs = [
-        _as_utc(datetime.fromisoformat(row["as_of"]))
+        _as_utc(datetime.fromisoformat(row.get("decision_at") or row["as_of"]))
         for row in decisions.values()
         if row.get("as_of") and date.fromisoformat(row["decision_date"]) <= grid_end
     ]
@@ -769,7 +810,7 @@ def _label_available_bounds(
         for row in events
         if row.get("label_available_at")
         and row.get("due_date")
-        and date.fromisoformat(row["due_date"]) <= cutoff
+        and _label_within_cutoff(row, decisions[row["decision_id"]], cutoff_value)
     ]
     return (max(cutoffs) if cutoffs else None, max(labels) if labels else None)
 
@@ -794,7 +835,7 @@ def freeze(
     requested_freeze = _as_utc(frozen_at) if frozen_at is not None else None
     development_end = max(
         date.fromisoformat(protocol["grid"]["end"]),
-        date.fromisoformat(protocol["grid"].get("outcome_as_of") or protocol["grid"]["end"]),
+        date.fromisoformat((protocol["grid"].get("outcome_as_of") or protocol["grid"]["end"])[:10]),
         date.fromisoformat(protocol["splits"]["test"]["end"]),
         last_decision.date() if last_decision is not None else date.min,
         last_label.date() if last_label is not None else date.min,
@@ -836,16 +877,18 @@ def freeze(
         if event_id not in models:
             raise ValueError(f"Frozen event not found: {event_id}")
         models = {event_id: models[event_id]}
-    new_events = {
-        key for key in models if key.startswith(("ADVANCE_FIRST_", "OUTLOOK_TARGET_FIRST_"))
-    }
+    new_events = set(models) & NEW_OUTLOOK_EVENTS
     if new_events and outlook_slot not in {"PRIMARY", "ALTERNATE_1", "ALTERNATE_2"}:
         raise ValueError("New outlook events require --outlook-slot")
+    if new_events and len(models) != 1:
+        raise ValueError("Freeze an outlook model with one explicit --event")
     if "CLOSE_BAND_2W_V1" in models and outlook_slot != "SYMBOL":
         raise ValueError("CLOSE_BAND_2W_V1 requires --outlook-slot SYMBOL")
     scope = dict(model["scope"])
     if outlook_slot is not None:
-        scope.update({"outlook_version": "1.0", "outlook_slot": outlook_slot})
+        scope.update(
+            {"outlook_version": scope.get("outlook_version", "1.0"), "outlook_slot": outlook_slot}
+        )
     actual_freeze = datetime.now(UTC)
     if requested_freeze is not None and requested_freeze > actual_freeze:
         raise ValueError("Historical split time cannot be in the future")
@@ -909,7 +952,14 @@ def _slot_matches(event: dict, candidate: dict) -> bool:
     event_id = event["event_id"]
     slot = (candidate.get("scope") or {}).get("outlook_slot")
     if event_id in NEW_OUTLOOK_EVENTS:
-        return slot is not None and event.get("slot") == slot
+        return (
+            slot is not None
+            and event.get("slot") == slot
+            and (
+                EVENT_SPECS[event_id].unit != "BARS"
+                or event.get("outlook_version") == EVENT_SPECS[event_id].outlook_version
+            )
+        )
     if event_id == "CLOSE_BAND_2W_V1":
         return slot == "SYMBOL"
     return True
@@ -953,6 +1003,7 @@ def seal(candidate_path: Path, protocol_path: Path, output: Path) -> dict:
         or protocol.get("data_status")
         not in {"AWAITING_FORWARD_SNAPSHOT", "SEALED_FORWARD_HOLDOUT"}
         or not set(candidate["models"]) <= set(protocol["events"])
+        or str(protocol.get("feature_version", FEATURE_VERSION)) != candidate["feature_version"]
     ):
         raise ValueError("Seal requires a newly frozen candidate and a future holdout")
     record = {
@@ -1042,6 +1093,49 @@ def _forward_evidence(
     }
 
 
+def _index_holdout(event_id, rows, classes, probabilities, baselines, release, cadence):
+    by_symbol = defaultdict(list)
+    local_release = {**release, "min_test_symbols": 1}
+    for i, row in enumerate(rows):
+        by_symbol[row["symbol"]].append(i)
+    results = {}
+    for symbol, indices in sorted(by_symbol.items()):
+        selected = [rows[i] for i in indices]
+        if (
+            len(selected) < release["min_test_rows"]
+            or len({row["decision_date"] for row in selected}) < release["min_test_dates"]
+        ):
+            results[symbol] = {
+                "eligible": False,
+                "reasons": ["index-specific holdout sample too small"],
+            }
+            continue
+        evidence = forecast_evidence(
+            event_id,
+            selected,
+            classes,
+            probabilities[indices],
+            {name: values[indices] for name, values in baselines.items()},
+            local_release,
+            cadence,
+        )
+        results[symbol] = {
+            "eligible": evidence["status"] == "APPROVED",
+            **{
+                name: evidence[name]
+                for name in (
+                    "test_rows",
+                    "test_dates",
+                    "reasons",
+                    "improvement",
+                    "supported_coverage",
+                    "support_bins",
+                )
+            },
+        }
+    return results
+
+
 def score(
     candidate_path: Path,
     holdout_dir: Path,
@@ -1075,14 +1169,27 @@ def score(
             )
     start = date.fromisoformat(protocol["grid"]["start"])
     stop = date.fromisoformat(protocol["grid"]["end"])
-    cutoff = date.fromisoformat(protocol["grid"]["outcome_as_of"])
+    cutoff_value = protocol["grid"]["outcome_as_of"]
+    markets = (candidate.get("scope") or {}).get("markets") or ()
+    cutoff_zone = _market_zone({"market": markets[0]}) if len(markets) == 1 else UTC
+    cutoff = (
+        date.fromisoformat(cutoff_value)
+        if len(cutoff_value) == 10
+        else _timestamp(cutoff_value).astimezone(cutoff_zone).date()
+    )
     if independent_after.date() >= start:
         raise ValueError("Holdout must start after the frozen candidate")
-    if (
-        manifest.get("decisions_sha256") == candidate.get("decisions_sha256")
-        or manifest.get("events_sha256") == candidate.get("events_sha256")
-        or manifest["files"].get("decisions.jsonl") == candidate.get("decisions_sha256")
-        or manifest["files"].get("events.parquet") == candidate.get("events_sha256")
+    reused_decisions = candidate["decisions_sha256"] in {
+        manifest.get("decisions_sha256"),
+        manifest["files"].get("decisions.jsonl"),
+    }
+    reused_events = candidate["events_sha256"] in {
+        manifest.get("events_sha256"),
+        manifest["files"].get("events.parquet"),
+    }
+    # Independent outages can produce byte-identical empty event tables.
+    if reused_decisions or (
+        reused_events and pq.ParquetFile(holdout_dir / "events.parquet").metadata.num_rows
     ):
         raise ValueError("Holdout reuses the development evaluation artifact")
     development_end = date.fromisoformat(
@@ -1120,21 +1227,30 @@ def score(
         label = _label(event_id, event["status"])
         if label is None or not event.get("due_date") or not event.get("label_available_at"):
             continue
+        timestamps = _intraday_times(event, decision)
+        if timestamps is None:
+            continue
         decision_date = date.fromisoformat(decision["decision_date"])
         due_date = date.fromisoformat(event["due_date"])
         label_available_at = _as_utc(datetime.fromisoformat(event["label_available_at"]))
-        if not (start <= decision_date <= stop and due_date <= cutoff):
+        if not (start <= decision_date <= stop) or not _label_within_cutoff(
+            event, decision, cutoff_value
+        ):
             continue
-        if label_available_at.date() > cutoff:
-            continue
-        if _as_utc(datetime.fromisoformat(decision["as_of"])) <= independent_after:
+        zone = _market_zone(decision) if timestamps else UTC
+        decision_time = timestamps.get("decision_at") or _as_utc(
+            datetime.fromisoformat(decision["as_of"])
+        )
+        if decision_time <= independent_after or (
+            timestamps and not start <= decision_time.astimezone(zone).date() <= stop
+        ):
             continue
         identity = (
             decision["symbol"],
-            decision_date,
+            _timestamp(decision["last_bar_end_at"]) if timestamps else decision_date,
             event_id,
             event.get("slot"),
-            event.get("candidate_key"),
+            None if timestamps else event.get("candidate_key"),
         )
         if identity in seen_rows:
             raise ValueError("Duplicate holdout row for a symbol/decision/position")
@@ -1149,6 +1265,7 @@ def score(
                 "features": event.get("features"),
                 "slot": event.get("slot"),
                 "label_available_at": label_available_at,
+                **timestamps,
                 "y": label,
             }
         )
@@ -1162,12 +1279,14 @@ def score(
     models = {}
     for event_id, frozen in candidate["models"].items():
         rows = rows_by_event.get(event_id, [])
+        counts = {**frozen.get("sample_counts", {}), "test": len(rows)}
         if not rows:
             models[event_id] = {
                 **frozen,
                 "status": "INSUFFICIENT_EVIDENCE",
                 "reason": "no holdout rows",
                 "reasons": ["no holdout rows"],
+                "sample_counts": counts,
             }
             continue
         if "feature_order" not in frozen or "weights" not in frozen:
@@ -1176,6 +1295,7 @@ def score(
                 "status": "INSUFFICIENT_EVIDENCE",
                 "reason": "frozen candidate has no fitted parameters",
                 "reasons": ["frozen candidate has no fitted parameters"],
+                "sample_counts": counts,
             }
             continue
         probabilities = _predict_frozen(rows, frozen, frozen["feature_order"])
@@ -1195,19 +1315,45 @@ def score(
             protocol["grid"]["cadence"],
         )
         baseline_metrics = metrics.pop("baseline_metrics")
+        if (
+            EVENT_SPECS[event_id].unit == "BARS"
+            and candidate["scope"].get("asset_types") == ["INDEX"]
+            and metrics["status"] == "APPROVED"
+        ):
+            metrics["index_holdout"] = _index_holdout(
+                event_id,
+                rows,
+                frozen["classes"],
+                probabilities,
+                baselines,
+                candidate["release"],
+                protocol["grid"]["cadence"],
+            )
+            if not any(row["eligible"] for row in metrics["index_holdout"].values()):
+                metrics["status"] = "INSUFFICIENT_EVIDENCE"
+                metrics["reasons"].append("no index clears the index-specific holdout gates")
         if not forward and metrics["status"] == "APPROVED":
             metrics["status"] = "INSUFFICIENT_EVIDENCE"
             metrics["reasons"] = ["Retrospective study is ineligible for operational approval"]
         models[event_id] = {
             **frozen,
             **metrics,
-            "sample_counts": {**frozen.get("sample_counts", {}), "test": len(rows)},
+            "sample_counts": counts,
             "baselines": {
                 name: {**baseline, "metrics": baseline_metrics[name]}
                 for name, baseline in frozen["baselines"].items()
             },
         }
     scope = dict(candidate["scope"])
+    qualified_indices = {
+        symbol
+        for value in models.values()
+        if value["status"] == "APPROVED"
+        for symbol, check in value.get("index_holdout", {}).items()
+        if check["eligible"]
+    }
+    if qualified_indices:
+        scope["symbols"] = sorted(qualified_indices)
     if not scope.get("symbols"):
         scope["symbols"] = sorted(
             {row["symbol"] for row in decisions.values() if _scope_matches(row, candidate)}
@@ -1252,6 +1398,11 @@ def score(
     }
     if evidence is not None:
         model["forward_evidence"] = evidence
+    if expiry := protocol.get("model_expires_at"):
+        checked = _timestamp(expiry)
+        if checked.date() <= cutoff:
+            raise ValueError("Model expiration must follow the complete holdout")
+        model["expires_at"] = checked.isoformat()
     model["model_id"] = digest(model)
     output_dir.mkdir(parents=True, exist_ok=True)
     atomic_write(output_dir / "model.json", canonical_json(model) + "\n")

@@ -7,6 +7,7 @@ from datetime import date, datetime, timedelta
 from elliottwaver.data.calendar import load_calendar
 from elliottwaver.data.periods import intraday_windows, uses_sparse_sina_auction
 from elliottwaver.engine.projector import Projection
+from elliottwaver.evaluation.events import INTRADAY_EVENTS
 from elliottwaver.schemas.brief import BriefCard
 from elliottwaver.schemas.market import MarketDataBundle
 from elliottwaver.schemas.outlook import (
@@ -21,7 +22,6 @@ from elliottwaver.timeframes import minutes
 
 _SLOTS = ("PRIMARY", "ALTERNATE_1", "ALTERNATE_2")
 _DOUBLE_THREE_MARKERS = ("双锯齿", "W终点", "X不可触及", "X端点")
-_INTRADAY_SUFFIX = {"1m": "1M", "5m": "5M", "15m": "15M", "30m": "30M", "60m": "60M"}
 
 
 def _intraday_periods(
@@ -213,15 +213,13 @@ def _case(
         target_mode = "AFTER_ADVANCE"
     else:
         target_mode = "ACTIVE"
-    suffix = (
-        f"{_INTRADAY_SUFFIX[timeframe]}_5B"
-        if horizon_unit == "BARS"
-        else "5D"
-        if horizon_unit == "SESSIONS"
-        else "2W"
-    )
+    if horizon_unit == "BARS":
+        advance_id, target_id = INTRADAY_EVENTS[timeframe]
+    else:
+        suffix = "5D" if horizon_unit == "SESSIONS" else "2W"
+        advance_id, target_id = f"ADVANCE_FIRST_{suffix}_V1", f"OUTLOOK_TARGET_FIRST_{suffix}_V1"
     advance_event = _event(
-        f"ADVANCE_FIRST_{suffix}_V1",
+        advance_id,
         advance and stop and not stop_hit,
         "STOP_ALREADY_HIT" if stop_hit else "NO_ADVANCE_GATE" if not advance else "NO_STOP",
     )
@@ -250,7 +248,7 @@ def _case(
         target=target,
         events=(
             advance_event,
-            _event(f"OUTLOOK_TARGET_FIRST_{suffix}_V1", target_ready, target_reason),
+            _event(target_id, target_ready, target_reason),
         ),
     )
 

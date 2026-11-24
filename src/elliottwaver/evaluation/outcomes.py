@@ -300,42 +300,44 @@ def intraday_outlook_window(
     issuance_factors: tuple[FactorPoint, ...] | None = None,
     outcome_as_of: date | datetime | None = None,
     price_scale: float = 1.0,
+    require_actual_receipt: bool = False,
 ) -> OutcomeWindow:
     """Observe exact intraday slots frozen by the issuing brief."""
     selected = tuple(periods[:horizon])
-    cutoff = bundle.as_of
+    receipt_cutoff = bundle.as_of
     if isinstance(outcome_as_of, datetime):
-        cutoff = min(cutoff, outcome_as_of)
+        receipt_cutoff = outcome_as_of
     elif outcome_as_of is not None:
         next_day = datetime.combine(
             outcome_as_of + timedelta(days=1), time.min, ZoneInfo(bundle.instrument.timezone)
         )
-        cutoff = min(cutoff, next_day - timedelta(microseconds=1))
+        receipt_cutoff = next_day - timedelta(microseconds=1)
+    bar_cutoff = min(bundle.as_of, receipt_cutoff)
     dates = tuple(period.end_session for period in selected)
     period_sessions = tuple(period.sessions for period in selected)
     starts = tuple(period.start_at for period in selected)
     ends = tuple(period.end_at for period in selected)
-    observed_through = max(
-        (bar.session_date for bar in bundle.bars if bar.is_final and bar.usable_at <= cutoff),
-        default=decision,
-    )
-    observed_at = max(
-        (bar.usable_at for bar in bundle.bars if bar.is_final and bar.usable_at <= cutoff),
-        default=None,
-    )
-    observed_end = max(
-        (bar.end_at for bar in bundle.bars if bar.is_final and bar.usable_at <= cutoff),
-        default=None,
-    )
     qfq = bundle.provenance.adjustment == "basis_date_qfq"
-    source = bundle.raw_bars if qfq else bundle.bars
     wanted = {(period.start_at, period.end_at) for period in selected}
-    eligible = tuple(
-        bar
-        for bar in source
-        if (bar.start_at, bar.end_at) in wanted and bar.is_final and bar.usable_at <= cutoff
-    )
-    source_ids = {bar.start_at: bar.bar_id for bar in eligible}
+    observed = []
+    eligible = []
+    source_ids = {}
+    for bar, raw in zip(bundle.bars, bundle.raw_bars, strict=True):
+        available = max(bar.usable_at, raw.usable_at)
+        if not bar.is_final or not raw.is_final or available > bar_cutoff:
+            continue
+        if require_actual_receipt:
+            available = max(available, bar.observed_at, raw.observed_at)
+            if available > receipt_cutoff:
+                continue
+        observed.append((bar, available))
+        if (bar.start_at, bar.end_at) in wanted:
+            selected_bar = raw if qfq else bar
+            eligible.append(selected_bar.model_copy(update={"available_at": available}))
+            source_ids[bar.start_at] = raw.bar_id
+    observed_through = max((bar.session_date for bar, _ in observed), default=decision)
+    observed_at = max((available for _, available in observed), default=None)
+    observed_end = max((bar.end_at for bar, _ in observed), default=None)
     if qfq and eligible:
         try:
             eligible = adjust_from_issuance(

@@ -41,7 +41,7 @@ from elliottwaver.schemas.brief import (
 )
 from elliottwaver.schemas.market import AnalysisRequest, MarketDataBundle
 from elliottwaver.schemas.wave import AnalysisResult, LevelCondition, WaveScenario
-from elliottwaver.service import AnalysisService, prepare_bundle
+from elliottwaver.service import AnalysisService, engine_rules_version, prepare_bundle
 from elliottwaver.util import digest
 
 _CODE = re.compile(r"^[A-Z][A-Z0-9_]+$")
@@ -713,30 +713,41 @@ def build_brief(
         qualified=context.qualified,
         models=active_models,
         weekly=forecast_weekly,
+        cross_timeframe=cross_timeframe,
+        engine_version=engine_rules_version(settings),
         candidate_ids={card.scenario_id for card in cards},
         wave_relations=wave_relations,
         window_state=window_comparison.state,
     )
+    forecast_at = issued_at if request.mode == "LIVE" else None
     forecasts = forecasts_for_brief(
-        result,
-        prepared,
-        indicators,
-        outlook=outlook,
-        **forecast_inputs,
+        result, prepared, indicators, outlook=outlook, issued_at=forecast_at, **forecast_inputs
     )
     generated_at = datetime.now(UTC)
     while issue_now:
         issued_at = max(request.as_of, generated_at)
-        if not outlook.periods or outlook.periods[0].start_at >= issued_at:
-            outlook = outlook.model_copy(update={"issued_at": issued_at})
-            break
+        on_time = not outlook.periods or outlook.periods[0].start_at >= issued_at
         previous_cases = outlook.cases
-        outlook = build_outlook(cards, result, prepared, context.projections, issued_at=issued_at)
-        # Forecast features depend on the cases, while the calendar fixes the event window.
-        if outlook.cases != previous_cases:
+        outlook = (
+            outlook.model_copy(update={"issued_at": issued_at})
+            if on_time
+            else build_outlook(cards, result, prepared, context.projections, issued_at=issued_at)
+        )
+        expiry_elapsed = any(
+            item.model_expires_at is not None and item.model_expires_at <= issued_at
+            for item in forecasts
+        )
+        if outlook.cases != previous_cases or expiry_elapsed:
             forecasts = forecasts_for_brief(
-                result, prepared, indicators, outlook=outlook, **forecast_inputs
+                result,
+                prepared,
+                indicators,
+                outlook=outlook,
+                issued_at=issued_at,
+                **forecast_inputs,
             )
+        elif on_time:
+            break
         generated_at = datetime.now(UTC)
     by_scenario = {}
     for item in forecasts:

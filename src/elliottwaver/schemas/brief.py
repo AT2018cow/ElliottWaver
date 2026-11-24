@@ -123,6 +123,7 @@ class BriefForecast(Contract):
     horizon_unit: Literal["SESSIONS", "WEEKS", "BARS"] = "SESSIONS"
     probabilities: dict[str, float] | None = None
     model_id: str | None = None
+    model_expires_at: AwareDatetime | None = Field(None, exclude_if=lambda value: value is None)
     reason: str | None = None
     scenario_id: str | None = None
     outlook_version: str | None = Field(None, exclude_if=lambda value: value is None)

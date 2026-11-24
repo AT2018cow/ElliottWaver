@@ -504,6 +504,8 @@ PROTOCOL=docs/protocols/roadmap-repair-2026-heldout-smoke.json
 
 盘中协议在 `samples[].source_timeframe` 写分钟周期，`grid.cadence` 使用 `EVERY_BAR`，`grid.step` 选择每隔多少根 K 线生成一个决策点。`events.parquet` 额外保留 `decision_at`、`due_at`、`period_starts`、`period_ends`、`trigger_bar_id`、`trigger_start_at` 和 `trigger_end_at`。评估、回放和结算使用同一个盘中观察窗解析器。
 
+单指数盘中概率研究可用 `feature_version: "5"`。它记录有符号门槛距离、实际背景周期和数据年龄，按原卡片位置、精确的决策时刻及完整 5 根 K 线的接收时刻做训练和留出。单指数研究样本和前向审批使用同一入口，审批仍执行成熟样本和适用范围检查。 [盘中训练与前向协议](protocols/README.md#单指数盘中概率研究)
+
 事件的期限、价格坐标和候选条件在决策时冻结。触价事件若在同一根 K 线上同时达到目标和失效边界，会标记 `AMBIGUOUS_SAME_BAR`。评估可以使用后来取得的冻结快照，`DECISION_TIME` 表示按模型批准时间选模，研究结果仍是冻结数据回放。
 
 样本较多时，可以把原协议分别复制到多个文件，每份只改 `samples`，从同一份源码分别跑评估，然后按完整协议合并。合并会检查样本覆盖、配置和生成各批结果的源码指纹。

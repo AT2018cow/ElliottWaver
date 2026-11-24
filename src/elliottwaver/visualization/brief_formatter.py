@@ -50,8 +50,12 @@ ISSUANCE_PENDING = ".issuance-pending"
 
 
 class PublicationWindowElapsed(ExportError):
-    def __init__(self, observed_at: datetime):
-        super().__init__("BRIEF_WINDOW_ELAPSED: 首个观察期已开始，需要重新发行")
+    def __init__(self, observed_at: datetime, *, forecast_expired: bool = False):
+        super().__init__(
+            "FORECAST_VALIDITY_ELAPSED: 概率模型已到期，需要重新发行"
+            if forecast_expired
+            else "BRIEF_WINDOW_ELAPSED: 首个观察期已开始，需要重新发行"
+        )
         self.observed_at = observed_at
 
 
@@ -61,6 +65,13 @@ def _check_publication_time(brief: Brief, readable_at: datetime) -> None:
         raise ValueError("publication clock precedes analysis")
     if outlook and outlook.issued_at and readable_at < outlook.issued_at:
         raise ValueError("publication clock precedes frozen outlook")
+    if any(
+        item.status == "APPROVED"
+        and item.model_expires_at is not None
+        and item.model_expires_at <= readable_at
+        for item in brief.forecasts
+    ):
+        raise PublicationWindowElapsed(readable_at, forecast_expired=True)
     if outlook and outlook.periods and outlook.periods[0].start_at < readable_at:
         raise PublicationWindowElapsed(readable_at)
     if brief.index_guidance is not None and any(

@@ -27,6 +27,7 @@ from elliottwaver.evaluation.features import (
     SUPPORTED_FEATURE_VERSIONS,
     candidate_features,
     decision_features,
+    intraday_outlook_features,
     outlook_features,
 )
 from elliottwaver.evaluation.forward import live_receipt_key, live_reports
@@ -41,7 +42,6 @@ from elliottwaver.evaluation.outcomes import (
 )
 from elliottwaver.forecast import (
     ModelRegistry,
-    event_horizon,
     forecasts_for_brief,
     load_model,
     validate_approval_time,
@@ -52,103 +52,16 @@ from elliottwaver.service import engine_rules_version
 from elliottwaver.timeframes import TIMEFRAMES
 from elliottwaver.util import atomic_write, canonical_json, digest, package_source_digest
 
-SUPPORTED_EVENTS = {
-    "CLOSE_BAND_5D_V1",
-    "CLOSE_BAND_20D_V1",
-    "CONFIRM_FIRST_20D_V1",
-    "TARGET_FIRST_20D_V1",
-    "CLOSE_BAND_5W_V1",
-    "CLOSE_BAND_20W_V1",
-    "CONFIRM_FIRST_8W_V1",
-    "TARGET_FIRST_8W_V1",
-    "CLOSE_BAND_2W_V1",
-    "ADVANCE_FIRST_5D_V1",
-    "ADVANCE_FIRST_2W_V1",
-    "OUTLOOK_TARGET_FIRST_5D_V1",
-    "OUTLOOK_TARGET_FIRST_2W_V1",
-}
-DAILY_EVENTS = {event for event in SUPPORTED_EVENTS if event.endswith("D_V1")}
-WEEKLY_EVENTS = {event for event in SUPPORTED_EVENTS if event.endswith("W_V1")}
-CLEAR_EVENTS = {
-    "TARGET_FIRST",
-    "INVALIDATED_FIRST",
-    "CONFIRMED_FIRST",
-    "EXPIRED",
-}
+SUPPORTED_EVENTS = set(EVENT_SPECS)
+DAILY_EVENTS = {event_id for event_id, spec in EVENT_SPECS.items() if spec.timeframe == "1d"}
+WEEKLY_EVENTS = {event_id for event_id, spec in EVENT_SPECS.items() if spec.timeframe == "1w"}
+CLEAR_EVENTS = {"TARGET_FIRST", "INVALIDATED_FIRST", "CONFIRMED_FIRST", "EXPIRED"}
 EVENT_SUCCESS = {
-    event: ("TARGET_FIRST", {"TARGET_FIRST", "INVALIDATED_FIRST", "EXPIRED"})
-    for event in ("TARGET_FIRST_20D_V1", "TARGET_FIRST_8W_V1")
+    event_id: (spec.success_label, spec.scored_states)
+    for event_id, spec in EVENT_SPECS.items()
+    if spec.scope == "CARD"
 }
-EVENT_SUCCESS.update(
-    {
-        event: ("CONFIRMED_FIRST", {"CONFIRMED_FIRST", "INVALIDATED_FIRST", "EXPIRED"})
-        for event in ("CONFIRM_FIRST_20D_V1", "CONFIRM_FIRST_8W_V1")
-    }
-)
-EVENT_SUCCESS.update(
-    {
-        event: (
-            "TARGET_FIRST",
-            {
-                "TARGET_FIRST",
-                "INVALIDATED_FIRST",
-                "STAGE_EXIT_FIRST",
-                "AMBIGUOUS_SAME_BAR",
-                "EXPIRED",
-            },
-        )
-        for event in ("OUTLOOK_TARGET_FIRST_5D_V1", "OUTLOOK_TARGET_FIRST_2W_V1")
-    }
-)
-EVENT_SUCCESS.update(
-    {
-        event: (
-            "CONFIRMED_FIRST",
-            {
-                "CONFIRMED_FIRST",
-                "INVALIDATED_FIRST",
-                "STAGE_EXIT_FIRST",
-                "AMBIGUOUS_SAME_BAR",
-                "EXPIRED",
-            },
-        )
-        for event in ("ADVANCE_FIRST_5D_V1", "ADVANCE_FIRST_2W_V1")
-    }
-)
 INTRADAY_EVENT_IDS = {event for pair in INTRADAY_EVENTS.values() for event in pair}
-SUPPORTED_EVENTS.update(INTRADAY_EVENT_IDS)
-EVENT_SUCCESS.update(
-    {
-        event: (
-            "TARGET_FIRST",
-            {
-                "TARGET_FIRST",
-                "INVALIDATED_FIRST",
-                "STAGE_EXIT_FIRST",
-                "AMBIGUOUS_SAME_BAR",
-                "EXPIRED",
-            },
-        )
-        for event in INTRADAY_EVENT_IDS
-        if event.startswith("OUTLOOK_TARGET_FIRST")
-    }
-)
-EVENT_SUCCESS.update(
-    {
-        event: (
-            "CONFIRMED_FIRST",
-            {
-                "CONFIRMED_FIRST",
-                "INVALIDATED_FIRST",
-                "STAGE_EXIT_FIRST",
-                "AMBIGUOUS_SAME_BAR",
-                "EXPIRED",
-            },
-        )
-        for event in INTRADAY_EVENT_IDS
-        if event.startswith("ADVANCE_FIRST")
-    }
-)
 
 
 def _parse_cutoff(value: str | None) -> date | datetime | None:
@@ -420,11 +333,10 @@ def _event_rows(protocol, decision, source, prepared, qualified, atr, *, price_s
     for event_id in protocol["events"]:
         if event_id not in allowed:
             continue
-        horizon = event_horizon(event_id)
+        spec = EVENT_SPECS[event_id]
+        horizon = spec.horizon
         cutoff = _parse_cutoff(protocol["grid"].get("outcome_as_of"))
-        frozen_event = event_id == "CLOSE_BAND_2W_V1" or event_id.startswith(
-            ("ADVANCE_FIRST_", "OUTLOOK_TARGET_FIRST_")
-        )
+        frozen_event = event_id == "CLOSE_BAND_2W_V1" or spec.outlook
         if frozen_event and (outlook.get("status") != "AVAILABLE" or not frozen_periods):
             continue
         if frozen_event and frozen_periods:
@@ -437,6 +349,7 @@ def _event_rows(protocol, decision, source, prepared, qualified, atr, *, price_s
                     issuance_factors=prepared.factors,
                     outcome_as_of=cutoff,
                     price_scale=price_scale,
+                    require_actual_receipt=decision.get("mode") == "LIVE",
                 )
             else:
                 window = outlook_window(
@@ -479,12 +392,13 @@ def _event_rows(protocol, decision, source, prepared, qualified, atr, *, price_s
                 else None
             )
         label_available_at = due_bar.usable_at.isoformat() if due_bar is not None else None
-        spec = EVENT_SPECS.get(event_id)
-        if (
-            spec is not None
-            and spec.scope == "CARD"
-            and event_id.startswith(("ADVANCE_FIRST", "OUTLOOK_TARGET_FIRST"))
-        ):
+        if intraday:
+            label_available_at = (
+                max(bar.usable_at for bar in window.bars).isoformat()
+                if len(window.bars) == horizon and all(window.bars)
+                else None
+            )
+        if spec.outlook:
             outlook = decision.get("outlook") or {}
             by_id = {scenario.scenario_id: scenario for scenario in qualified}
             for case_data in outlook.get("cases", []):
@@ -509,6 +423,17 @@ def _event_rows(protocol, decision, source, prepared, qualified, atr, *, price_s
                             window_state=(decision.get("window_comparison") or {}).get("state"),
                         )
                     )
+                    if intraday and str(protocol.get("feature_version", FEATURE_VERSION)) == "5":
+                        features.update(
+                            intraday_outlook_features(
+                                case,
+                                current,
+                                atr,
+                                prepared,
+                                decision["price_coordinate_id"],
+                                decision.get("cross_timeframe"),
+                            )
+                        )
                 rows.append(
                     {
                         "decision_id": decision["decision_id"],
@@ -516,6 +441,7 @@ def _event_rows(protocol, decision, source, prepared, qualified, atr, *, price_s
                         "as_of": decision["as_of"],
                         "event_id": event_id,
                         "horizon": horizon,
+                        "horizon_unit": spec.unit,
                         "due_date": str(due_date) if due_date is not None else None,
                         "due_at": due_at,
                         "label_available_at": label_available_at,
@@ -563,6 +489,7 @@ def _event_rows(protocol, decision, source, prepared, qualified, atr, *, price_s
                     "as_of": decision["as_of"],
                     "event_id": event_id,
                     "horizon": horizon,
+                    "horizon_unit": spec.unit,
                     "due_date": str(due_date) if due_date is not None else None,
                     "due_at": due_at,
                     "label_available_at": label_available_at,
@@ -894,6 +821,7 @@ def evaluate_protocol(
                     or run.brief.window_comparison != receipt.window_comparison
                     or run.brief.wave_relations != receipt.wave_relations
                     or run.brief.weekly != receipt.weekly
+                    or run.brief.cross_timeframe != receipt.cross_timeframe
                     or receipt.feed != bundle.provenance.feed
                     or receipt.adjustment != bundle.provenance.adjustment
                 ):
@@ -937,7 +865,10 @@ def evaluate_protocol(
                     models=active_models,
                     qualified=run.qualified,
                     weekly=weekly,
+                    cross_timeframe=run.brief.cross_timeframe,
+                    engine_version=engine_rules_version(settings),
                     outlook=run.brief.outlook,
+                    issued_at=issued.readable_at if issued is not None else None,
                     wave_relations=tuple(
                         item.model_dump(mode="json") for item in run.brief.wave_relations
                     ),
@@ -990,11 +921,7 @@ def evaluate_protocol(
                 )
                 decision = {
                     **identity,
-                    **(
-                        {"decision_at": issued.readable_at.isoformat()}
-                        if issued is not None
-                        else {}
-                    ),
+                    "decision_at": (issued.readable_at if issued else decision_cutoff).isoformat(),
                     "input_snapshot_id": prepared.snapshot_id,
                     "status": result.status,
                     "analyzable": analyzable,
@@ -1032,6 +959,11 @@ def evaluate_protocol(
                     "candidate_keys": [item.scenario_id for item in result.scenarios],
                     "anchors": [str(day) for day in result.diagnostics.anchors],
                     "price_coordinate_id": result.price_coordinate_id,
+                    "cross_timeframe": (
+                        run.brief.cross_timeframe.model_dump(mode="json")
+                        if run.brief.cross_timeframe
+                        else None
+                    ),
                     "search_truncated": result.diagnostics.search_truncated,
                     "confirmed_pivot_count": len(pivots),
                     "new_pivots": new_pivots,

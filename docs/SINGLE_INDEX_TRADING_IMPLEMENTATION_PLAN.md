@@ -21,7 +21,7 @@
 | D 成交与研究 | TD-04 → TD-14。TD-06 先登记开发边界和对照组，开发后封存候选及留出协议，所选组件齐备后评分 | 点位路径、工具成交及逐日净值可重算，能回答哪些交易因等待、滑点、退出或背景过滤改变结果。 |
 | E 概率 | TD-15 依赖 A 和 TD-12，前向批准依赖 TD-05、TD-06 | 五个分钟周期的训练/评分通路、版本化特征、独立留出结果。工程完成时允许交付“证据不足”。 |
 
-每批提交功能、对应编号的回归、用户手册增量和复现证据。先用每次运行一个指数的方式完成沪深与美股代表样本，再扩大同类数据源的验证范围。 [A 批实施与复验](reviews/2026-11-24-single-index-trading-first-batch.md) · [B 批实施与复验](reviews/2026-11-24-single-index-trading-batch-b.md) · [A、B 联合审查修复](reviews/2026-11-24-single-index-ab-review-repair.md) · [C 批实施与复验](reviews/2026-11-25-single-index-trading-batch-c.md) · [D 批实施与复验](reviews/2026-11-25-single-index-trading-batch-d.md)
+每批提交功能、对应编号的回归、用户手册增量和复现证据。先用每次运行一个指数的方式完成沪深与美股代表样本，再扩大同类数据源的验证范围。 [A 批实施与复验](reviews/2026-11-24-single-index-trading-first-batch.md) · [B 批实施与复验](reviews/2026-11-24-single-index-trading-batch-b.md) · [A、B 联合审查修复](reviews/2026-11-24-single-index-ab-review-repair.md) · [C 批实施与复验](reviews/2026-11-25-single-index-trading-batch-c.md) · [D 批实施与复验](reviews/2026-11-25-single-index-trading-batch-d.md) · [D 批审查修复](reviews/2026-11-25-single-index-batch-d-review-repair.md) · [E 批实施与复验](reviews/2026-11-25-single-index-trading-batch-e.md)
 
 ## 3. 数据契约、身份与调用关系
 

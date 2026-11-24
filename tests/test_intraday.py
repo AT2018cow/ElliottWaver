@@ -730,6 +730,7 @@ def test_intraday_protocol_writes_bar_level_decisions_and_5b_events(tmp_path):
     protocol = {
         "protocol_version": "1",
         "protocol_id": "intraday-test",
+        "feature_version": "5",
         "cache_root": str(cache),
         "samples": [
             {
@@ -769,6 +770,8 @@ def test_intraday_protocol_writes_bar_level_decisions_and_5b_events(tmp_path):
     assert {row["event_id"] for row in events} == set(protocol["events"])
     assert all(row["due_at"] for row in events)
     assert all(row["period_starts"] for row in events)
+    assert all(row["horizon_unit"] == "BARS" for row in events)
+    assert any(row["features"] and "advance_present" in row["features"] for row in events)
 
 
 @pytest.mark.parametrize(
@@ -1020,3 +1023,69 @@ def test_intraday_grid_supersedes_late_raw_bar(tmp_path):
         row["decision_id"] != skipped["decision_id"]
         for row in pq.read_table(out / "events.parquet").to_pylist()
     )
+
+
+@pytest.mark.parametrize("timeframe", ("1m", "5m", "15m", "30m", "60m"))
+@pytest.mark.parametrize("event_kind", (0, 1))
+@pytest.mark.parametrize("position", ("PRIMARY", "ALTERNATE_1", "ALTERNATE_2"))
+def test_registered_minute_labels_on_five_exact_bars(timeframe, event_kind, position):
+    from elliottwaver.evaluation.events import INTRADAY_EVENTS
+    from elliottwaver.timeframes import minutes
+
+    bundle = demo_bundle("SPX", timeframe=timeframe)
+    friday, monday = date(2024, 1, 5), date(2024, 1, 8)
+    cal = load_calendar(bundle.instrument, friday, monday)
+    friday_slots, monday_slots = (
+        tuple(intraday_windows(cal.session(day), minutes(timeframe))) for day in (friday, monday)
+    )
+    schedule = (*friday_slots[-2:], *monday_slots[:3])
+    periods = tuple(
+        OutlookPeriod(start_at=start, end_at=end, end_session=day, sessions=(day,))
+        for (start, end), day in zip(
+            schedule, [friday, friday, monday, monday, monday], strict=True
+        )
+    )
+    spec = EVENT_SPECS[INTRADAY_EVENTS[timeframe][event_kind]]
+    assert spec.horizon_contract == {"timeframe": timeframe, "unit": "BARS", "horizon": 5}
+    case = _intraday_case().model_copy(update={"slot": position, "target_mode": "ACTIVE"})
+
+    def evaluate(*, high=103, low=99, missing=False, censored=False, late=False):
+        bars = tuple(
+            Bar(
+                start_at=p.start_at,
+                end_at=p.end_at,
+                session_date=p.end_session,
+                open=101,
+                close=101,
+                high=high if i == 3 else 103,
+                low=low if i == 3 else 99,
+                volume=100,
+                observed_at=periods[-1].end_at + timedelta(minutes=3)
+                if late and i == 0
+                else p.end_at,
+            )
+            for i, p in enumerate(periods)
+            if not (missing and i == 0) and not (censored and i == 4)
+        )
+        source = bundle.model_copy(
+            update={"bars": bars, "raw_bars": bars, "as_of": bars[-1].usable_at}
+        )
+        origin = intraday_outlook_window(
+            source,
+            friday,
+            periods,
+            5,
+            require_actual_receipt=late,
+        )
+        return evaluate_outlook_event(spec, case, origin)
+
+    hit = evaluate(high=111)
+    assert hit.status == spec.success_label and spec.label(hit.status) == 1
+    assert hit.start_at == periods[3].start_at and hit.session == monday
+    assert evaluate(low=97).status == "INVALIDATED_FIRST"
+    assert evaluate(high=111, low=97).status == "AMBIGUOUS_SAME_BAR"
+    assert spec.label("AMBIGUOUS_SAME_BAR") == 0
+    assert evaluate().status == "EXPIRED"
+    assert evaluate(missing=True).status == evaluate(late=True).status == "INCOMPLETE_DATA"
+    assert evaluate(censored=True).status == "RIGHT_CENSORED"
+    assert spec.label("INCOMPLETE_DATA") is None

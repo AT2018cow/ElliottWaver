@@ -37,10 +37,47 @@ class EventSpec:
     success_label: str
     training_label: str
 
+    @property
+    def outlook(self) -> bool:
+        return self.event_id.startswith(("ADVANCE_FIRST_", "OUTLOOK_TARGET_FIRST_"))
+
+    @property
+    def outlook_version(self) -> str:
+        return "1.1" if self.unit == "BARS" else "1.0"
+
+    @property
+    def horizon_contract(self) -> dict:
+        return {"timeframe": self.timeframe, "unit": self.unit, "horizon": self.horizon}
+
+    @property
+    def scored_states(self) -> frozenset[str]:
+        if self.scope == "SYMBOL":
+            return frozenset({"UP", "RANGE", "DOWN"})
+        failures = {"INVALIDATED_FIRST", "EXPIRED"}
+        if self.outlook:
+            failures |= {"STAGE_EXIT_FIRST", "AMBIGUOUS_SAME_BAR"}
+        return frozenset({self.success_label, *failures})
+
+    def label(self, status: str) -> int | None:
+        if status not in self.scored_states:
+            return None
+        if self.scope == "SYMBOL":
+            return ("UP", "RANGE", "DOWN").index(status)
+        return int(status == self.success_label)
+
 
 EVENT_SPECS: dict[str, EventSpec] = {
     "CLOSE_BAND_5D_V1": EventSpec(
         "CLOSE_BAND_5D_V1", "1d", 5, "SESSIONS", "SYMBOL", "close_band", "UP", "UP"
+    ),
+    "CLOSE_BAND_20D_V1": EventSpec(
+        "CLOSE_BAND_20D_V1", "1d", 20, "SESSIONS", "SYMBOL", "close_band", "UP", "UP"
+    ),
+    "CLOSE_BAND_5W_V1": EventSpec(
+        "CLOSE_BAND_5W_V1", "1w", 5, "WEEKS", "SYMBOL", "close_band", "UP", "UP"
+    ),
+    "CLOSE_BAND_20W_V1": EventSpec(
+        "CLOSE_BAND_20W_V1", "1w", 20, "WEEKS", "SYMBOL", "close_band", "UP", "UP"
     ),
     "CLOSE_BAND_2W_V1": EventSpec(
         "CLOSE_BAND_2W_V1", "1w", 2, "WEEKS", "SYMBOL", "close_band", "UP", "UP"

@@ -134,3 +134,34 @@ done
 ETF 输入是 1.0 版 `ToolArchive` JSON。顶层包含 `mapping`、`cutoff`、`evidence` 和 `quotes`，另可声明 `actions`。三种来源类别为 `SYNTHETIC`、`FROZEN`、`RECEIVED`。每条 `quotes` 用 `quote_id`、本地 `session`、正式会话 `start_at/end_at`、最终行情 `observed_at` 及原始 `open/high/low/close` 标识。可选的 `opening_observed_at`、`bid/ask`、`opening_volume` 要取自该次开盘可得的证据；日总成交量不能填入可见开盘量。停牌或经证实不可交易时用 `tradable: false`。如可取得当日限价，提供 `lower_limit/upper_limit`。拆分用生效时刻、已知时刻和股数因子，分红用权益时刻、已知时刻、每份金额及到账时刻。拆分与同一时点的其他公司行动需要各自明确的生效顺序，无法区分顺序的档案会拒绝。费用和交易规则按生效日期排序并提供版本。时间字段带时区，价格和费用可用十进制字符串，详见 [输入契约](../../src/elliottwaver/schemas/index_execution.py)。
 
 输出 `issuance_grid.json` 记录按时、窗口外、漏发、待到期及跨段剔除。`plans.json` 可回溯预案与指数点位，`books.json` 逐笔记录各组订单、成交、费用、权益、持仓及净值，`summary.json` 给出比较、压力和配对退出结果。`manifest.json` 记录输入、源码、依赖及产物摘要。按摘要复验账本并记录证据来源。封存文件由本地系统生成，正式留存时应一并保存预先写入的时间证据。
+
+## 单指数盘中概率研究
+
+[盘中 v5 前向协议模板](single-index-intraday-holdout-v5-template.json) 以一个指数为例展示字段。`feature_version: "5"` 启用有符号门槛距离、条件是否存在、比较符、价格口径、背景周期及方向、冲突和数据年龄。价格基线保留相同的价格几何和缺失标记。`samples[].source_timeframe` 与事件的分钟周期相同，五种周期各有推进先达、目标先达两项 5 根 K 线事件。沿用 V1 定义，同根歧义计为未确认成功，未知缺口及未到期结果保持待核。正式评分只采用已经收到完整 5 根输入的标签。
+
+开发协议新增有序且不重叠的 `splits.train`、`splits.calibration`、`splits.test`，明确标出当地市场日期。按候选和卡片分别冻结，`--outlook-slot` 取 `PRIMARY`、`ALTERNATE_1` 或 `ALTERNATE_2`。测试和留出按当天的决策 bar 区分，按市场交易会话做成组重抽样。实际标签接收时刻和预定到期时刻都会用于分段。`grid.outcome_as_of` 可登记精确的带时区截止。
+
+```bash
+.venv/bin/python scripts/evaluate_briefs.py --protocol DEV.json --output-dir DEV_EVAL
+.venv/bin/python -m scripts.train_forecasts freeze --protocol DEV.json \
+  --decisions DEV_EVAL --output CANDIDATE.json --outlook-slot PRIMARY \
+  --event OUTLOOK_TARGET_FIRST_60M_5B_V1
+.venv/bin/python scripts/evaluate_briefs.py --protocol HISTORICAL.json --output-dir HISTORICAL_EVAL
+.venv/bin/python -m scripts.train_forecasts score --candidate CANDIDATE.json \
+  --holdout HISTORICAL_EVAL --output-dir HISTORICAL_SCORE
+```
+
+历史留出用 `HISTORICAL_HOLDOUT` 和独立日期。正式前向在新决策前先封存 `AWAITING_FORWARD_SNAPSHOT`，归档预定时段的实时简报、可核验发行回执和原输入快照。到期取得实际行情后，将同一协议改为 `SEALED_FORWARD_HOLDOUT` 并填入快照 ID。评分分别使用快照的行情覆盖截止和协议允许的实际接收截止。带时区的截止按时刻比较，纯日期按各市场当地交易日比较。评分验证候选、封存协议、生成源码、原卡片、回执时间和标签启用时点。最后一条留出标签可用后才可批准。可在封存协议预填 `model_expires_at`，实时简报会在实际发布时复查模型是否仍有效。
+
+```bash
+.venv/bin/python -m scripts.train_forecasts seal --candidate CANDIDATE.json \
+  --protocol FORWARD.json --output SEAL.json
+.venv/bin/python scripts/evaluate_briefs.py --protocol FORWARD.json \
+  --output-dir FORWARD_EVAL --live-reports LIVE_REPORTS
+.venv/bin/python -m scripts.train_forecasts score --candidate CANDIDATE.json \
+  --holdout FORWARD_EVAL --output-dir FORWARD_SCORE --seal SEAL.json --live-reports LIVE_REPORTS
+```
+
+单指数样本用于历史诊断和策略研究。分钟模型的操作性门槛要求至少 50 个测试样本、10 个交易日及 5 个标的，并通过校准和三种基线比较。指数模型还逐个检查目标指数的留出表现，并保留该指数自己的校准分箱。简报显示的概率同时通过合并样本和该指数分箱。注册表在决策时查验标的、周期、feed、复权、卡片、批准和到期时间。模型注册和简报显示继续使用现有入口。
+
+合成回归和冻结行情验证可在本地运行。前向质量要用真实留出期间逐次采集的资料，采集环境可以是本地主机或服务器。若专门验收 Modal 部署，另核对实际自然调度与业务发行回执。

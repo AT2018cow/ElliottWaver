@@ -12,6 +12,7 @@ from pathlib import Path
 import numpy as np
 
 from elliottwaver.evaluation.calibration import predict
+from elliottwaver.evaluation.events import EVENT_SPECS
 from elliottwaver.evaluation.features import (
     FEATURE_VERSION,
     SUPPORTED_FEATURE_VERSIONS,
@@ -19,61 +20,61 @@ from elliottwaver.evaluation.features import (
     decision_features,
     event_feature_order,
     feature_vector,
+    intraday_outlook_features,
     outlook_features,
 )
 from elliottwaver.schemas.brief import BriefForecast
 from elliottwaver.schemas.outlook import BriefOutlook
 from elliottwaver.util import atomic_write, digest
 
-CLOSE_EVENTS = {
-    "CLOSE_BAND_5D_V1",
-    "CLOSE_BAND_20D_V1",
-    "CLOSE_BAND_5W_V1",
-    "CLOSE_BAND_20W_V1",
-    "CLOSE_BAND_2W_V1",
-}
-CANDIDATE_EVENTS = {
-    "CONFIRM_FIRST_20D_V1",
-    "TARGET_FIRST_20D_V1",
-    "CONFIRM_FIRST_8W_V1",
-    "TARGET_FIRST_8W_V1",
-    "ADVANCE_FIRST_5D_V1",
-    "ADVANCE_FIRST_2W_V1",
-    "OUTLOOK_TARGET_FIRST_5D_V1",
-    "OUTLOOK_TARGET_FIRST_2W_V1",
-}
-for _timeframe, _suffix in {
-    "1m": "1M",
-    "5m": "5M",
-    "15m": "15M",
-    "30m": "30M",
-    "60m": "60M",
-}.items():
-    CANDIDATE_EVENTS.add(f"ADVANCE_FIRST_{_suffix}_5B_V1")
-    CANDIDATE_EVENTS.add(f"OUTLOOK_TARGET_FIRST_{_suffix}_5B_V1")
+CLOSE_EVENTS = {key for key, spec in EVENT_SPECS.items() if spec.scope == "SYMBOL"}
+CANDIDATE_EVENTS = {key for key, spec in EVENT_SPECS.items() if spec.scope == "CARD"}
 
 
 def event_horizon(event_id: str) -> int:
-    if "20D" in event_id or "20W" in event_id:
-        return 20
-    if "8W" in event_id:
-        return 8
-    if "2W" in event_id:
-        return 2
-    return 5
+    return EVENT_SPECS[event_id].horizon
 
 
 def _horizon_unit(event_id: str) -> str:
-    if event_id.endswith("5B_V1"):
-        return "BARS"
-    return "WEEKS" if event_id.endswith("W_V1") else "SESSIONS"
+    return EVENT_SPECS[event_id].unit
 
 
 def _finite(values) -> bool:
     return all(math.isfinite(float(value)) for value in values)
 
 
+def _validate_bins(support, classes, event_id, *, release=None) -> None:
+    if not isinstance(support, dict) or set(support) != set(classes):
+        raise ValueError(f"MODEL_INVALID: support_bins class mismatch for {event_id}")
+    for class_name, bins in support.items():
+        if not isinstance(bins, list):
+            raise ValueError(f"MODEL_INVALID: support_bins for {class_name} must be a list")
+        if release and not bins:
+            raise ValueError(f"MODEL_INVALID: empty support for {event_id}")
+        for item in bins:
+            if not isinstance(item, dict) or not (
+                0.0 <= float(item["low"]) < float(item["high"]) <= 1.0
+            ):
+                raise ValueError(f"MODEL_INVALID: invalid support bin for {event_id}")
+            if release:
+                ci = item.get("calibration_gap_ci")
+                if (
+                    item.get("count", 0) < release["min_bin_count"]
+                    or item.get("dates", 0) < release["min_bin_dates"]
+                    or item.get("occupied_blocks", 0) < 2
+                    or not isinstance(ci, list)
+                    or len(ci) != 2
+                    or not -release["reliability_tolerance"]
+                    <= ci[0]
+                    <= ci[1]
+                    <= release["reliability_tolerance"]
+                ):
+                    raise ValueError(f"MODEL_INVALID: unverified support bin for {event_id}")
+
+
 def validate_model(model: dict, *, operational: bool = False) -> dict:
+    _model_expiry(model)
+    label_available_at = _last_holdout_receipt(model)
     models = model.get("models")
     if not isinstance(models, dict) or not models:
         raise ValueError("MODEL_INVALID: models must be a non-empty mapping")
@@ -87,9 +88,7 @@ def validate_model(model: dict, *, operational: bool = False) -> dict:
         raise ValueError("MODEL_INVALID: invalid scoped symbols")
     scope = model.get("scope") or {}
     new_outlook_events = {
-        event_id
-        for event_id in models
-        if event_id.startswith(("ADVANCE_FIRST_", "OUTLOOK_TARGET_FIRST_"))
+        event_id for event_id in models if event_id in EVENT_SPECS and EVENT_SPECS[event_id].outlook
     }
     new_close_event = "CLOSE_BAND_2W_V1" in models
     if new_outlook_events or new_close_event:
@@ -165,6 +164,9 @@ def validate_model(model: dict, *, operational: bool = False) -> dict:
             if frozen_at > sealed_at or sealed_at.date() >= test_start:
                 raise ValueError("MODEL_INVALID: holdout was not sealed before the test")
     for event_id, entry in models.items():
+        spec = EVENT_SPECS.get(event_id)
+        if spec is None:
+            raise ValueError(f"MODEL_INVALID: unknown event {event_id}")
         if not isinstance(entry, dict):
             raise ValueError(f"MODEL_INVALID: {event_id} entry must be an object")
         status = entry.get("status")
@@ -175,8 +177,39 @@ def validate_model(model: dict, *, operational: bool = False) -> dict:
             "MODEL_INVALID",
         }:
             raise ValueError(f"MODEL_INVALID: unsupported status for {event_id}")
+        expected_timeframe = scope.get("timeframes")
+        contract = entry.get("event_contract")
+        if (
+            expected_timeframe
+            and spec.timeframe not in expected_timeframe
+            and (contract is not None or spec.unit == "BARS")
+        ):
+            raise ValueError(f"MODEL_INVALID: wrong timeframe for {event_id}")
+        if contract is not None and contract != spec.horizon_contract:
+            raise ValueError(f"MODEL_INVALID: wrong event horizon for {event_id}")
+        if spec.unit == "BARS" and (
+            scope.get("outlook_version") != spec.outlook_version
+            or (model.get("feature_version") == "5" and contract is None)
+        ):
+            raise ValueError(f"MODEL_INVALID: missing matching intraday event scope for {event_id}")
         if status != "APPROVED":
             continue
+        if operational and spec.unit == "BARS" and model.get("feature_version") == "5":
+            if not all(
+                entry.get(key, 0) >= value
+                for key, value in (
+                    ("test_rows", 50),
+                    ("test_dates", 10),
+                    ("test_symbols", 5),
+                )
+            ):
+                raise ValueError(
+                    f"MODEL_INVALID: minimum intraday holdout evidence not met for {event_id}"
+                )
+            if label_available_at is None:
+                raise ValueError(
+                    f"MODEL_INVALID: missing last holdout label timestamp for {event_id}"
+                )
         feature_order = entry.get("feature_order")
         classes = entry.get("classes")
         mean = entry.get("mean")
@@ -223,16 +256,25 @@ def validate_model(model: dict, *, operational: bool = False) -> dict:
             raise ValueError(f"MODEL_INVALID: non-positive temperature for {event_id}")
         support = entry.get("support_bins")
         if support is not None:
-            if not isinstance(support, dict) or set(support) != set(classes):
-                raise ValueError(f"MODEL_INVALID: support_bins class mismatch for {event_id}")
-            for class_name, bins in support.items():
-                if not isinstance(bins, list):
-                    raise ValueError(f"MODEL_INVALID: support_bins for {class_name} must be a list")
-                for item in bins:
-                    low = float(item["low"])
-                    high = float(item["high"])
-                    if not (0.0 <= low < high <= 1.0):
-                        raise ValueError(f"MODEL_INVALID: invalid support bin for {event_id}")
+            _validate_bins(support, classes, event_id, release=release if operational else None)
+        if operational and scope.get("asset_types") == ["INDEX"] and spec.unit == "BARS":
+            local = entry.get("index_holdout")
+            if not isinstance(local, dict) or not scope.get("symbols"):
+                raise ValueError(
+                    f"MODEL_INVALID: missing index-specific holdout evidence for {event_id}"
+                )
+            for symbol in scope["symbols"]:
+                evidence = local.get(symbol)
+                if not isinstance(evidence, dict) or evidence.get("eligible") is not True:
+                    raise ValueError(
+                        f"MODEL_INVALID: missing index-specific holdout evidence for {event_id}"
+                    )
+                _validate_bins(
+                    evidence.get("support_bins"),
+                    classes,
+                    f"{event_id} ({symbol})",
+                    release=release,
+                )
         if release:
             reasons = entry.get("reasons")
             if not isinstance(reasons, list) or reasons:
@@ -268,25 +310,6 @@ def validate_model(model: dict, *, operational: bool = False) -> dict:
                 ):
                     if entry.get(key, 0) < release[gate]:
                         raise ValueError(f"MODEL_INVALID: {key} below gate for {event_id}")
-                for supported in (support or {}).values():
-                    if not supported:
-                        raise ValueError(f"MODEL_INVALID: empty support for {event_id}")
-                    for item in supported:
-                        ci = item.get("calibration_gap_ci")
-                        if (
-                            item.get("count", 0) < release["min_bin_count"]
-                            or item.get("dates", 0) < release["min_bin_dates"]
-                            or item.get("occupied_blocks", 0) < 2
-                            or not isinstance(ci, list)
-                            or len(ci) != 2
-                            or not -release["reliability_tolerance"]
-                            <= ci[0]
-                            <= ci[1]
-                            <= release["reliability_tolerance"]
-                        ):
-                            raise ValueError(
-                                f"MODEL_INVALID: unverified support bin for {event_id}"
-                            )
             if not entry.get("support_bins"):
                 raise ValueError(f"MODEL_INVALID: missing support_bins for {event_id}")
     return model
@@ -312,6 +335,35 @@ def _parse_time(value) -> datetime:
     return parsed.astimezone(UTC)
 
 
+def _model_expiry(model: dict) -> datetime | None:
+    value = model.get("expires_at")
+    if value is None:
+        return None
+    try:
+        expiry = datetime.fromisoformat(value)
+        if expiry.utcoffset() is None:
+            raise ValueError("missing timezone")
+    except (TypeError, ValueError) as exc:
+        raise ValueError("MODEL_INVALID: invalid model expiration time") from exc
+    return expiry.astimezone(UTC)
+
+
+def _last_holdout_receipt(model: dict) -> datetime | None:
+    span = model.get("actual_span") or {}
+    if not isinstance(span, dict):
+        raise ValueError("MODEL_INVALID: invalid holdout span")
+    value = span.get("label_available_at")
+    if value is None:
+        return None
+    try:
+        timestamp = datetime.fromisoformat(value)
+        if timestamp.utcoffset() is None:
+            raise ValueError("missing timezone")
+    except (TypeError, ValueError) as exc:
+        raise ValueError("MODEL_INVALID: invalid last holdout label timestamp") from exc
+    return timestamp.astimezone(UTC)
+
+
 def validate_approval_time(model: dict, value) -> datetime:
     approved_at = _parse_time(value)
     try:
@@ -320,6 +372,12 @@ def validate_approval_time(model: dict, value) -> datetime:
         raise ValueError("MODEL_INVALID: missing valid holdout end") from exc
     if approved_at.date() <= holdout_end:
         raise ValueError("MODEL_INVALID: approval precedes the completed holdout")
+    received_at = _last_holdout_receipt(model)
+    if received_at is not None and approved_at < received_at:
+        raise ValueError("MODEL_INVALID: approval precedes the last holdout label receipt")
+    expiry = _model_expiry(model)
+    if expiry is not None and approved_at >= expiry:
+        raise ValueError("MODEL_INVALID: approval is at or beyond model expiration")
     return approved_at
 
 
@@ -514,12 +572,18 @@ class ModelRegistry:
             return False
         return True
 
-    def _load_record(self, record: dict, **filters) -> dict | None:
+    def _load_record(self, record: dict, *, when: datetime, **filters) -> dict | None:
         try:
             model = load_model(Path(record["path"]), operational=True)
         except (OSError, ValueError, TypeError, KeyError):
             return None
-        if model.get("model_id") != record.get("model_id"):
+        expiry = _model_expiry(model)
+        last_label = _last_holdout_receipt(model)
+        if (
+            model.get("model_id") != record.get("model_id")
+            or (expiry and when >= expiry)
+            or (last_label and _parse_time(record["at"]) < last_label)
+        ):
             return None
         return model if self._compatible(model, **filters) else None
 
@@ -543,7 +607,7 @@ class ModelRegistry:
             active.values(), key=lambda event: _parse_time(event["at"]), reverse=True
         )
         for event in candidates:
-            model = self._load_record(event, **filters)
+            model = self._load_record(event, when=when, **filters)
             if model is not None:
                 return {
                     "model": model,
@@ -575,7 +639,7 @@ class ModelRegistry:
         result = []
         seen = set()
         for event in candidates:
-            model = self._load_record(event, **filters)
+            model = self._load_record(event, when=when, **filters)
             if model is None or model.get("model_id") in seen:
                 continue
             seen.add(model["model_id"])
@@ -623,10 +687,16 @@ class ModelRegistry:
             active.values(), key=lambda event: _parse_time(event["at"]), reverse=True
         )
         for event in candidates:
-            model = self._load_record(event, **filters)
+            model = self._load_record(event, when=when, **filters)
             if model is None or event_id not in (model.get("models") or {}):
                 continue
-            model_slot = (model.get("scope") or {}).get("outlook_slot")
+            model_scope = model.get("scope") or {}
+            model_slot = model_scope.get("outlook_slot")
+            spec = EVENT_SPECS.get(event_id)
+            if spec is None or (
+                filters.get("timeframe") and spec.timeframe != filters["timeframe"]
+            ):
+                continue
             if outlook_slot is not None and model_slot not in {None, outlook_slot}:
                 continue
             return {
@@ -665,13 +735,31 @@ def forecasts_for_brief(
     outlook: BriefOutlook | None = None,
     wave_relations=(),
     window_state: str | None = None,
+    cross_timeframe=None,
+    engine_version: str | None = None,
+    issued_at: datetime | None = None,
 ) -> tuple[BriefForecast, ...]:
+    model_at = max(prepared.as_of, issued_at) if issued_at is not None else prepared.as_of
     model_list = list(models) if models is not None else ([model] if model is not None else [])
     model_list = [
         item
         for item in model_list
         if item is not None
+        and ((expiry := _model_expiry(item)) is None or model_at < expiry)
         and ModelRegistry._compatible(item, symbol=result.instrument.canonical_symbol)
+        and (
+            not result.timeframe.endswith("m")
+            or ModelRegistry._compatible(
+                item,
+                timeframe=result.timeframe,
+                engine_version=engine_version,
+                config_hash=result.config_hash,
+                asset_type=result.instrument.asset_type,
+                market=result.instrument.market,
+                feed=prepared.provenance.feed,
+                adjustment=prepared.provenance.adjustment,
+            )
+        )
     ]
     if not model_list:
         return ()
@@ -681,22 +769,27 @@ def forecasts_for_brief(
     selections: dict[tuple[str, str | None], tuple[dict, dict]] = {}
     for candidate_model in model_list:
         for event_id, entry in candidate_model["models"].items():
-            if (result.timeframe, _horizon_unit(event_id)) not in {
-                ("1d", "SESSIONS"),
-                ("1w", "WEEKS"),
-                *((timeframe, "BARS") for timeframe in ("1m", "5m", "15m", "30m", "60m")),
-            }:
+            spec = EVENT_SPECS.get(event_id)
+            if spec is None or spec.timeframe != result.timeframe:
                 continue
-            new_event = event_id.startswith(("ADVANCE_FIRST_", "OUTLOOK_TARGET_FIRST_"))
-            slot = (candidate_model.get("scope") or {}).get("outlook_slot") if new_event else None
+            model_scope = candidate_model.get("scope") or {}
+            if spec.unit == "BARS" and (
+                outlook is None
+                or (outlook.version, outlook.horizon, outlook.horizon_unit)
+                != (spec.outlook_version, spec.horizon, spec.unit)
+                or model_scope.get("outlook_version") != outlook.version
+            ):
+                continue
+            slot = model_scope.get("outlook_slot") if spec.outlook else None
             selections.setdefault((event_id, slot), (candidate_model, entry))
 
     forecasts = []
     for (event_id, model_slot), (active_model, entry) in selections.items():
         scope = active_model.get("scope")
         model_id = active_model.get("model_id")
+        model_expires_at = _model_expiry(active_model)
         calibration_end = ((active_model.get("splits") or {}).get("calibration") or {}).get("end")
-        if event_id.startswith(("ADVANCE_FIRST_", "OUTLOOK_TARGET_FIRST_")):
+        if EVENT_SPECS[event_id].outlook:
             slot = model_slot
             case = next(
                 (
@@ -713,6 +806,7 @@ def forecasts_for_brief(
                         horizon_sessions=event_horizon(event_id),
                         horizon_unit=_horizon_unit(event_id),
                         model_id=model_id,
+                        model_expires_at=model_expires_at,
                         status="UNDEFINED_EVENT",
                         reason="OUTLOOK_UNAVAILABLE: 没有匹配的推演卡片",
                         outlook_version=outlook.version if outlook is not None else None,
@@ -730,6 +824,7 @@ def forecasts_for_brief(
                 horizon_sessions=event_horizon(event_id),
                 horizon_unit=_horizon_unit(event_id),
                 model_id=model_id,
+                model_expires_at=model_expires_at,
                 scenario_id=case.scenario_id,
                 outlook_version=outlook.version if outlook is not None else None,
                 outlook_slot=case.slot,
@@ -786,6 +881,19 @@ def forecasts_for_brief(
                     window_state=window_state,
                 )
             )
+            if active_model.get("feature_version") == "5" and EVENT_SPECS[event_id].unit == "BARS":
+                candidate.update(
+                    intraday_outlook_features(
+                        case,
+                        prepared.bars[-1].close,
+                        atr,
+                        prepared,
+                        result.price_coordinate_id,
+                        cross_timeframe.model_dump(mode="json")
+                        if cross_timeframe is not None
+                        else None,
+                    )
+                )
             vector = feature_vector(entry["feature_order"], decision, candidate)
             normal = (np.asarray([vector]) - np.asarray(entry["mean"])) / np.asarray(entry["scale"])
             weights = np.asarray(entry["weights"]).reshape(len(vector), len(entry["classes"]))
@@ -809,6 +917,23 @@ def forecasts_for_brief(
                     )
                 )
                 continue
+            if result.instrument.asset_type == "INDEX" and EVENT_SPECS[event_id].unit == "BARS":
+                evidence = (entry.get("index_holdout") or {}).get(
+                    result.instrument.canonical_symbol, {}
+                )
+                local_support = evidence.get("support_bins") or {}
+                if evidence.get("eligible") is not True or any(
+                    not _bin_supported(value, local_support.get(name, []))
+                    for name, value in probability_map.items()
+                ):
+                    forecasts.append(
+                        BriefForecast(
+                            **attrs,
+                            status="UNSUPPORTED_BIN",
+                            reason="概率落入该指数未获支持的档位",
+                        )
+                    )
+                    continue
             forecasts.append(
                 BriefForecast(**attrs, status="APPROVED", probabilities=probability_map)
             )
@@ -830,6 +955,7 @@ def forecasts_for_brief(
                 horizon_sessions=event_horizon(event_id),
                 horizon_unit=_horizon_unit(event_id),
                 model_id=model_id,
+                model_expires_at=model_expires_at,
                 scenario_id=scenario.scenario_id if scenario else None,
                 sample_count=entry.get("test_rows"),
                 calibration_end=calibration_end,

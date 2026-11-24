@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import math
 
+from elliottwaver.evaluation.events import EVENT_SPECS
 from elliottwaver.schemas.outlook import OutlookCase
 from elliottwaver.schemas.wave import WaveScenario
 
 FEATURE_VERSION = "2"
-SUPPORTED_FEATURE_VERSIONS = {"2", "3", "4"}
+SUPPORTED_FEATURE_VERSIONS = {"2", "3", "4", "5"}
 
 DECISION_FEATURES = [
     "log_return_20",
@@ -62,6 +63,41 @@ OUTLOOK_WAVE_FEATURES = [
     "outlook_window_same_count",
 ]
 OUTLOOK_FEATURES = OUTLOOK_PRICE_FEATURES + OUTLOOK_WAVE_FEATURES
+GATE_ROLES = ("ADVANCE", "CURRENT_EVIDENCE", "INVALIDATION", "STAGE_EXIT")
+GATE_OPS = ("<", "<=", ">", ">=")
+GATE_SIDES = ("LOW", "HIGH", "CLOSE")
+CONTEXT_TIMEFRAMES = ("1m", "5m", "15m", "30m", "60m", "1d", "1w", "1mo")
+PRICE_BASES = ("none", "provider_all", "basis_date_qfq", "synthetic_no_actions")
+OUTLOOK_V5_PRICE_FEATURES = [
+    feature
+    for label in (role.lower() for role in GATE_ROLES)
+    for feature in (
+        f"{label}_signed_atr",
+        f"{label}_present",
+        f"{label}_coordinate_matches",
+        *(f"{label}_op_{op}" for op in GATE_OPS),
+        *(f"{label}_side_{side.lower()}" for side in GATE_SIDES),
+    )
+] + [
+    "target_low_signed_atr",
+    "target_high_signed_atr",
+    "target_present",
+    "target_direction_up",
+    "target_direction_down",
+    "last_bar_age_minutes",
+    "last_bar_lag_minutes",
+    "missing_atr",
+    *(f"price_basis_{basis}" for basis in (*PRICE_BASES, "other")),
+]
+OUTLOOK_V5_CONTEXT_FEATURES = [
+    *(f"background_timeframe_{timeframe}" for timeframe in CONTEXT_TIMEFRAMES),
+    "background_missing",
+    "background_up",
+    "background_down",
+    "background_conflict",
+    "primary_up",
+    "primary_down",
+]
 PATTERNS = ["IMPULSE", "ZIGZAG_ABC", "TRIANGLE", "FLAT", "DIAGONAL", "WXY"]
 STAGES = [
     "COMPLETE",
@@ -216,6 +252,78 @@ def outlook_features(
     }
 
 
+def intraday_outlook_features(case, current, atr, prepared, coordinate_id, cross_timeframe):
+    """Decision-time v5 inputs shared by evaluation and forecasting."""
+    bar, raw = prepared.bars[-1], prepared.raw_bars[-1]
+    valid_atr = math.isfinite(atr) and atr > 0
+
+    def signed(price):
+        return (price - current) / atr if valid_atr else 0.0
+
+    features = {}
+    for role in GATE_ROLES:
+        gates = [item.condition for item in case.conditions if item.role == role]
+        condition = min(
+            gates,
+            key=lambda gate: (abs(gate.price - current), gate.price, gate.op, gate.side),
+            default=None,
+        )
+        label = role.lower()
+        features.update(
+            {
+                f"{label}_signed_atr": signed(condition.price) if condition else 0.0,
+                f"{label}_present": float(condition is not None),
+                f"{label}_coordinate_matches": float(
+                    condition is not None and condition.coordinate_id == coordinate_id
+                ),
+                **{
+                    f"{label}_op_{op}": float(condition is not None and condition.op == op)
+                    for op in GATE_OPS
+                },
+                **{
+                    f"{label}_side_{side.lower()}": float(
+                        condition is not None and condition.side == side
+                    )
+                    for side in GATE_SIDES
+                },
+            }
+        )
+    target = case.target
+    basis = prepared.provenance.adjustment
+    context = cross_timeframe or {}
+    background_timeframe = context.get("background_timeframe")
+    background_bias = context.get("background_bias")
+    primary_bias = context.get("primary_bias")
+    features.update(
+        {
+            "target_low_signed_atr": signed(target.low) if target else 0.0,
+            "target_high_signed_atr": signed(target.high) if target else 0.0,
+            "target_present": float(target is not None),
+            "target_direction_up": float(case.target_direction == "UP"),
+            "target_direction_down": float(case.target_direction == "DOWN"),
+            "last_bar_age_minutes": max(0.0, (prepared.as_of - bar.end_at).total_seconds()) / 60,
+            "last_bar_lag_minutes": max(
+                0.0, (max(bar.usable_at, raw.usable_at) - bar.end_at).total_seconds()
+            )
+            / 60,
+            "missing_atr": float(not valid_atr),
+            **{f"price_basis_{name}": float(basis == name) for name in PRICE_BASES},
+            "price_basis_other": float(basis not in PRICE_BASES),
+            **{
+                f"background_timeframe_{name}": float(background_timeframe == name)
+                for name in CONTEXT_TIMEFRAMES
+            },
+            "background_missing": float(background_bias not in {"UP", "DOWN"}),
+            "background_up": float(background_bias == "UP"),
+            "background_down": float(background_bias == "DOWN"),
+            "background_conflict": float(context.get("state") == "CONFLICT"),
+            "primary_up": float(primary_bias == "UP"),
+            "primary_down": float(primary_bias == "DOWN"),
+        }
+    )
+    return features
+
+
 def feature_vector(
     feature_order: list[str],
     decision: dict[str, float],
@@ -228,6 +336,10 @@ def feature_vector(
         elif name in OUTLOOK_FEATURES and candidate is not None:
             value = candidate.get(name, 0.0)
             values.append(float(value) if value is not None else 0.0)
+        elif name in OUTLOOK_V5_PRICE_FEATURES or name in OUTLOOK_V5_CONTEXT_FEATURES:
+            if candidate is None or name not in candidate:
+                raise ValueError(f"Missing v5 feature: {name}")
+            values.append(float(candidate[name]))
         elif name in TARGET_FEATURES:
             if candidate is None or name not in candidate:
                 raise ValueError(f"Missing target geometry feature: {name}")
@@ -247,14 +359,13 @@ def event_feature_order(event_id: str, feature_version: str = FEATURE_VERSION) -
     if feature_version not in SUPPORTED_FEATURE_VERSIONS:
         raise ValueError(f"Unsupported feature_version: {feature_version}")
     order = list(DECISION_FEATURES)
-    if event_id.startswith(
-        ("CONFIRM_FIRST_", "TARGET_FIRST_", "ADVANCE_FIRST_", "OUTLOOK_TARGET_FIRST_")
-    ):
+    spec = EVENT_SPECS[event_id]
+    if spec.scope == "CARD":
         order += CANDIDATE_FEATURES + PATTERNS + STAGES
-        if feature_version in {"3", "4"} and event_id.startswith(
-            ("TARGET_FIRST_", "OUTLOOK_TARGET_FIRST_")
-        ):
+        if feature_version in {"3", "4", "5"} and spec.evaluator == "target_first":
             order += TARGET_FEATURES
-        if feature_version == "4":
+        if feature_version in {"4", "5"}:
             order += OUTLOOK_FEATURES
+        if feature_version == "5" and spec.unit == "BARS":
+            order += OUTLOOK_V5_PRICE_FEATURES + OUTLOOK_V5_CONTEXT_FEATURES
     return order

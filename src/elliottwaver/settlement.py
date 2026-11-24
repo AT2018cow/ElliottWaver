@@ -220,6 +220,7 @@ class SettlementStore:
         source: MarketDataBundle,
         *,
         cancellations: dict[tuple[str, int], PlanTransition] | None = None,
+        receipt_cutoff: datetime | None = None,
     ) -> list[dict]:
         if brief.index_guidance is None:
             return []
@@ -227,9 +228,12 @@ class SettlementStore:
         for track in brief.index_guidance.tracks:
             if track.plan is None:
                 continue
-            row = settle_index_track(track, source)
+            row = settle_index_track(track, source, receipt_cutoff=receipt_cutoff)
             cancellation = (cancellations or {}).get((track.plan.plan_id, track.plan.revision))
-            if cancellation is not None and source.as_of >= cancellation.observable_at:
+            if (
+                cancellation is not None
+                and (receipt_cutoff or source.as_of) >= cancellation.observable_at
+            ):
                 row = apply_published_cancellation(row, cancellation)
             rows.append(row)
         with closing(sqlite3.connect(self.path)) as db:

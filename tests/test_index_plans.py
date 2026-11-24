@@ -582,6 +582,74 @@ def test_activation_uses_complete_prefix_availability(origin):
     assert transitions[-1].observable_at == late_at
 
 
+@pytest.mark.parametrize("delayed_index", [-2, -1])
+def test_live_activation_uses_both_receipts_and_replay_uses_nominal_time(origin, delayed_index):
+    plan = projected(origin).index_guidance.tracks[0].plan
+    live = plan.model_copy(update={"mode": "LIVE"})
+    deadline = plan.activation_deadline
+    late = deadline + timedelta(seconds=10)
+    source = subsequent(origin, plan, [(97, 99, 98), (97, 103, 101)])
+    raw = list(source.raw_bars)
+    raw[delayed_index] = raw[delayed_index].model_copy(update={"observed_at": late})
+    source = source.model_copy(update={"raw_bars": tuple(raw)})
+
+    pending, transitions = observe_plan(live, source)
+    assert pending.quality == "DATA_PENDING" and pending.activation_at is None
+    assert not any(event.to_state == "TRIGGERED" for event in transitions)
+
+    expired, transitions = observe_plan(live, source, pending, receipt_cutoff=late)
+    assert expired.state == "EXPIRED" and expired.activation_at is None
+    assert transitions[-1].observable_at == late
+    assert observe_plan(plan, source)[0].activation_at == deadline
+
+    boundary = raw[delayed_index].model_copy(update={"observed_at": deadline})
+    raw[delayed_index] = boundary
+    timely = source.model_copy(update={"raw_bars": tuple(raw)})
+    active, transitions = observe_plan(live, timely)
+    assert active.state == "TRIGGERED" and active.activation_at == deadline
+    assert transitions[-1].observable_at == deadline
+
+
+def test_live_refresh_preserves_receipt_of_previously_observed_prefix(origin):
+    plan = projected(origin).index_guidance.tracks[0].plan.model_copy(update={"mode": "LIVE"})
+    first = subsequent(origin, plan, [(97, 99, 98)])
+    prior, _ = observe_plan(plan, first)
+    late = plan.activation_deadline + timedelta(seconds=10)
+    source = subsequent(origin, plan, [(97, 99, 98), (97, 103, 101)], as_of=late)
+    refreshed = source.raw_bars[-2].model_copy(update={"observed_at": late})
+    source = source.model_copy(
+        update={"raw_bars": (*source.raw_bars[:-2], refreshed, source.raw_bars[-1])}
+    )
+    active, _ = observe_plan(plan, source, prior)
+    assert active.activation_at == plan.activation_deadline
+    assert observe_plan(plan, source)[0].state == "EXPIRED"
+
+
+def test_live_brief_distinguishes_analysis_cutoff_from_receipt_cutoff(origin):
+    issued = projected(origin)
+    live_tracks = tuple(
+        track.model_copy(update={"plan": track.plan.model_copy(update={"mode": "LIVE"})})
+        for track in issued.index_guidance.tracks
+    )
+    issued = issued.model_copy(
+        update={
+            "mode": "LIVE",
+            "index_guidance": issued.index_guidance.model_copy(update={"tracks": live_tracks}),
+        }
+    )
+    plan = live_tracks[0].plan
+    source = subsequent(origin, plan, [(97, 99, 98), (97, 103, 101)])
+    late = plan.activation_deadline + timedelta(seconds=10)
+    bars = (*source.bars[:-1], source.bars[-1].model_copy(update={"observed_at": late}))
+    source = source.model_copy(update={"bars": bars, "raw_bars": bars})
+    update = next_brief(issued, issued.model_copy(update={"generated_at": late}), source)
+    assert update.as_of == plan.activation_deadline
+    for track in update.index_guidance.tracks:
+        assert track.observation.state == "EXPIRED"
+        assert track.observation.activation_at is None
+        assert track.transitions[-1].observable_at == late
+
+
 def test_confirmation_identity_disambiguates_equal_availability(origin):
     plan = projected(origin).index_guidance.tracks[0].plan
     scenario = next(row for row in origin.qualified if row.scenario_id == plan.scenario_id)
@@ -620,3 +688,54 @@ def test_settlement_refuses_older_snapshot_and_bounds_actual_touches(origin):
         outcome = settle_index_track(track, source)
         (group,) = summarize_index_plans([outcome])
         assert group["from_issuance"]["by_session"]["2"]["target_ambiguity_range"] == [0.0, upper]
+
+
+def test_settlement_rejects_a_revised_activation_or_intermediate_bar(origin):
+    from elliottwaver.evaluation.index_plans import settle_index_track
+
+    track = projected(origin).index_guidance.tracks[0]
+    quotes = [(97, 103, 101), (97, 106, 99), (97, 109, 99)]
+    source = subsequent(origin, track.plan, quotes)
+    prior, events = observe_plan(track.plan, source)
+    assert prior.state == "TARGET_REACHED"
+    carried = track.model_copy(update={"observation": prior, "transitions": events})
+    assert settle_index_track(carried, source)["observation"]["state"] == "TARGET_REACHED"
+
+    removed_activation = subsequent(origin, track.plan, [(97, 99, 98), *quotes[1:]])
+    assert settle_index_track(track, removed_activation)["observation"]["state"] == "EXPIRED"
+    for witness in (prior, prior.model_copy(update={"through_evidence": None})):
+        legacy_or_current = carried.model_copy(update={"observation": witness, "transitions": ()})
+        with pytest.raises(DataError, match="INDEX_SETTLEMENT_OBSERVATION_UNCOVERED"):
+            settle_index_track(legacy_or_current, removed_activation)
+
+    new_invalidation = subsequent(origin, track.plan, [quotes[0], (95, 106, 99), quotes[2]])
+    assert settle_index_track(track, new_invalidation)["observation"]["state"] == "INVALIDATED"
+    with pytest.raises(DataError, match="INDEX_SETTLEMENT_OBSERVATION_UNCOVERED"):
+        settle_index_track(carried, new_invalidation)
+
+
+@pytest.mark.parametrize(("low", "invalidation_upper"), [(97, 0.0), (95, 1.0)])
+def test_stage_exit_only_limits_the_target_upper_bound(origin, low, invalidation_upper):
+    from elliottwaver.evaluation.index_plans import settle_index_track, summarize_index_plans
+
+    track = projected(origin).index_guidance.tracks[0]
+    plan = track.plan.model_copy(
+        update={"stage_exits": (condition(origin.brief, "STAGE_EXIT", "LOW", "<", 98),)}
+    )
+    track = track.model_copy(update={"plan": plan})
+    source = subsequent(origin, plan, [(99, 103, 101), (low, 109, 102)])
+    new = settle_index_track(track, source)
+    assert new["observation"]["state"] == "AMBIGUOUS"
+    obs, _ = observe_plan(plan, source)
+    legacy = track.model_copy(
+        update={
+            "observation": obs.model_copy(
+                update={"reason": "SAME_BAR_TARGET_AND_EXIT", "through_evidence": None}
+            )
+        }
+    )
+    for row in (new, settle_index_track(legacy, source)):
+        (group,) = summarize_index_plans([row])
+        bounds = group["from_activation"]["by_session"]["2"]
+        assert bounds["target_ambiguity_range"] == [0.0, 1.0]
+        assert bounds["invalidation_ambiguity_range"] == [0.0, invalidation_upper]

@@ -288,8 +288,8 @@ class HistoryStore:
                     base_lineage_key(brief),
                     brief.symbol,
                     brief.market_asof.isoformat(),
-                    brief.as_of.isoformat(),
-                    (visible_at or brief.generated_at).isoformat(),
+                    brief.as_of.astimezone(UTC).isoformat(),
+                    (visible_at or brief.generated_at).astimezone(UTC).isoformat(),
                     brief.source_snapshot_id,
                     str(report_path),
                     brief.mode,
@@ -504,6 +504,7 @@ class HistoryStore:
         timeframe: str | None = None,
         limit: int = 50,
         retrospective: bool | None = None,
+        visible_by: datetime | None = None,
     ) -> list[dict]:
         clauses = ["symbol = ?"]
         values: list[object] = [symbol]
@@ -519,13 +520,19 @@ class HistoryStore:
         if retrospective is not None:
             clauses.append("base_lineage_key = ?")
             values.append(digest([symbol, "retrospective"] if retrospective else [symbol]))
+        if visible_by is not None:
+            cutoff = visible_by.astimezone(UTC).isoformat()
+            clauses.extend(("as_of <= ?", "(mode != 'LIVE' OR observed_at <= ?)"))
+            values.extend((cutoff, cutoff))
         values.append(limit)
         with closing(sqlite3.connect(self.path)) as db:
             db.row_factory = sqlite3.Row
             rows = db.execute(
                 "SELECT * FROM briefs WHERE "
                 + " AND ".join(clauses)
-                + " ORDER BY COALESCE(last_bar_end_at, market_asof) DESC, observed_at DESC "
+                + " ORDER BY COALESCE(last_bar_end_at, market_asof) DESC, "
+                "CASE WHEN mode = 'FROZEN_DATA_REPLAY' THEN as_of ELSE observed_at END DESC, "
+                "brief_digest DESC "
                 "LIMIT ?",
                 values,
             ).fetchall()
@@ -534,6 +541,7 @@ class HistoryStore:
     def previous(self, brief: Brief) -> dict | None:
         last_bar = brief.last_bar_end_at.isoformat() if brief.last_bar_end_at else None
         current_marker = last_bar or f"{brief.market_asof.isoformat()}T00:00:00+00:00"
+        cutoff = brief.as_of.astimezone(UTC).isoformat()
         with closing(sqlite3.connect(self.path)) as db:
             db.row_factory = sqlite3.Row
             row = db.execute(
@@ -545,8 +553,10 @@ class HistoryStore:
                 AND (adjustment IS NULL OR adjustment = ?)
                 AND COALESCE(last_bar_end_at, market_asof || 'T00:00:00+00:00') <= ?
                 AND as_of <= ?
-                AND (? != 'LIVE' OR julianday(observed_at) <= julianday(?))
-                ORDER BY COALESCE(last_bar_end_at, market_asof) DESC, observed_at DESC
+                AND (mode != 'LIVE' OR observed_at <= ?)
+                ORDER BY COALESCE(last_bar_end_at, market_asof) DESC,
+                  CASE WHEN mode = 'FROZEN_DATA_REPLAY' THEN as_of ELSE observed_at END DESC,
+                  brief_digest DESC
                 LIMIT 1
                 """,
                 (
@@ -557,9 +567,8 @@ class HistoryStore:
                     brief.feed,
                     brief.adjustment,
                     current_marker,
-                    brief.as_of.isoformat(),
-                    brief.mode,
-                    brief.as_of.isoformat(),
+                    cutoff,
+                    cutoff,
                 ),
             ).fetchone()
         return dict(row) if row else None

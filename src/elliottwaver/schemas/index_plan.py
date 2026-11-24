@@ -182,6 +182,7 @@ class PlanObservation(Contract):
     through_session: date | None = None
     through_observed_at: AwareDatetime | None = Field(None, exclude_if=lambda value: value is None)
     through_bar_id: str | None = Field(None, exclude_if=lambda value: value is None)
+    through_evidence: str | None = Field(None, exclude_if=lambda value: value is None)
     quality: Literal["OK", "DATA_PENDING", "DATA_REVISED", "NOT_COMPARABLE"] = "OK"
     reason: str = "WAIT_FOR_CLOSE"
     activation_session: date | None = None

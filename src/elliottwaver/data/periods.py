@@ -14,6 +14,11 @@ from elliottwaver.util import digest
 SINA_AUCTION_PROFILE = "cn_sina_1m_auction_sparse_v1"
 
 
+def bar_available(bar: Bar, raw: Bar, live: bool) -> datetime:
+    nominal = max(bar.usable_at, raw.usable_at)
+    return max(nominal, raw.observed_at, bar.observed_at) if live else nominal
+
+
 def available_pairs(
     bars: Sequence[Bar], raw_bars: Sequence[Bar], cutoff: datetime, *, through=None, end=None
 ) -> tuple[tuple[Bar, Bar], ...]:

@@ -64,9 +64,8 @@ def _parents(
         timeframe="1d",
         limit=100,
         retrospective=brief.retrospective,
+        visible_by=brief.as_of,
     ):
-        if datetime.fromisoformat(row["as_of"]) > brief.as_of:
-            continue
         try:
             parent = history.load(row)
             visible = read_issuance_from_row(row, parent)

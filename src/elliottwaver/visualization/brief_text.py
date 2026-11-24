@@ -461,6 +461,7 @@ PLAN_REASON_TEXT = {
     "ACTIVATION_DEADLINE": "到最迟触发时刻仍未激活",
     "HOLDING_DEADLINE": "已到冻结持有期限",
     "SAME_BAR_TARGET_AND_EXIT": "同根出现目标和退出",
+    "SAME_BAR_TARGET_AND_STAGE_EXIT": "同根触及目标和阶段退出",
     "SAME_BAR_TRIGGER_AND_EXIT": "同根出现触发和退出",
     "MISSING_SESSION_BAR": "交易会话行情尚未齐备",
     "CALENDAR_NOT_COVERED": "输入行情未覆盖冻结交易会话",

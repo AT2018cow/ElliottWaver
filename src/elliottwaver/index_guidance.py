@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 
 from elliottwaver.config import IndexGuidanceConfig
 from elliottwaver.data.calendar import load_calendar
-from elliottwaver.data.periods import available_pairs
+from elliottwaver.data.periods import available_pairs, bar_available
 from elliottwaver.errors import DataError
 from elliottwaver.evaluation.events import condition_hit
 from elliottwaver.schemas.brief import Brief
@@ -519,8 +519,41 @@ def compatible_plan_input(plan: IndexPlan, bundle: MarketDataBundle) -> bool:
     )
 
 
+def plan_bar_pairs(bundle: MarketDataBundle) -> dict[date, tuple[Bar, Bar]]:
+    return {
+        bar.session_date: (bar, raw)
+        for bar, raw in available_pairs(bundle.bars, bundle.raw_bars, bundle.as_of)
+    }
+
+
+def plan_prefix_evidence(
+    plan: IndexPlan,
+    through: date,
+    pairs: dict[date, tuple[Bar, Bar]],
+    suspensions: set[date],
+) -> str:
+    evidence = []
+    for period in plan.periods:
+        day = period.end_session
+        if day > through:
+            break
+        if pair := pairs.get(day):
+            bar, raw = pair
+            # Preparation can raise the analysis bar's availability to match the raw bar.
+            if bar.usable_at < raw.usable_at:
+                bar = bar.model_copy(update={"available_at": raw.usable_at})
+            evidence.append((day, bar.bar_id, raw.bar_id))
+        else:
+            evidence.append((day, "SUSPENDED" if day in suspensions else "MISSING"))
+    return digest(evidence)
+
+
 def observe_plan(
-    plan: IndexPlan, bundle: MarketDataBundle, prior: PlanObservation | None = None
+    plan: IndexPlan,
+    bundle: MarketDataBundle,
+    prior: PlanObservation | None = None,
+    *,
+    receipt_cutoff: datetime | None = None,
 ) -> tuple[PlanObservation, tuple[PlanTransition, ...]]:
     obs = prior or PlanObservation()
     if obs.state in TERMINAL_STATES:
@@ -529,16 +562,22 @@ def observe_plan(
         return obs.model_copy(
             update={"quality": "NOT_COMPARABLE", "reason": "PRICE_COORDINATE_CHANGED"}
         ), ()
-    pairs = {
-        bar.session_date: (bar, raw)
-        for bar, raw in available_pairs(bundle.bars, bundle.raw_bars, bundle.as_of)
-    }
+    pairs = plan_bar_pairs(bundle)
     signal = pairs.get(plan.decision_session)
     if signal is None or signal[1].bar_id != plan.signal_bar_id:
         quality = "NOT_COMPARABLE" if signal is None else "DATA_REVISED"
         return obs.model_copy(update={"quality": quality, "reason": quality}), ()
     scheduled = set(bundle.sessions)
     suspended = set(bundle.provenance.known_suspensions)
+    if (
+        obs.through_evidence
+        and obs.through_session
+        and plan_prefix_evidence(plan, obs.through_session, pairs, suspended)
+        != obs.through_evidence
+    ):
+        return obs.model_copy(update={"quality": "DATA_REVISED", "reason": "DATA_REVISED"}), ()
+    live = plan.mode == "LIVE"
+    receipts_through = receipt_cutoff if live and receipt_cutoff is not None else bundle.as_of
     pending = None
     transitions = []
     prefix_available = max(
@@ -549,8 +588,7 @@ def observe_plan(
     for index, period in enumerate(plan.periods):
         session = period.end_session
         if obs.through_session and session <= obs.through_session:
-            if pair := pairs.get(session):
-                prefix_available = max(prefix_available, *(item.usable_at for item in pair))
+            # The previous observation already recorded when this prefix became visible.
             continue
         if period.end_at > bundle.as_of:
             break
@@ -565,10 +603,13 @@ def observe_plan(
             break
         bar, raw = pair or (None, None)
         available = (
-            max(prefix_available, *(item.usable_at for item in pair))
+            max(prefix_available, bar_available(*pair, live))
             if pair
             else max(prefix_available, period.end_at)
         )
+        if available > receipts_through:
+            pending = "MISSING_SESSION_BAR"
+            break
         prefix_available = available
         status, reason = obs.state, obs.reason
         patch = {
@@ -592,7 +633,10 @@ def observe_plan(
                 )
             if obs.state == "TRIGGERED":
                 if target and (invalid or stage):
-                    status, reason = "AMBIGUOUS", "SAME_BAR_TARGET_AND_EXIT"
+                    status = "AMBIGUOUS"
+                    reason = (
+                        "SAME_BAR_TARGET_AND_EXIT" if invalid else "SAME_BAR_TARGET_AND_STAGE_EXIT"
+                    )
                 elif invalid:
                     status, reason = "INVALIDATED", "HARD_INVALIDATION"
                 elif stage:
@@ -642,6 +686,14 @@ def observe_plan(
         obs = obs.model_copy(update={**patch, "state": status, "reason": reason})
         if status in TERMINAL_STATES:
             break
+    if obs.through_session and obs.through_session != (prior.through_session if prior else None):
+        obs = obs.model_copy(
+            update={
+                "through_evidence": plan_prefix_evidence(
+                    plan, obs.through_session, pairs, suspended
+                )
+            }
+        )
     if pending:
         obs = obs.model_copy(update={"quality": "DATA_PENDING", "reason": pending})
     return obs, tuple(transitions)
@@ -670,7 +722,12 @@ def _next_track(
         if previous.last_bar_end_at == brief.last_bar_end_at:
             return older.model_copy(update={"transitions": ()})
         return draft
-    observation, changes = observe_plan(old_plan, bundle, older.observation)
+    observation, changes = observe_plan(
+        old_plan,
+        bundle,
+        older.observation,
+        receipt_cutoff=max(brief.as_of, brief.generated_at),
+    )
     kept = older.model_copy(update={"observation": observation, "transitions": changes})
     if observation.quality != "OK" or observation.state == "TRIGGERED":
         return kept

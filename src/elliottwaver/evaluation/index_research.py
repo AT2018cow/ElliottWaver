@@ -11,7 +11,7 @@ from random import Random
 from zoneinfo import ZoneInfo
 
 from elliottwaver.data.calendar import load_calendar
-from elliottwaver.data.periods import available_pairs
+from elliottwaver.data.periods import available_pairs, bar_available
 from elliottwaver.data.router import route_symbol
 from elliottwaver.data.snapshots import SnapshotStore
 from elliottwaver.errors import InputError
@@ -22,7 +22,7 @@ from elliottwaver.evaluation.index_execution import (
     replay_execution,
 )
 from elliottwaver.evaluation.index_plans import settle_index_track
-from elliottwaver.index_intraday import ParentIssuance, bar_available, verify_price_basis
+from elliottwaver.index_intraday import ParentIssuance, verify_price_basis
 from elliottwaver.schemas.index_execution import (
     ExecutionSignal,
     Split,

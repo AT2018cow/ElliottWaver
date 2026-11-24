@@ -3,15 +3,23 @@
 from collections import Counter, defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Literal
 
 from elliottwaver.errors import DataError
-from elliottwaver.index_guidance import TERMINAL_STATES, compatible_plan_input, observe_plan
+from elliottwaver.evaluation.events import condition_hit
+from elliottwaver.index_guidance import (
+    TERMINAL_STATES,
+    compatible_plan_input,
+    observe_plan,
+    plan_bar_pairs,
+    plan_prefix_evidence,
+)
 from elliottwaver.schemas.brief import Brief
 from elliottwaver.schemas.index_plan import IndexTrack, PlanTransition
 from elliottwaver.schemas.market import MarketDataBundle
 
-Event = Literal["TARGET", "INVALIDATION", "OTHER", "UNKNOWN", "CENSORED"]
+Event = Literal["TARGET", "INVALIDATION", "OTHER", "UNKNOWN", "TARGET_OR_STAGE_EXIT", "CENSORED"]
 HORIZONS = (2, 5, 10, 20, 30)
 
 
@@ -21,7 +29,12 @@ class TimedOutcome:
     event: Event
 
 
-def settle_index_track(track: IndexTrack, source: MarketDataBundle) -> dict:
+def settle_index_track(
+    track: IndexTrack,
+    source: MarketDataBundle,
+    *,
+    receipt_cutoff: datetime | None = None,
+) -> dict:
     plan = track.plan
     assert plan is not None
     prior = track.observation
@@ -39,19 +52,7 @@ def settle_index_track(track: IndexTrack, source: MarketDataBundle) -> dict:
     )
     observed_session = prior.exit_session or prior.through_session
     period = next((item for item in plan.periods if item.end_session == observed_session), None)
-    through = next(
-        (bar for bar in source.raw_bars if bar.session_date == prior.through_session), None
-    )
-    if (
-        source.as_of < recorded_at
-        or (period and source.as_of < period.end_at)
-        or (prior.through_bar_id and (through is None or through.bar_id != prior.through_bar_id))
-        or (
-            prior.through_session
-            and through is None
-            and prior.through_session not in source.provenance.known_suspensions
-        )
-    ):
+    if (receipt_cutoff or source.as_of) < recorded_at or (period and source.as_of < period.end_at):
         raise DataError(
             "INDEX_SETTLEMENT_OBSERVATION_UNCOVERED: snapshot cannot substantiate the recorded observation"
         )
@@ -70,7 +71,51 @@ def settle_index_track(track: IndexTrack, source: MarketDataBundle) -> dict:
         )
         changes = ()
     else:
-        observation, changes = observe_plan(plan, source, prior)
+        pairs = plan_bar_pairs(source)
+        suspensions = set(source.provenance.known_suspensions)
+        ids_by_session = {
+            day: pairs[day][1].bar_id
+            for day in (prior.through_session, prior.activation_session)
+            if day in pairs
+        }
+        if (
+            (
+                prior.through_bar_id
+                and ids_by_session.get(prior.through_session) != prior.through_bar_id
+            )
+            or (
+                prior.through_session
+                and prior.through_session not in pairs
+                and prior.through_session not in suspensions
+            )
+            or (
+                prior.activation_bar_id
+                and ids_by_session.get(prior.activation_session) != prior.activation_bar_id
+            )
+            or (
+                prior.next_index_price
+                and not any(
+                    raw.bar_id == prior.next_index_price.bar_id for _, raw in pairs.values()
+                )
+            )
+            or (
+                prior.through_evidence
+                and prior.through_session
+                and plan_prefix_evidence(plan, prior.through_session, pairs, suspensions)
+                != prior.through_evidence
+            )
+        ):
+            raise DataError(
+                "INDEX_SETTLEMENT_OBSERVATION_UNCOVERED: snapshot cannot substantiate the recorded observation"
+            )
+        observation, changes = observe_plan(plan, source, prior, receipt_cutoff=receipt_cutoff)
+        if observation.reason == "SAME_BAR_TARGET_AND_EXIT" and observation.exit_session in pairs:
+            bar, _ = pairs[observation.exit_session]
+            at = observation.through_observed_at or bar.usable_at
+            if not any(at >= c.active_from and condition_hit(c, bar) for c in plan.invalidations):
+                observation = observation.model_copy(
+                    update={"reason": "SAME_BAR_TARGET_AND_STAGE_EXIT"}
+                )
     return {
         "symbol": plan.symbol,
         "mode": plan.mode,
@@ -110,13 +155,15 @@ def competing_risks(outcomes: Iterable[TimedOutcome]) -> dict:
             if day in HORIZONS:
                 result[str(day)] = {"at_risk": risk}
             if risk:
-                target_today = daily["TARGET"] + (daily["UNKNOWN"] if unknown_as == "TARGET" else 0)
+                target_today = daily["TARGET"]
+                if unknown_as == "TARGET":
+                    target_today += daily["UNKNOWN"] + daily["TARGET_OR_STAGE_EXIT"]
                 invalid_today = daily["INVALIDATION"] + (
                     daily["UNKNOWN"] if unknown_as == "INVALIDATION" else 0
                 )
                 competing = daily["TARGET"] + daily["INVALIDATION"] + daily["OTHER"]
                 if unknown_as != "CENSORED":
-                    competing += daily["UNKNOWN"]
+                    competing += daily["UNKNOWN"] + daily["TARGET_OR_STAGE_EXIT"]
                 target += survival * target_today / risk
                 invalid += survival * invalid_today / risk
                 survival *= 1 - competing / risk
@@ -163,7 +210,10 @@ def _timed_outcome(row: dict, *, from_activation: bool) -> TimedOutcome | None:
     event = {
         "TARGET_REACHED": "TARGET",
         "INVALIDATED": "INVALIDATION",
-        "AMBIGUOUS": ("UNKNOWN" if observed["reason"] == "SAME_BAR_TARGET_AND_EXIT" else "OTHER"),
+        "AMBIGUOUS": {
+            "SAME_BAR_TARGET_AND_EXIT": "UNKNOWN",
+            "SAME_BAR_TARGET_AND_STAGE_EXIT": "TARGET_OR_STAGE_EXIT",
+        }.get(observed["reason"], "OTHER"),
     }.get(state, "OTHER" if state in TERMINAL_STATES else "CENSORED")
     return TimedOutcome(duration, event if duration else "CENSORED")
 
@@ -234,6 +284,7 @@ def apply_published_cancellation(row: dict, cancellation: PlanTransition) -> dic
         "due_at": None,
         "activation_target_distance": None,
     }
+    obs.pop("through_evidence", None)
     observed_quote = obs.get("next_index_price")
     if observed_quote and observed_quote["available_at"] > cancellation.observable_at.isoformat():
         obs["next_index_price"] = None

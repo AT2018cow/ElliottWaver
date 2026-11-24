@@ -52,6 +52,7 @@ from elliottwaver.visualization.brief_formatter import (
     PublicationWindowElapsed,
     publish_brief,
     read_brief_report,
+    read_issuance,
 )
 from elliottwaver.visualization.brief_text import market_time_text
 from elliottwaver.visualization.report_formatter import publish_report
@@ -709,6 +710,7 @@ def run_settle(
     plan_rows = {}
     issuance_keys = []
     guidance_runs = []
+    guidance_receipts = {}
     cancellations = {}
     seen = set()
     exit_code = 0
@@ -738,6 +740,9 @@ def run_settle(
                     }
                 )
             if brief.index_guidance is not None:
+                if brief.mode == "LIVE" and source.snapshot_id == brief.source_snapshot_id:
+                    if visible := read_issuance(brief_path.parent, brief):
+                        guidance_receipts[brief.brief_digest] = max(source.as_of, visible)
                 guidance_runs.append((brief, source))
                 for track in brief.index_guidance.tracks:
                     for event in track.transitions:
@@ -767,7 +772,12 @@ def run_settle(
     result = {"schema_version": "1.0", "records": records}
     if guidance_runs:
         for brief, source in guidance_runs:
-            for row in store.settle_index_guidance(brief, source, cancellations=cancellations):
+            for row in store.settle_index_guidance(
+                brief,
+                source,
+                cancellations=cancellations,
+                receipt_cutoff=guidance_receipts.get(brief.brief_digest),
+            ):
                 key = (row["plan_id"], row["revision"])
                 previous = plan_rows.get(key)
                 rank = (brief.as_of, source.as_of, brief.brief_digest)

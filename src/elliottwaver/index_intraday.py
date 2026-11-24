@@ -10,7 +10,12 @@ from zoneinfo import ZoneInfo
 
 from elliottwaver.config import IndexGuidanceConfig
 from elliottwaver.data.calendar import load_calendar
-from elliottwaver.data.periods import available_pairs, background_bundle, intraday_windows
+from elliottwaver.data.periods import (
+    available_pairs,
+    background_bundle,
+    bar_available,
+    intraday_windows,
+)
 from elliottwaver.errors import DataError
 from elliottwaver.evaluation.events import condition_hit
 from elliottwaver.index_guidance import WAIT_STATES
@@ -23,7 +28,7 @@ from elliottwaver.schemas.index_context import (
     IntradayVolume,
 )
 from elliottwaver.schemas.index_plan import IndexPlan
-from elliottwaver.schemas.market import Bar, MarketDataBundle
+from elliottwaver.schemas.market import MarketDataBundle
 from elliottwaver.util import digest
 
 METHODS = ("TOUCH", "CLOSE", "RETEST")
@@ -34,11 +39,6 @@ class ParentIssuance:
     digest: str
     visible_at: datetime
     daily: MarketDataBundle
-
-
-def bar_available(bar: Bar, raw: Bar, live: bool) -> datetime:
-    nominal = max(bar.usable_at, raw.usable_at)
-    return max(nominal, raw.observed_at, bar.observed_at) if live else nominal
 
 
 def _input(

@@ -668,6 +668,49 @@ def test_exact_parent_origin_and_operational_lineage(daily, tmp_path):
     assert context.parent == parent and context.hourly is None
 
 
+def test_replay_parent_and_daily_predecessor_follow_decision_time(daily, tmp_path):
+    from elliottwaver.cli.index_context import _parents
+
+    start = daily.brief.as_of
+    runs = [
+        build_brief(
+            AnalysisRequest(
+                symbol="SPX", as_of=start + timedelta(minutes=minutes), mode="FROZEN_DATA_REPLAY"
+            ),
+            daily.source,
+            Settings(),
+            include_weekly=False,
+            check_windows=False,
+        )
+        for minutes in (0, 15)
+    ]
+    assert runs[0].brief.last_bar_id == runs[1].brief.last_bar_id
+    assert (
+        runs[0].brief.index_guidance.tracks[0].plan != runs[1].brief.index_guidance.tracks[0].plan
+    )
+    for order in ((0, 1), (1, 0)):
+        root = tmp_path / f"order-{order[0]}"
+        history = HistoryStore(root)
+        snapshots = SnapshotStore(root)
+        for written, index in enumerate(order):
+            run = runs[index]
+            snapshots.save(run.prepared)
+            brief = run.brief.model_copy(update={"generated_at": start + timedelta(days=written)})
+            path = publish_brief(replace(run, brief=brief), root / "reports", formats=())
+            history.register(brief, path)
+
+        for as_of, index in ((start + timedelta(minutes=10), 0), (start + timedelta(days=1), 1)):
+            expected = runs[index].brief
+            probe = expected.model_copy(update={"as_of": as_of, "brief_digest": "probe"})
+            assert history.previous(probe)["brief_digest"] == expected.brief_digest
+            parent, origins = _parents(
+                probe.model_copy(update={"timeframe": "15m"}), history, snapshots
+            )
+            assert parent.brief_digest == expected.brief_digest
+            assert len(origins) == 2
+            assert all(issuance.digest == expected.brief_digest for _, issuance in origins)
+
+
 def test_event_turnover_postclose_deadline_and_effective_timestamp(daily):
     from elliottwaver.schemas.index_context import IndexContext
     from elliottwaver.visualization.brief_text import index_context_sections, market_time_text

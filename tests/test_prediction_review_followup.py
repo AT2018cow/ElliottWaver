@@ -91,7 +91,7 @@ def test_wxy_x_retracement_and_break_of_w_have_separate_roles():
         for item in projection.conditions
     )
     run = build_brief(
-        AnalysisRequest(symbol="AAPL", as_of=demo_bundle("AAPL").as_of),
+        AnalysisRequest(symbol="AAPL", as_of=demo_bundle("AAPL").as_of, mode="FROZEN_DATA_REPLAY"),
         demo_bundle("AAPL"),
         Settings(),
         include_weekly=False,
@@ -136,7 +136,7 @@ def test_flat_b_beyond_origin_suppresses_c_confirmation_and_target():
     assert not any("平台C进入A端点附近" in item.condition.reason for item in projection.conditions)
     assert projection.zones == ()
     run = build_brief(
-        AnalysisRequest(symbol="AAPL", as_of=demo_bundle("AAPL").as_of),
+        AnalysisRequest(symbol="AAPL", as_of=demo_bundle("AAPL").as_of, mode="FROZEN_DATA_REPLAY"),
         demo_bundle("AAPL"),
         Settings(),
         include_weekly=False,
@@ -215,7 +215,7 @@ def test_developing_wave_progress_keeps_its_target_active(template, prices, stag
     )
     bundle = demo_bundle("AAPL")
     run = build_brief(
-        AnalysisRequest(symbol="AAPL", as_of=bundle.as_of),
+        AnalysisRequest(symbol="AAPL", as_of=bundle.as_of, mode="FROZEN_DATA_REPLAY"),
         bundle,
         Settings(),
         include_weekly=False,
@@ -256,7 +256,7 @@ def test_target_filter_rejects_equal_stop_and_target_before_advance_gate():
 def test_build_outlook_refuses_search_limited_result():
     bundle = demo_bundle("AAPL")
     run = build_brief(
-        AnalysisRequest(symbol="AAPL", as_of=bundle.as_of),
+        AnalysisRequest(symbol="AAPL", as_of=bundle.as_of, mode="FROZEN_DATA_REPLAY"),
         bundle,
         Settings(),
         include_weekly=False,
@@ -300,7 +300,9 @@ def test_daily_outlook_skips_a_session_already_open_at_issue():
 def test_settlement_and_replay_share_the_frozen_periods():
     bundle = demo_bundle("AAPL", timeframe="1w")
     run = build_brief(
-        AnalysisRequest(symbol="AAPL", as_of=bundle.as_of, timeframe="1w"),
+        AnalysisRequest(
+            symbol="AAPL", as_of=bundle.as_of, timeframe="1w", mode="FROZEN_DATA_REPLAY"
+        ),
         bundle,
         Settings(),
         include_weekly=False,
@@ -1050,7 +1052,7 @@ def test_brief_uses_models_for_two_events_and_two_slots(tmp_path):
     registry.register(target_path, approved_at="2025-02-01T00:00:00+00:00")
     bundle = demo_bundle("AAPL")
     run = build_brief(
-        AnalysisRequest(symbol="AAPL", as_of=bundle.as_of),
+        AnalysisRequest(symbol="AAPL", as_of=bundle.as_of, mode="FROZEN_DATA_REPLAY"),
         bundle,
         Settings(),
         models=(advance, target),
@@ -1069,7 +1071,7 @@ def test_brief_keeps_an_old_model_alongside_new_outlook_models(approved_model):
     old = approved_model()
     new = _new_model("ADVANCE_FIRST_5D_V1", "PRIMARY")
     run = build_brief(
-        AnalysisRequest(symbol="AAPL", as_of=bundle.as_of),
+        AnalysisRequest(symbol="AAPL", as_of=bundle.as_of, mode="FROZEN_DATA_REPLAY"),
         bundle,
         Settings(),
         models=(old, new),
@@ -1087,7 +1089,7 @@ def test_replay_event_features_read_the_frozen_window_state():
 
     bundle = demo_bundle("AAPL")
     run = build_brief(
-        AnalysisRequest(symbol="AAPL", as_of=bundle.as_of),
+        AnalysisRequest(symbol="AAPL", as_of=bundle.as_of, mode="FROZEN_DATA_REPLAY"),
         bundle,
         Settings(),
         include_weekly=False,
@@ -1130,7 +1132,7 @@ def test_build_brief_resolves_window_state_before_forecasting(monkeypatch):
     monkeypatch.setattr("elliottwaver.brief.forecasts_for_brief", capture)
     bundle = demo_bundle("AAPL")
     run = build_brief(
-        AnalysisRequest(symbol="AAPL", as_of=bundle.as_of),
+        AnalysisRequest(symbol="AAPL", as_of=bundle.as_of, mode="FROZEN_DATA_REPLAY"),
         bundle,
         Settings(),
         include_weekly=False,
@@ -1159,7 +1161,7 @@ def test_console_condition_precision_matches_executable_boundary():
 def test_console_outlook_explains_slot_and_target_mode(capsys):
     bundle = demo_bundle("AAPL")
     run = build_brief(
-        AnalysisRequest(symbol="AAPL", as_of=bundle.as_of),
+        AnalysisRequest(symbol="AAPL", as_of=bundle.as_of, mode="FROZEN_DATA_REPLAY"),
         bundle,
         Settings(),
         include_weekly=False,

@@ -188,12 +188,14 @@ def test_forward_score_requires_a_presealed_plan_and_matching_live_receipts(
     request = AnalysisRequest(symbol="AAPL", as_of=issued_at, mode="LIVE")
     issued_source = prepare_bundle(request, bundle)
     store.save(issued_source)
-    run = build_brief(request, issued_source, Settings())
+    run = build_brief(request, issued_source, Settings(), outlook_issued_at=issued_at)
     record = run.brief.model_copy(update={"generated_at": issued_at + timedelta(minutes=1)})
     from dataclasses import replace
 
     reports = tmp_path / "reports"
-    publish_brief(replace(run, brief=record), reports, formats=())
+    publish_brief(
+        replace(run, brief=record), reports, formats=(), clock=lambda: record.generated_at
+    )
     decision_day = market_bar.session_date
     cutoff = bundle.bars[-1].session_date
     event = "CLOSE_BAND_5D_V1"

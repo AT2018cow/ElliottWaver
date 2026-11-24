@@ -9,6 +9,8 @@ import json
 import os
 import shutil
 import tempfile
+from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 
 from elliottwaver.brief import BriefRun
@@ -29,6 +31,7 @@ from elliottwaver.visualization.brief_text import (
     diagnostic_text,
     feed_text,
     forecast_row,
+    guidance_sections,
     market_time_text,
     mode_text,
     omission_text,
@@ -41,6 +44,63 @@ from elliottwaver.visualization.brief_text import (
 from elliottwaver.visualization.chart_builder import PLOTLY_RENDER_VERSION, render_html
 
 BRIEF_TEXT_RENDER_VERSION = "brief-render-v6"
+ISSUANCE_FILE = "issuance.json"
+ISSUANCE_PENDING = ".issuance-pending"
+
+
+class PublicationWindowElapsed(ExportError):
+    def __init__(self, observed_at: datetime):
+        super().__init__("BRIEF_WINDOW_ELAPSED: 首个观察期已开始，需要重新发行")
+        self.observed_at = observed_at
+
+
+def _check_publication_time(brief: Brief, readable_at: datetime) -> None:
+    outlook = brief.outlook
+    if readable_at < max(brief.as_of, brief.generated_at):
+        raise ValueError("publication clock precedes analysis")
+    if outlook and outlook.issued_at and readable_at < outlook.issued_at:
+        raise ValueError("publication clock precedes frozen outlook")
+    if outlook and outlook.periods and outlook.periods[0].start_at < readable_at:
+        raise PublicationWindowElapsed(readable_at)
+    if brief.index_guidance is not None and any(
+        track.plan is not None
+        and track.plan.decision_at == brief.as_of
+        and track.plan.periods[0].start_at < readable_at
+        for track in brief.index_guidance.tracks
+    ):
+        raise PublicationWindowElapsed(readable_at)
+
+
+def read_issuance(directory: Path, brief: Brief) -> datetime | None:
+    """Check a newly published report's receipt against its manifest and cutoff."""
+    if (directory / ISSUANCE_PENDING).exists():
+        raise ValueError("publication receipt is still being committed")
+    manifest_bytes = (directory / "manifest.json").read_bytes()
+    manifest = json.loads(manifest_bytes)
+    if manifest["schema_version"] != "1.3" and not (
+        manifest["schema_version"] == "1.4" and manifest.get("mode") == "LIVE"
+    ):
+        return None
+    receipt = json.loads((directory / ISSUANCE_FILE).read_bytes())
+    checksum = receipt.pop("receipt_sha256")
+    if (
+        receipt.get("schema_version") != "1.0"
+        or digest(receipt) != checksum
+        or receipt.get("manifest_sha256") != hashlib.sha256(manifest_bytes).hexdigest()
+        or receipt.get("brief_digest") != brief.brief_digest
+        or brief.mode != "LIVE"
+    ):
+        raise ValueError("publication receipt identity mismatch")
+    readable_at = datetime.fromisoformat(receipt["readable_at"])
+    signal_start = datetime.fromisoformat(receipt["signal_bar_start_at"])
+    if (
+        readable_at.utcoffset() is None
+        or signal_start.utcoffset() is None
+        or not (signal_start < brief.last_bar_end_at <= brief.last_bar_available_at <= brief.as_of)
+    ):
+        raise ValueError("publication receipt has invalid signal/decision times")
+    _check_publication_time(brief, readable_at)
+    return readable_at
 
 
 def rule_evidence(scenario: WaveScenario) -> tuple[str, ...]:
@@ -246,6 +306,10 @@ def brief_markdown(brief: Brief, result: AnalysisResult | None = None) -> str:
         f"分析价格 {price_text(brief.latest_price)}",
         "",
     ]
+    if sections := guidance_sections(brief):
+        lines += ["## 单指数预案", ""]
+        for name, content in sections:
+            lines += [f"### {name}", "", *_md_items(content), ""]
     if (heading := outlook_heading(brief)) is not None:
         lines += [f"## {heading}", ""]
     for title, content in summary_cards(brief):
@@ -309,6 +373,16 @@ def brief_markdown(brief: Brief, result: AnalysisResult | None = None) -> str:
 
 def brief_html(brief: Brief, result: AnalysisResult | None = None) -> str:
     scenarios = {item.scenario_id: item for item in result.scenarios} if result else {}
+    sections = guidance_sections(brief)
+    guidance = (
+        "<h2>单指数预案</h2>"
+        + "".join(
+            f"<section><h3>{html.escape(name)}</h3>{_item_list(content)}</section>"
+            for name, content in sections
+        )
+        if sections
+        else ""
+    )
     heading = outlook_heading(brief)
     outlook = f"<h2>{html.escape(heading)}</h2>" if heading else ""
     cards = "".join(
@@ -382,7 +456,7 @@ th,td{{border:1px solid #d8e2ea;padding:8px;text-align:left}}
 <p>{html.escape(mode_text(brief.mode))} · {html.escape(feed_text(brief.feed))} ·
 {html.escape(adjustment_text(brief.adjustment))}</p>
 <p>分析价格 {price_text(brief.latest_price)}</p></header>
-{outlook}{cards}{comparisons}{retrospective}
+{guidance}{outlook}{cards}{comparisons}{retrospective}
 <p>{html.escape(forecast_message(brief.forecast_status))}</p>{forecasts}
 <p><a href="daily.html">打开 K 线图</a></p>
 <h2>核对依据</h2>{metrics}<p>{html.escape(omission_text(brief))}</p>
@@ -411,10 +485,16 @@ def read_brief_report(
         files = manifest["files"]
         required = {"brief.json", "daily.json"}
         allowed = required | {"weekly.json", "report.md", "index.html", "daily.html", "weekly.html"}
+        control_files = {"manifest.json"}
+        requires_receipt = manifest["schema_version"] == "1.3" or (
+            manifest["schema_version"] == "1.4" and manifest.get("mode") == "LIVE"
+        )
+        if requires_receipt:
+            control_files.add(ISSUANCE_FILE)
         if (
-            manifest["schema_version"] not in {"1.0", "1.1", "1.2"}
+            manifest["schema_version"] not in {"1.0", "1.1", "1.2", "1.3", "1.4"}
             or not required <= set(files) <= allowed
-            or {p.name for p in directory.iterdir()} != set(files) | {"manifest.json"}
+            or {p.name for p in directory.iterdir()} != set(files) | control_files
         ):
             raise ValueError("report file set or version mismatch")
         payload = {}
@@ -463,8 +543,21 @@ def read_brief_report(
         result = checked_analysis("daily.json", brief)
         if brief.weekly is not None:
             checked_analysis("weekly.json", brief.weekly)
+        if (manifest["schema_version"] == "1.4") != (brief.index_guidance is not None) or (
+            manifest["schema_version"] == "1.4" and manifest.get("mode") != brief.mode
+        ):
+            raise ValueError("invalid index guidance report version or mode")
+        if requires_receipt:
+            read_issuance(directory, brief)
         return brief, result
-    except (OSError, TypeError, KeyError, ValueError, AttributeError) as exc:
+    except (
+        OSError,
+        TypeError,
+        KeyError,
+        ValueError,
+        AttributeError,
+        PublicationWindowElapsed,
+    ) as exc:
         raise DataError(f"BRIEF_REPORT_INVALID: {exc}") from exc
 
 
@@ -473,6 +566,8 @@ def publish_brief(
     root: Path,
     formats=("html", "md"),
     renderer="plotly",
+    *,
+    clock: Callable[[], datetime] | None = None,
 ) -> Path:
     formats = tuple(sorted(set(formats)))
     if set(formats) - {"html", "md"} or renderer not in {"plotly", "svg"}:
@@ -487,6 +582,11 @@ def publish_brief(
     ]
     if renderer == "plotly" and "html" in formats:
         render_identity.append(PLOTLY_RENDER_VERSION)
+    live = run.brief.mode == "LIVE"
+    with_guidance = run.brief.index_guidance is not None
+    if live:
+        render_identity.append("live-issuance-v1")
+    now = clock or (lambda: datetime.now(UTC))
     destination = (
         root
         / run.result.instrument.market
@@ -497,6 +597,8 @@ def publish_brief(
     )
     destination.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=".brief-", dir=destination.parent))
+    installed = False
+    committed = False
     try:
         atomic_write(staging / "brief.json", canonical_json(run.brief))
         atomic_write(staging / "daily.json", canonical_json(run.result))
@@ -524,7 +626,16 @@ def publish_brief(
             staging / "manifest.json",
             canonical_json(
                 {
-                    "schema_version": "1.2" if run.brief.schema_version == "1.2" else "1.1",
+                    "schema_version": (
+                        "1.4"
+                        if with_guidance
+                        else (
+                            "1.3"
+                            if live
+                            else ("1.2" if run.brief.schema_version == "1.2" else "1.1")
+                        )
+                    ),
+                    **({"mode": run.brief.mode} if with_guidance else {}),
                     "renderer": renderer,
                     "brief_digest": run.brief.brief_digest,
                     "source_snapshot_id": run.brief.source_snapshot_id,
@@ -536,8 +647,15 @@ def publish_brief(
                 }
             ),
         )
+        if live and destination.exists():
+            read_brief_report(destination, expected_digest=run.brief.brief_digest)
+            return destination
+        if live:
+            (staging / ISSUANCE_PENDING).touch()
+            _check_publication_time(run.brief, now())
         try:
             os.replace(staging, destination)
+            installed = True
         except OSError as exc:
             if exc.errno not in {errno.ENOTEMPTY, errno.EEXIST}:
                 raise
@@ -545,6 +663,31 @@ def publish_brief(
             manifest = json.loads((destination / "manifest.json").read_text())
             if set(manifest["files"]) != set(files) or manifest.get("renderer") != renderer:
                 raise ExportError("Existing brief representation mismatch") from exc
+        if live and installed:
+            readable_at = now()
+            _check_publication_time(run.brief, readable_at)
+            manifest_hash = hashlib.sha256((destination / "manifest.json").read_bytes())
+            receipt = {
+                "schema_version": "1.0",
+                "brief_digest": run.brief.brief_digest,
+                "manifest_sha256": manifest_hash.hexdigest(),
+                "readable_at": readable_at.isoformat(),
+                "signal_bar_start_at": run.prepared.bars[-1].start_at.isoformat(),
+            }
+            receipt_path = destination / ISSUANCE_FILE
+            atomic_write(
+                receipt_path, canonical_json({**receipt, "receipt_sha256": digest(receipt)})
+            )
+            completed_at = now()
+            _check_publication_time(run.brief, completed_at)
+            if completed_at != readable_at:
+                receipt["readable_at"] = completed_at.isoformat()
+                atomic_write(
+                    receipt_path, canonical_json({**receipt, "receipt_sha256": digest(receipt)})
+                )
+                _check_publication_time(run.brief, now())
+            (destination / ISSUANCE_PENDING).unlink()
+            committed = True
         return destination
     except ExportError:
         raise
@@ -553,5 +696,8 @@ def publish_brief(
             f"Brief export failed ({type(exc).__name__}); no incomplete brief was published"
         ) from exc
     finally:
+        if live and installed and not committed:
+            # Keep an interrupted, unissued attempt out of report discovery.
+            os.replace(destination, staging)
         if staging.exists():
             shutil.rmtree(staging)

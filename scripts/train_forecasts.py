@@ -993,7 +993,7 @@ def _forward_evidence(
     for cohort in rows.values():
         for row in cohort:
             decision = row["decision"]
-            receipt = receipts.get(
+            issued = receipts.get(
                 live_receipt_key(
                     decision["symbol"],
                     decision["timeframe"],
@@ -1001,6 +1001,7 @@ def _forward_evidence(
                     decision.get("last_bar_end_at"),
                 )
             )
+            receipt = issued.brief if issued is not None else None
             if (
                 receipt is None
                 or decision.get("mode") != "LIVE"
@@ -1009,15 +1010,28 @@ def _forward_evidence(
                 or decision.get("input_snapshot_id") != receipt.input_snapshot_id
                 or digest(decision.get("outlook")) != digest(receipt.outlook)
                 or _as_utc(datetime.fromisoformat(decision["as_of"])) != receipt.as_of
-                or not sealed_at < receipt.as_of <= receipt.generated_at < row["label_available_at"]
+                or decision.get("decision_at") != issued.readable_at.isoformat()
+                or not sealed_at
+                < receipt.as_of
+                <= receipt.generated_at
+                <= issued.readable_at
+                < row["label_available_at"]
                 or receipt.outlook is None
                 or not receipt.outlook.periods
-                or receipt.generated_at > receipt.outlook.periods[0].start_at
+                or issued.readable_at > receipt.outlook.periods[0].start_at
             ):
                 raise ValueError(
                     "Scored decision lacks a matching live report from the sealed holdout"
                 )
-            verified.add(receipt.brief_digest)
+            event_id = row["event_id"]
+            if (
+                event_id not in NEW_OUTLOOK_EVENTS
+                and event_id != "CLOSE_BAND_2W_V1"
+                and receipt.outcome_dates
+                and receipt.outcome_dates[0] < receipt.outlook.periods[0].end_session
+            ):
+                raise ValueError("Legacy event window had already started at publication")
+            verified.add((receipt.brief_digest, issued.readable_at.isoformat()))
     if not verified:
         raise ValueError("Forward holdout has no verified mature live decisions")
     return {

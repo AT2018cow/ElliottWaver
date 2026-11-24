@@ -5,6 +5,7 @@ from typing import Literal
 
 from pydantic import AwareDatetime, Field
 
+from elliottwaver.schemas.index_plan import IndexGuidance
 from elliottwaver.schemas.market import Contract
 from elliottwaver.schemas.outlook import BriefOutlook
 from elliottwaver.schemas.wave import (
@@ -193,7 +194,7 @@ class BriefWindowComparison(Contract):
 
 
 class Brief(Contract):
-    schema_version: Literal["1.0", "1.1", "1.2"] = "1.1"
+    schema_version: Literal["1.0", "1.1", "1.2", "1.3"] = "1.1"
     brief_digest: str
     source_snapshot_id: str
     symbol: str
@@ -240,6 +241,16 @@ class Brief(Contract):
     outcome_dates: tuple[date, ...] = ()
     wave_relations: tuple[WaveRelation, ...] = Field((), exclude_if=lambda value: not value)
     outlook: BriefOutlook | None = Field(None, exclude_if=lambda value: value is None)
+    index_guidance: IndexGuidance | None = Field(None, exclude_if=lambda value: value is None)
+
+    @property
+    def rich_comparison(self) -> bool:
+        return (
+            self.schema_version == "1.2"
+            or (self.schema_version == "1.3" and self.engine_version.endswith("/hierarchical_v1"))
+            or self.timeframe.endswith("m")
+        )
+
     forecast_note: str = "价格概率尚未校准；当前只提供条件情景与候选权重。"
 
 

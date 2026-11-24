@@ -2,14 +2,67 @@ from datetime import timedelta
 
 import pytest
 from conftest import make_bar
+from hypothesis import given
+from hypothesis import strategies as st
 from pydantic import ValidationError
 
 from elliottwaver.config import Settings, load_settings
 from elliottwaver.data.adjustment import adjust_to_basis
-from elliottwaver.data.quality import normalize_bars
+from elliottwaver.data.demo import demo_bundle
+from elliottwaver.data.quality import missing_intervals, normalize_bars
 from elliottwaver.data.router import route_symbol
 from elliottwaver.errors import DataError, InputError
 from elliottwaver.schemas.market import AnalysisRequest, Bar, FactorPoint, MarketDataBundle
+from elliottwaver.service import prepare_bundle
+
+
+@given(
+    st.lists(st.integers(0, 3), min_size=3, max_size=3),
+    st.lists(st.integers(0, 3), min_size=3, max_size=3),
+)
+def test_prefix_matches_physically_available_raw_and_analysis_pairs(raw_delays, analysis_delays):
+    base = demo_bundle("AAPL", timeframe="5m")
+    source = base.bars[-4:]
+    cutoff = source[2].end_at
+
+    def delayed(delays):
+        return (source[0],) + tuple(
+            bar.model_copy(update={"available_at": bar.end_at + timedelta(minutes=5 * n)})
+            for bar, n in zip(source[1:], delays, strict=True)
+        )
+
+    bars, raw = delayed(analysis_delays), delayed(raw_delays)
+    snapshot = MarketDataBundle.model_validate(
+        base.model_copy(
+            update={
+                "bars": bars,
+                "raw_bars": raw,
+                "expected_bar_starts": tuple(bar.start_at for bar in source),
+                "as_of": source[-1].end_at + timedelta(minutes=15),
+            }
+        )
+    )
+    request = AnalysisRequest(
+        symbol="AAPL", as_of=cutoff, timeframe="5m", mode="FROZEN_DATA_REPLAY"
+    )
+    result = prepare_bundle(request, snapshot)
+    offsets = [0] + [
+        i
+        for i in (1, 2)
+        if source[i].end_at + timedelta(minutes=5 * max(raw_delays[i - 1], analysis_delays[i - 1]))
+        <= cutoff
+    ]
+    assert tuple(bar.start_at for bar in result.bars) == tuple(bars[i].start_at for i in offsets)
+    assert tuple(bar.usable_at for bar in result.bars) == tuple(
+        max(bars[i].usable_at, raw[i].usable_at) for i in offsets
+    )
+    assert tuple(bar.bar_id for bar in result.raw_bars) == tuple(raw[i].bar_id for i in offsets)
+    assert missing_intervals(result) == tuple(
+        source[i].start_at for i in range(offsets[-1]) if i not in offsets
+    )
+    complete = prepare_bundle(request.model_copy(update={"as_of": snapshot.as_of}), snapshot)
+    assert tuple(bar.start_at for bar in complete.bars) == tuple(bar.start_at for bar in bars)
+    assert complete.raw_bars == raw
 
 
 @pytest.mark.parametrize(

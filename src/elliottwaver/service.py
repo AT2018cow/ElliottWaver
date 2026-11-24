@@ -7,7 +7,7 @@ from uuid import uuid4
 from elliottwaver import ENGINE_VERSION
 from elliottwaver.config import Settings
 from elliottwaver.data.adjustment import adjust_to_basis
-from elliottwaver.data.periods import as_weekly, background_bundle
+from elliottwaver.data.periods import as_weekly, available_pairs, background_bundle
 from elliottwaver.data.quality import missing_intervals
 from elliottwaver.data.resample import weekly_bars
 from elliottwaver.data.router import route_symbol
@@ -24,7 +24,7 @@ from elliottwaver.engine.templates import variant_allowed_in_parent
 from elliottwaver.engine.zigzag import ZigZagResult, extract
 from elliottwaver.errors import DataError, InputError
 from elliottwaver.schemas.brief import BriefAnchor
-from elliottwaver.schemas.market import AnalysisRequest, MarketDataBundle
+from elliottwaver.schemas.market import AnalysisRequest, Bar, MarketDataBundle
 from elliottwaver.schemas.wave import (
     AnalysisResult,
     SearchDiagnostics,
@@ -50,6 +50,19 @@ def engine_rules_version(settings: Settings) -> str:
     return ENGINE_VERSION
 
 
+def _analysis_availability(
+    bars: tuple[Bar, ...], pairs: tuple[tuple[Bar, Bar], ...]
+) -> tuple[Bar, ...]:
+    """Derived prices become usable only after both source legs are available."""
+    adjusted = []
+    for bar, (analysis, raw) in zip(bars, pairs, strict=True):
+        available = max(analysis.usable_at, raw.usable_at)
+        adjusted.append(
+            bar.model_copy(update={"available_at": available}) if bar.usable_at < available else bar
+        )
+    return tuple(adjusted)
+
+
 def prepare_bundle(request: AnalysisRequest, bundle: MarketDataBundle) -> MarketDataBundle:
     if request.timeframe != bundle.timeframe:
         if request.timeframe == "1w" and bundle.timeframe == "1d":
@@ -73,30 +86,35 @@ def prepare_bundle(request: AnalysisRequest, bundle: MarketDataBundle) -> Market
         raise DataError(
             "STALE_DATA: requested as-of exceeds the frozen snapshot coverage; use --allow-stale explicitly"
         )
-    indices = [
-        i
-        for i, bar in enumerate(bundle.bars)
-        if bar.usable_at <= request.as_of
-        and (request.end is None or bar.session_date <= request.end)
-    ]
-    if not indices:
+    pairs = available_pairs(bundle.bars, bundle.raw_bars, request.as_of, through=request.end)
+    if not pairs:
         raise DataError("No completed available bars at the requested time")
-    last = indices[-1]
-    raw = bundle.raw_bars[: last + 1]
-    bars = bundle.bars[: last + 1]
-    factors = tuple(p for p in bundle.factors if p.effective_date <= raw[-1].session_date)
+    bars, raw = zip(*pairs, strict=True)
     provenance = bundle.provenance
-    raw_context = tuple(
-        b
-        for b in bundle.raw_daily_context
-        if b.usable_at <= request.as_of and b.end_at <= raw[-1].end_at
+    daily = available_pairs(
+        bundle.daily_context, bundle.raw_daily_context, request.as_of, end=raw[-1].end_at
     )
-    context = tuple(
-        b
-        for b in bundle.daily_context
-        if b.usable_at <= request.as_of and b.end_at <= raw[-1].end_at
+    context, raw_context = zip(*daily, strict=True) if daily else ((), ())
+    if bundle.timeframe == "1w" and bundle.raw_daily_context:
+        complete = {bar.start_at for bar in weekly_bars(raw_context, bundle.sessions)}
+        pairs = tuple((bar, original) for bar, original in pairs if bar.start_at in complete)
+        if not pairs:
+            raise DataError("No complete weeks are available")
+        bars, raw = zip(*pairs, strict=True)
+        daily = tuple((bar, original) for bar, original in daily if bar.end_at <= raw[-1].end_at)
+        context, raw_context = zip(*daily, strict=True) if daily else ((), ())
+    factors = tuple(
+        point
+        for point in bundle.factors
+        if point.effective_date <= raw[-1].session_date
+        and (point.known_at is None or point.known_at <= request.as_of)
     )
-    if beyond_coverage and "STALE_SNAPSHOT" not in provenance.warnings:
+    tail_pending = any(
+        raw[-1].end_at < bar.end_at <= request.as_of
+        and (request.end is None or bar.session_date <= request.end)
+        for bar in bundle.raw_bars
+    )
+    if (beyond_coverage or tail_pending) and "STALE_SNAPSHOT" not in provenance.warnings:
         provenance = provenance.model_copy(
             update={"warnings": provenance.warnings + ("STALE_SNAPSHOT",)}
         )
@@ -107,8 +125,13 @@ def prepare_bundle(request: AnalysisRequest, bundle: MarketDataBundle) -> Market
                     "Weekly QFQ requires original daily bars; cannot adjust aggregated raw OHLC"
                 )
             context = adjust_to_basis(raw_context, factors, basis_date=raw[-1].session_date)
-            bars = weekly_bars(context, bundle.sessions)
-            raw = weekly_bars(raw_context, bundle.sessions)
+            selected = {bar.start_at for bar in raw}
+            bars = tuple(
+                bar for bar in weekly_bars(context, bundle.sessions) if bar.start_at in selected
+            )
+            raw = tuple(
+                bar for bar in weekly_bars(raw_context, bundle.sessions) if bar.start_at in selected
+            )
         else:
             bars = adjust_to_basis(raw, factors)
             if raw_context:
@@ -122,6 +145,8 @@ def prepare_bundle(request: AnalysisRequest, bundle: MarketDataBundle) -> Market
         )
     elif provenance.basis_date != bars[-1].session_date:
         provenance = provenance.model_copy(update={"basis_date": bars[-1].session_date})
+    bars = _analysis_availability(bars, pairs)
+    context = _analysis_availability(context, daily)
     return MarketDataBundle(
         instrument=bundle.instrument,
         timeframe=bundle.timeframe,

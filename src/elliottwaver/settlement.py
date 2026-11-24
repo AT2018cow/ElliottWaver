@@ -6,6 +6,9 @@ import sqlite3
 from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Literal
+
+from pydantic import AwareDatetime, StrictInt
 
 from elliottwaver.data.adjustment import provider_price_scale
 from elliottwaver.data.periods import as_weekly
@@ -14,6 +17,7 @@ from elliottwaver.data.snapshots import SnapshotStore
 from elliottwaver.engine.indicators import calculate
 from elliottwaver.errors import DataError
 from elliottwaver.evaluation.events import EVENT_SPECS, INTRADAY_EVENTS
+from elliottwaver.evaluation.index_plans import apply_published_cancellation, settle_index_track
 from elliottwaver.evaluation.outcomes import (
     Outcome,
     close_band,
@@ -23,12 +27,19 @@ from elliottwaver.evaluation.outcomes import (
     outcome_window,
     outlook_window,
 )
+from elliottwaver.forecast import ModelRegistry
 from elliottwaver.schemas.brief import Brief
-from elliottwaver.schemas.market import AnalysisRequest, MarketDataBundle
+from elliottwaver.schemas.index_plan import PlanTransition
+from elliottwaver.schemas.market import AnalysisRequest, Contract, MarketDataBundle
 from elliottwaver.schemas.outlook import OutlookCase
 from elliottwaver.service import prepare_bundle
-from elliottwaver.util import canonical_json, digest
-from elliottwaver.visualization.brief_formatter import read_brief_report
+from elliottwaver.util import (
+    canonical_json,
+    digest,
+    package_source_digest,
+    support_test_inputs_digest,
+)
+from elliottwaver.visualization.brief_formatter import read_brief_report, read_issuance
 
 NON_FINAL = {
     "RIGHT_CENSORED",
@@ -188,12 +199,68 @@ class SettlementStore:
                 "CREATE INDEX IF NOT EXISTS settlement_symbol "
                 "ON settlements(symbol, market_asof, event_id)"
             )
+            db.execute(
+                """
+                CREATE TABLE IF NOT EXISTS index_plan_observations (
+                    observation_id TEXT PRIMARY KEY,
+                    plan_id TEXT NOT NULL,
+                    revision INTEGER NOT NULL,
+                    brief_digest TEXT NOT NULL,
+                    source_snapshot_id TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    observed_at TEXT NOT NULL
+                )
+                """
+            )
             db.commit()
+
+    def settle_index_guidance(
+        self,
+        brief: Brief,
+        source: MarketDataBundle,
+        *,
+        cancellations: dict[tuple[str, int], PlanTransition] | None = None,
+    ) -> list[dict]:
+        if brief.index_guidance is None:
+            return []
+        rows = []
+        for track in brief.index_guidance.tracks:
+            if track.plan is None:
+                continue
+            row = settle_index_track(track, source)
+            cancellation = (cancellations or {}).get((track.plan.plan_id, track.plan.revision))
+            if cancellation is not None and source.as_of >= cancellation.observable_at:
+                row = apply_published_cancellation(row, cancellation)
+            rows.append(row)
+        with closing(sqlite3.connect(self.path)) as db:
+            db.executemany(
+                """
+                INSERT INTO index_plan_observations
+                (observation_id, plan_id, revision, brief_digest, source_snapshot_id, payload, observed_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(observation_id) DO NOTHING
+                """,
+                (
+                    (
+                        digest(row),
+                        row["plan_id"],
+                        row["revision"],
+                        brief.brief_digest,
+                        row["source_snapshot_id"],
+                        canonical_json(row),
+                        datetime.now(UTC).isoformat(),
+                    )
+                    for row in rows
+                ),
+            )
+            db.commit()
+        return rows
 
     def register_brief(self, brief: Brief, report_path: Path) -> int:
         """Insert pending keys for a brief; existing keys are left untouched."""
         report_path = report_path.resolve()
         brief, _ = read_brief_report(report_path, expected_digest=brief.brief_digest)
+        published_at = read_issuance(report_path, brief)
         asset_type = route_symbol(brief.symbol).asset_type
         forecasts = {
             (item.event_id, item.scenario_id or brief.symbol): item for item in brief.forecasts
@@ -232,7 +299,7 @@ class SettlementStore:
                         ),
                         brief.source_snapshot_id,
                         str(report_path),
-                        brief.generated_at.isoformat(),
+                        (published_at or brief.generated_at).isoformat(),
                         now,
                     ),
                 )
@@ -395,12 +462,15 @@ class SettlementStore:
                 and brief.outlook.price_coordinate_id != brief.price_coordinate_id
             ):
                 raise DataError("SETTLEMENT_ISSUANCE_MISMATCH")
-            if brief.outlook.issued_at is not None:
-                if brief.timeframe in INTRADAY_EVENTS:
-                    if brief.outlook.issued_at < brief.as_of:
-                        raise DataError("SETTLEMENT_ISSUANCE_MISMATCH")
-                elif brief.outlook.issued_at != brief.as_of:
-                    raise DataError("SETTLEMENT_ISSUANCE_MISMATCH")
+            if brief.outlook.issued_at is not None and (
+                brief.outlook.issued_at < brief.as_of
+                or (
+                    brief.mode != "LIVE"
+                    and brief.timeframe not in INTRADAY_EVENTS
+                    and brief.outlook.issued_at != brief.as_of
+                )
+            ):
+                raise DataError("SETTLEMENT_ISSUANCE_MISMATCH")
         scenarios = {scenario.scenario_id: scenario for scenario in result.scenarios}
         for event_id, scope, horizon, _unit in event_specs(brief):
             if price_scale is None:
@@ -537,10 +607,113 @@ class SettlementStore:
         return result
 
 
-def support_matrix(model_summary: dict | None = None) -> dict:
-    """Describe asset/timeframe/event support and model approval state."""
+class SupportTestReceipt(Contract):
+    schema_version: Literal["1.0"] = "1.0"
+    source_sha256: str
+    test_inputs_sha256: str | None = None
+    command: tuple[str, ...]
+    started_at: AwareDatetime
+    completed_at: AwareDatetime
+    exit_code: StrictInt
+
+
+def _support_tests(directory: Path | None, at: datetime) -> tuple[dict, dict]:
+    statuses = dict.fromkeys(SUPPORT_TESTS, "UNVERIFIED")
+    evidence = {}
+    if directory is None:
+        return statuses, evidence
+    source_sha256 = package_source_digest()
+    try:
+        test_inputs_sha256 = support_test_inputs_digest()
+    except OSError:
+        test_inputs_sha256 = None
+    if test_inputs_sha256 is None:
+        return statuses, evidence
+    for name in SUPPORT_TESTS:
+        path = directory / (Path(name).stem + ".json")
+        try:
+            receipt = SupportTestReceipt.model_validate_json(path.read_text())
+        except (OSError, ValueError):
+            continue
+        if (
+            receipt.source_sha256 == source_sha256
+            and receipt.test_inputs_sha256 == test_inputs_sha256
+            and receipt.command[1:] == ("-m", "pytest", name, "-q")
+            and receipt.started_at <= receipt.completed_at <= at
+        ):
+            statuses[name] = "PASS" if receipt.exit_code == 0 else "FAIL"
+            evidence[name] = receipt.model_dump(mode="json")
+    return statuses, evidence
+
+
+def support_matrix(
+    model_summary: dict | None = None,
+    *,
+    registry: ModelRegistry | None = None,
+    brief: Brief | None = None,
+    at: datetime | None = None,
+    test_receipts: Path | None = None,
+) -> dict:
+    """Describe event support, research reports and verified operational applicability."""
     summary = model_summary or {}
     cohorts = list(summary["cohorts"].values()) if "cohorts" in summary else [summary]
+    when = at or datetime.now(UTC)
+    tests, test_evidence = _support_tests(test_receipts, when)
+    instrument = route_symbol(brief.symbol) if brief is not None else None
+    active = {}
+    applicable = {}
+    if (
+        registry is not None
+        and brief is not None
+        and not brief.retrospective
+        and when >= brief.as_of
+    ):
+        active = {
+            item["model_id"]: item
+            for item in registry.active_models_at(
+                at or brief.as_of,
+                engine_version=brief.engine_version.removesuffix("/hierarchical_v1").rsplit("/", 1)[
+                    0
+                ],
+                config_hash=brief.config_hash,
+                timeframe=brief.timeframe,
+                asset_type=instrument.asset_type,
+                market=instrument.market,
+                symbol=brief.symbol,
+                feed=brief.feed,
+                adjustment=brief.adjustment,
+            )
+        }
+        for forecast in brief.forecasts:
+            record = active.get(forecast.model_id)
+            if record is None or forecast.status != "APPROVED":
+                continue
+            model = record["model"]
+            if model["models"].get(forecast.event_id, {}).get("status") != "APPROVED":
+                continue
+            spec = EVENT_SPECS.get(forecast.event_id)
+            if (
+                spec is None
+                or spec.timeframe != brief.timeframe
+                or spec.horizon != forecast.horizon_sessions
+                or spec.unit != forecast.horizon_unit
+            ):
+                continue
+            scope = model.get("scope") or {}
+            if scope.get("outlook_slot") not in {None, forecast.outlook_slot} or scope.get(
+                "outlook_version"
+            ) not in {None, forecast.outlook_version}:
+                continue
+            applicable.setdefault(forecast.event_id, []).append(
+                {
+                    "model_id": forecast.model_id,
+                    "outlook_slot": forecast.outlook_slot,
+                    "outlook_version": forecast.outlook_version,
+                    "scenario_id": forecast.scenario_id,
+                    "approved_at": record["approved_at"],
+                    "scope": scope,
+                }
+            )
     rows = []
     for asset_type in ("EQUITY", "INDEX"):
         for timeframe, events in EVENT_ROWS.items():
@@ -558,8 +731,40 @@ def support_matrix(model_summary: dict | None = None) -> dict:
             for cohort in compatible:
                 for event_id, horizon, unit in (*events, *CANDIDATE_EVENTS[timeframe]):
                     entry = cohort.get("models", {}).get(event_id, {})
-                    status = entry.get("status", "UNCALIBRATED")
+                    research_status = entry.get("status", "UNCALIBRATED")
                     reasons = entry.get("reasons") or []
+                    context_matches = (
+                        brief is not None
+                        and instrument.asset_type == asset_type
+                        and brief.timeframe == timeframe
+                    )
+                    scope = cohort.get("scope") or {}
+                    context_matches = context_matches and ModelRegistry._compatible(
+                        {"scope": scope},
+                        market=instrument.market if instrument else None,
+                        symbol=brief.symbol if brief else None,
+                        feed=brief.feed if brief else None,
+                        adjustment=brief.adjustment if brief else None,
+                    )
+                    verified = (
+                        [
+                            item
+                            for item in applicable.get(event_id, [])
+                            if scope.get("outlook_slot") in {None, item["outlook_slot"]}
+                            and scope.get("outlook_version") in {None, item["outlook_version"]}
+                        ]
+                        if context_matches
+                        else []
+                    )
+                    status = (
+                        "APPROVED"
+                        if verified
+                        else (
+                            "INSUFFICIENT_EVIDENCE"
+                            if research_status == "INSUFFICIENT_EVIDENCE"
+                            else "UNCALIBRATED"
+                        )
+                    )
                     rows.append(
                         {
                             "asset_type": asset_type,
@@ -571,13 +776,25 @@ def support_matrix(model_summary: dict | None = None) -> dict:
                             "outlook_version": (cohort.get("scope") or {}).get("outlook_version"),
                             "outlook_slot": (cohort.get("scope") or {}).get("outlook_slot"),
                             "symbols": (cohort.get("scope") or {}).get("symbols"),
-                            "model_id": cohort.get("model_id") if status == "APPROVED" else None,
+                            "model_id": verified[0]["model_id"] if verified else None,
                             "model_status": status,
-                            "applicable_model": status == "APPROVED",
-                            "tests": {name: "PASS" for name in SUPPORT_TESTS},
+                            "applicable_model": bool(verified),
+                            "applicable_models": verified,
+                            "research_status": research_status,
+                            "research_model_id": cohort.get("model_id"),
+                            "implemented": True,
+                            "data_status": "REPORT_LINKED" if context_matches else "UNVERIFIED",
+                            "tests": tests,
                             "reason": None
                             if status == "APPROVED"
                             else (", ".join(map(str, reasons)) or "未注册批准模型"),
                         }
                     )
-    return {"schema_version": "1.0", "model_id": summary.get("model_id"), "rows": rows}
+    return {
+        "schema_version": "1.1",
+        "research_model_id": summary.get("model_id"),
+        "brief_digest": brief.brief_digest if brief is not None else None,
+        "model_checked_at": (at or brief.as_of).isoformat() if brief is not None else None,
+        "test_evidence": test_evidence,
+        "rows": rows,
+    }

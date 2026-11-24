@@ -14,6 +14,21 @@ from elliottwaver.util import digest
 SINA_AUCTION_PROFILE = "cn_sina_1m_auction_sparse_v1"
 
 
+def available_pairs(
+    bars: Sequence[Bar], raw_bars: Sequence[Bar], cutoff: datetime, *, through=None, end=None
+) -> tuple[tuple[Bar, Bar], ...]:
+    """Filter the already timestamp-aligned series together at the decision cutoff."""
+    return tuple(
+        (bar, raw)
+        for bar, raw in zip(bars, raw_bars, strict=True)
+        if bar.is_final
+        and raw.is_final
+        and max(bar.usable_at, raw.usable_at) <= cutoff
+        and (through is None or bar.session_date <= through)
+        and (end is None or bar.end_at <= end)
+    )
+
+
 def uses_sparse_sina_auction(instrument: Instrument, timeframe: str, feed: str) -> bool:
     return (
         timeframe == "1m"
@@ -222,8 +237,10 @@ def resample_bundle(
     )
     duration = minutes(target_timeframe)
     if duration is not None:
+        pairs = available_pairs(bundle.bars, bundle.raw_bars, cutoff)
+        analysis_input, raw_input = zip(*pairs, strict=True) if pairs else ((), ())
         bars = aggregate_intraday(
-            bundle.bars,
+            analysis_input,
             calendar,
             bundle.instrument,
             target_timeframe,
@@ -232,7 +249,7 @@ def resample_bundle(
             auction_sparse=auction_sparse,
         )
         raw = aggregate_intraday(
-            bundle.raw_bars,
+            raw_input,
             calendar,
             bundle.instrument,
             target_timeframe,
@@ -353,11 +370,7 @@ def background_bundle(
     """Use the source's native daily bars for the hourly brief's background."""
     if target_timeframe != "1d":
         return resample_bundle(bundle, target_timeframe, as_of=as_of)
-    pairs = tuple(
-        (bar, raw)
-        for bar, raw in zip(bundle.daily_context, bundle.raw_daily_context, strict=True)
-        if bar.is_final and raw.is_final and max(bar.usable_at, raw.usable_at) <= as_of
-    )
+    pairs = available_pairs(bundle.daily_context, bundle.raw_daily_context, as_of)
     if not pairs:
         raise DataError("NATIVE_DAILY_UNAVAILABLE: 截止时刻没有可用的原生日线")
     bars, raw = zip(*pairs, strict=True)

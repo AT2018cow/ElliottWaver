@@ -44,6 +44,7 @@ def extract(
             extreme_bar_id=bars[i].bar_id,
             extreme_at=bars[i].start_at,
             confirmed_at=bars[confirm].usable_at if confirm is not None else None,
+            confirmed_bar_id=bars[confirm].bar_id if confirm is not None else None,
             price=price,
             kind=kind,
             state=status,

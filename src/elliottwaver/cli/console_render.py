@@ -15,6 +15,7 @@ from elliottwaver.visualization.brief_text import (
     diagnostic_text,
     feed_text,
     forecast_row,
+    guidance_sections,
     market_time_text,
     mode_text,
     omission_text,
@@ -118,6 +119,12 @@ def render_brief(brief: Brief, result: AnalysisResult | None = None) -> None:
             )
     console.print(f"分析价格 {price_text(brief.latest_price)}", markup=False)
     console.print()
+    if sections := guidance_sections(brief):
+        console.print("单指数预案", style="bold")
+        for name, lines in sections:
+            console.print(name, style="bold", markup=False)
+            for line in lines:
+                console.print(f"  {line}", markup=False)
     render_outlook(brief, console=console)
     console.print()
     for line in comparison_text(brief):

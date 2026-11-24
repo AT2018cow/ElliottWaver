@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 import fcntl
+import json
 import sqlite3
 from contextlib import closing
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 from elliottwaver.schemas.brief import Brief
-from elliottwaver.util import digest
-from elliottwaver.visualization.brief_formatter import read_brief_report
+from elliottwaver.util import canonical_json, digest
+from elliottwaver.visualization.brief_formatter import read_brief_report, read_issuance
 
 
 def lineage_key(brief: Brief) -> str:
@@ -66,6 +67,32 @@ class HistoryStore:
                 db.execute(
                     "CREATE TABLE IF NOT EXISTS history_meta "
                     "(key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+                )
+                db.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS index_reminders (
+                        transition_id TEXT PRIMARY KEY,
+                        brief_digest TEXT NOT NULL,
+                        symbol TEXT NOT NULL,
+                        mode TEXT NOT NULL,
+                        decision_session TEXT NOT NULL,
+                        state TEXT NOT NULL,
+                        first_seen_at TEXT NOT NULL,
+                        acknowledged_at TEXT,
+                        payload TEXT NOT NULL
+                    )
+                    """
+                )
+                db.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS live_issuances (
+                        request_key TEXT PRIMARY KEY, brief_digest TEXT NOT NULL, report_path TEXT NOT NULL
+                    )
+                    """
+                )
+                db.execute(
+                    "CREATE INDEX IF NOT EXISTS index_reminder_history "
+                    "ON index_reminders(symbol, mode, decision_session)"
                 )
                 columns = {row[1] for row in db.execute("PRAGMA table_info(briefs)")}
                 if "base_lineage_key" not in columns:
@@ -156,9 +183,17 @@ class HistoryStore:
             )
         db.commit()
 
-    def register(self, brief: Brief, report_path: Path) -> None:
+    def lookup_issuance(self, key: str) -> tuple[Path, str] | None:
+        with closing(sqlite3.connect(self.path)) as db:
+            row = db.execute(
+                "SELECT report_path, brief_digest FROM live_issuances WHERE request_key = ?", (key,)
+            ).fetchone()
+        return (Path(row[0]), row[1]) if row is not None else None
+
+    def register(self, brief: Brief, report_path: Path, *, request_key: str | None = None) -> None:
         report_path = report_path.resolve()
         brief, _ = read_brief_report(report_path, expected_digest=brief.brief_digest)
+        visible_at = read_issuance(report_path, brief)
         with closing(sqlite3.connect(self.path)) as db:
             db.execute(
                 """
@@ -176,7 +211,7 @@ class HistoryStore:
                     brief.symbol,
                     brief.market_asof.isoformat(),
                     brief.as_of.isoformat(),
-                    brief.generated_at.isoformat(),
+                    (visible_at or brief.generated_at).isoformat(),
                     brief.source_snapshot_id,
                     str(report_path),
                     brief.mode,
@@ -190,7 +225,90 @@ class HistoryStore:
                     else None,
                 ),
             )
+            if request_key is not None:
+                if visible_at is None:
+                    raise ValueError("live issuance lookup requires a verified receipt")
+                db.execute(
+                    "INSERT INTO live_issuances VALUES (?, ?, ?) ON CONFLICT(request_key) DO NOTHING",
+                    (request_key, brief.brief_digest, str(report_path)),
+                )
+            if brief.index_guidance is not None:
+                first_seen = (visible_at or datetime.now(UTC)).isoformat()
+                db.executemany(
+                    """
+                    INSERT INTO index_reminders
+                    (transition_id, brief_digest, symbol, mode, decision_session, state,
+                     first_seen_at, payload)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(transition_id) DO NOTHING
+                    """,
+                    (
+                        (
+                            item.transition_id,
+                            brief.brief_digest,
+                            brief.symbol,
+                            brief.mode,
+                            item.session.isoformat(),
+                            item.to_state,
+                            first_seen,
+                            canonical_json(item),
+                        )
+                        for track in brief.index_guidance.tracks
+                        for item in track.transitions
+                    ),
+                )
             db.commit()
+
+    def reminders(
+        self,
+        symbol: str,
+        *,
+        mode: str | None = None,
+        as_of: date | None = None,
+        brief_digest: str | None = None,
+    ) -> list[dict]:
+        clauses = ["symbol = ?"]
+        values = [symbol]
+        for key, value in (
+            ("mode =", mode),
+            ("decision_session <=", as_of.isoformat() if as_of else None),
+            ("brief_digest =", brief_digest),
+        ):
+            if value is not None:
+                clauses.append(f"{key} ?")
+                values.append(value)
+        with closing(sqlite3.connect(self.path)) as db:
+            db.row_factory = sqlite3.Row
+            rows = db.execute(
+                "SELECT * FROM index_reminders WHERE "
+                + " AND ".join(clauses)
+                + " ORDER BY CASE state WHEN 'INVALIDATED' THEN 0 WHEN 'STAGE_EXIT' THEN 0"
+                + " WHEN 'TRIGGERED' THEN 1 WHEN 'NEAR' THEN 2 ELSE 3 END,"
+                + " first_seen_at DESC, transition_id LIMIT 100",
+                values,
+            ).fetchall()
+        return [
+            {
+                **json.loads(row["payload"]),
+                "brief_digest": row["brief_digest"],
+                "mode": row["mode"],
+                "first_seen_at": row["first_seen_at"],
+                "acknowledged_at": row["acknowledged_at"],
+            }
+            for row in rows
+        ]
+
+    def acknowledge_reminder(self, symbol: str, transition_id: str, *, mode: str | None) -> bool:
+        with closing(sqlite3.connect(self.path)) as db:
+            cursor = db.execute(
+                """
+                UPDATE index_reminders SET acknowledged_at = COALESCE(acknowledged_at, ?)
+                WHERE symbol = ? AND transition_id = ? AND (? IS NULL OR mode = ?)
+                """,
+                (datetime.now(UTC).isoformat(), symbol, transition_id, mode, mode),
+            )
+            db.commit()
+            return bool(cursor.rowcount)
 
     def query(
         self,

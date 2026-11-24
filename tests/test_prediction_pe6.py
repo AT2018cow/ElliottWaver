@@ -15,6 +15,7 @@ def _run(tmp_path):
             symbol="AAPL",
             as_of=decision.usable_at,
             end=decision.session_date,
+            mode="FROZEN_DATA_REPLAY",
         ),
         bundle,
         Settings(),

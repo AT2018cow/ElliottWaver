@@ -21,6 +21,16 @@ scoring:
   unclear_below: 45
   min_coverage: 0.70
   temperature: 12.0
+index_guidance:
+  enabled: true
+  short_sessions: 5
+  swing_sessions: 20
+  activation_sessions: 2
+  daily_trigger: close
+  near_atr: 0.5
+  max_chase_atr: 0.5
+  near_tie_score: 3.0
+  near_tie_min_coverage: 0.70
 data:
   us_feed: sip
   us_equity_feed: alpaca  # alpaca | yahoo

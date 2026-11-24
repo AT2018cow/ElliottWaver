@@ -438,7 +438,7 @@ def test_score_keeps_splits_separate_and_reports_missing(tmp_path):
 
 def _published_brief(bundle, tmp_path):
     run = build_brief(
-        AnalysisRequest(symbol="AAPL", as_of=bundle.as_of),
+        AnalysisRequest(symbol="AAPL", as_of=bundle.as_of, mode="FROZEN_DATA_REPLAY"),
         bundle,
         Settings(),
         include_weekly=False,

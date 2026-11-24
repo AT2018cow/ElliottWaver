@@ -380,6 +380,23 @@ A 股老指数/老股票原始数据可到 1990/1991 年；引擎日历从 **199
 
 `brief.json` 中的 `previous` 记录同模式的上一次较早判断。盘中报告按最后一根已完成 K 线选择前一份记录，因此同一天的两份判断也能比较；重复生成同一根 K 线时沿用此前合格记录。常见结果有 `FIRST_RECORD`（首次）、`SAME_COUNT`（维持）、`ALTERNATE_PROMOTED`（备选升为主选）、`STAGE_ADVANCED`（浪段推进）和 `COUNT_CHANGED`（结构改变）。配置或引擎版本变化显示 `CONFIG_CHANGED`。周期、feed、复权口径变化或没有可比较的行情时显示 `NOT_COMPARABLE`。`DATA_REVISED` 只计算截至上次决策的重叠 K 线和因子修订。JSON 另保留 `previous_last_bar_end_at`、`structure_change`、`revision_count` 和 `factor_revision_count`。
 
+### 4.6.1 单指数短线与波段预案
+
+输入一个指数代码即可查看日线预案。默认两档持有期为 5、20 个交易会话。每档显示当前状态、下一条件、指数点位和 ATR 距离、冻结失效位及最迟触发日。达到资格的上行主选以日线收盘判断触发。接近点位时仍等待有效收盘，超过指数追价上限会取消。方向向下、未知缺口、日周冲突、换窗方向分歧及接近且方向相反的主备会显示相应等待原因。
+
+```bash
+.venv/bin/elliottwaver brief 000688.SH
+.venv/bin/elliottwaver history 000688.SH --timeframe 1d --json
+.venv/bin/elliottwaver settle "$BRIEF_DIR" --snapshot "$LATER_SNAPSHOT" --json
+.venv/bin/elliottwaver history 000688.SH --acknowledge "$TRANSITION_ID"
+```
+
+通过完整性校验的本地报告会记录预案发行和状态变化。同一变化在 SQLite 中只记录一次。用 `history` 查看首次可见和已查看时间。配置模板中的 `index_guidance` 可设持有期、临近距离和追价上限。持有期从指数收盘触发的会话起计为第 1 日。结算时先校验输入身份、完成时点和价格口径，再按冻结会话核销触发、目标、失效、歧义及到期。
+
+`settle --json` 的 `index_plans` 是指数点位记录。指定一批历史报告时，`index_plan_statistics` 提供按发行和激活起算的研究统计，另有拐点确认对照和相邻主选切换率。数据未成熟、缺失或同根先后不明各有字段。首屏继续提供结构距离和条件，样本统计保留研究状态。实际 ETF 模拟成交属于后续批次。
+
+如有明确有效期的手工工具和账户输入，可在 `index_guidance.sizing` 下以主指数代码填入 `instrument`、`as_of`、`valid_until`、`risk_budget`、`risk_per_unit`、`cost_per_unit`、`cash`、`liquidity_limit`、`lot_size`、`sellable_quantity`。结果按风险、现金和流动性三者的限额取最小值后按整手向下取整，可卖数量采用输入值。含账户输入的简报留在本地受控目录。
+
 ### 4.7 自选批量
 
 ```bash
@@ -419,7 +436,19 @@ OUTCOME_SNAPSHOT_ID='替换为新下载行情的完整snapshot_id'
   --output reports/support-matrix.json --json
 ```
 
-输出各资产类型、周期、事件的 `model_status`、`applicable_model` 和未通过原因。直接运行时显示 `UNCALIBRATED`。传入训练的 `summary.json` 时读该文件中的结果。检查某次分析实际加载的模型和概率时，查看该分析的 `brief.json`。
+输出各资产类型、周期、事件的 `model_status`、`applicable_model` 和未通过原因。传入训练汇总时，研究结果显示在 `research_status`。有完整简报和模型登记时，可核对特定标的、行情源、周期、卡片及时间。当次简报的输入身份在矩阵中显示为 `REPORT_LINKED`。
+
+```bash
+.venv/bin/python scripts/support_matrix.py --run-tests --test-receipts reports/support-tests
+.venv/bin/elliottwaver support-matrix \
+  --test-receipts reports/support-tests \
+  --model-registry .cache/elliottwaver/models \
+  --brief-report "$BRIEF_DIR" --json
+```
+
+`BRIEF_DIR` 指含 `manifest.json` 的简报目录。模型默认按该简报的行情截止时间核查，可用带时区的 `--at` 复核撤回前后的状态。缺少当前源码对应的测试回执时，矩阵显示 `UNVERIFIED`。
+
+新实时简报保存 `issuance.json`，记录报告可读时刻并绑定清单。日线、周线和盘中推演均以尚未开始的完整观察期为准。跨过首期开盘时，CLI 用新的发行时点重算。历史归档仍可查询和结算，正式前向评分要求可校验的实时发行回执。
 
 ### 4.8 离线评估与概率研究
 

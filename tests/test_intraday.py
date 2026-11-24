@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
@@ -807,7 +808,9 @@ def test_forward_evaluation_uses_same_day_live_receipts(
             check_windows=False,
             intraday_issued_at=bar.usable_at + timedelta(minutes=1),
         )
-        publish_brief(run, reports, formats=())
+        issued_at = run.brief.outlook.issued_at
+        recorded = replace(run, brief=run.brief.model_copy(update={"generated_at": issued_at}))
+        publish_brief(recorded, reports, formats=(), clock=lambda issued_at=issued_at: issued_at)
         issued.append(run.brief)
     protocol = {
         "protocol_version": "1",
@@ -838,7 +841,13 @@ def test_forward_evaluation_uses_same_day_live_receipts(
     assert [row["issued_brief_digest"] for row in rows] == [brief.brief_digest for brief in issued]
     assert [row["last_bar_end_at"] for row in rows] == [bar.end_at.isoformat() for bar in bars]
     assert [row["outlook"] for row in rows] == [b.outlook.model_dump(mode="json") for b in issued]
-    assert [row["decision_at"] for row in rows] == [bar.start_at.isoformat() for bar in bars]
+    assert [row["signal_bar_start_at"] for row in rows] == [
+        bar.start_at.isoformat() for bar in bars
+    ]
+    assert all(
+        datetime.fromisoformat(row["decision_at"]) >= bar.usable_at
+        for row, bar in zip(rows, bars, strict=True)
+    )
     assert pq.read_table(out / "events.parquet").num_rows > 0
 
 
@@ -968,3 +977,46 @@ def test_intraday_settlement_rejects_old_weekly_window(tmp_path):
     brief = run.brief.model_copy(update={"outlook": old})
     with pytest.raises(Exception, match="旧观察窗与主周期不匹配"):
         event_specs(brief)
+
+
+def test_intraday_grid_supersedes_late_raw_bar(tmp_path):
+    bundle = demo_bundle("600519.SH", timeframe="60m")
+    older, newer = bundle.bars[100:102]
+    assert older.session_date == newer.session_date
+    raw = list(bundle.raw_bars)
+    raw[100] = raw[100].model_copy(update={"available_at": newer.usable_at})
+    bundle = bundle.model_copy(update={"raw_bars": tuple(raw)})
+    store = SnapshotStore(tmp_path / "cache")
+    protocol = {
+        "protocol_version": "1",
+        "cache_root": str(store.root),
+        "samples": [
+            {
+                "symbol": "600519.SH",
+                "asset_type": "EQUITY",
+                "source_timeframe": "60m",
+                "snapshot_id": store.save(bundle),
+            }
+        ],
+        "events": ["ADVANCE_FIRST_60M_5B_V1"],
+        "grid": {
+            "cadence": "EVERY_BAR",
+            "start": str(older.session_date),
+            "end": str(older.session_date),
+        },
+    }
+    path = tmp_path / "protocol.json"
+    path.write_text(json.dumps(protocol))
+    out = tmp_path / "out"
+    evaluate_protocol(path, out)
+    decisions = {
+        item["signal_bar_start_at"]: item
+        for item in map(json.loads, (out / "decisions.jsonl").read_text().splitlines())
+    }
+    skipped = decisions[older.start_at.isoformat()]
+    assert skipped["status"] == "SUPERSEDED" and not skipped["analyzable"]
+    assert decisions[newer.start_at.isoformat()]["analyzable"]
+    assert all(
+        row["decision_id"] != skipped["decision_id"]
+        for row in pq.read_table(out / "events.parquet").to_pylist()
+    )

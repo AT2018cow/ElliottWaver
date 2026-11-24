@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
 from zoneinfo import ZoneInfo
 
@@ -24,6 +24,7 @@ from elliottwaver.evaluation.outcomes import (
     target_hit,
 )
 from elliottwaver.forecast import forecasts_for_brief
+from elliottwaver.index_guidance import build_index_guidance, reconcile_index_guidance
 from elliottwaver.outlook import build_outlook
 from elliottwaver.schemas.brief import (
     Brief,
@@ -545,6 +546,7 @@ def build_brief(
     retrospective: bool = False,
     model_issue: str | None = None,
     intraday_issued_at: datetime | None = None,
+    outlook_issued_at: datetime | None = None,
 ) -> BriefRun:
     service = AnalysisService(settings)
     advanced = settings.analysis.engine_profile == "hierarchical_v1"
@@ -698,12 +700,14 @@ def build_brief(
             request, prepared, context, service, day_budget
         )
 
-    live_intraday = request.mode == "LIVE" and result.timeframe.endswith("m")
-    issue_now = live_intraday and intraday_issued_at is None
+    explicit_issue = outlook_issued_at
+    if result.timeframe.endswith("m") and explicit_issue is None:
+        explicit_issue = intraday_issued_at
+    issue_now = request.mode == "LIVE" and explicit_issue is None
     source_snapshot_id = source.snapshot_id
-    issued_at = request.as_of
-    if live_intraday:
-        issued_at = intraday_issued_at or max(request.as_of, datetime.now(UTC))
+    issued_at = explicit_issue or request.as_of
+    if issue_now:
+        issued_at = max(request.as_of, datetime.now(UTC))
     outlook = build_outlook(cards, result, prepared, context.projections, issued_at=issued_at)
     forecast_inputs = dict(
         qualified=context.qualified,
@@ -795,6 +799,21 @@ def build_brief(
         if result.timeframe in {"1d", "1w"}
         else (),
     )
+    if (
+        settings.index_guidance.enabled
+        and prepared.instrument.asset_type == "INDEX"
+        and brief.timeframe == "1d"
+    ):
+        projection = context.projections.get(cards[0].scenario_id) if cards else None
+        guidance = build_index_guidance(
+            brief,
+            prepared,
+            context.qualified,
+            indicators.atr,
+            settings.index_guidance,
+            projected_zones=projection.zones if projection is not None else None,
+        )
+        brief = brief.model_copy(update={"schema_version": "1.3", "index_guidance": guidance})
     brief_digest = digest(brief.model_dump(mode="json", exclude={"brief_digest", "generated_at"}))
     brief = brief.model_copy(update={"brief_digest": brief_digest})
     return BriefRun(
@@ -1304,7 +1323,7 @@ def compare_decisions(
     """Compare two published decisions without reading or rewriting either report."""
     if previous is None:
         return DecisionComparison(change="FIRST_RECORD", reason="没有更早的同类摘要")
-    legacy_view = current.schema_version != "1.2" and not current.timeframe.endswith("m")
+    legacy_view = not current.rich_comparison
     structure_change, structure_reason, structure_events = _structure_transition(
         previous, current, previous_result, current_result, previous_source, legacy_view=legacy_view
     )
@@ -1396,6 +1415,26 @@ def attach_previous(
         previous_source=previous_source,
         current_source=current_source,
     )
+    if (
+        previous is not None
+        and previous.index_guidance is not None
+        and run.brief.index_guidance is not None
+    ):
+        current = run.brief
+        excluded = {
+            "brief_digest": True,
+            "previous": True,
+            "generated_at": True,
+            "index_guidance": True,
+            "outlook": {"issued_at"},
+        }
+        if (
+            previous.index_guidance.policy_hash == current.index_guidance.policy_hash
+            and previous.index_guidance.sizing == current.index_guidance.sizing
+            and previous.index_guidance.tool_status == current.index_guidance.tool_status
+            and previous.model_dump(exclude=excluded) == current.model_dump(exclude=excluded)
+        ):
+            return replace(run, brief=previous)
     if previous is None:
         previous_info = BriefPrevious(change=comparison.change, reason=comparison.reason)
     else:
@@ -1412,14 +1451,17 @@ def attach_previous(
             revision_count=comparison.revision_count,
             factor_revision_count=comparison.factor_revision_count,
             triggered_conditions=comparison.triggered_conditions,
-            events=comparison.events
-            if run.brief.schema_version == "1.2" or run.brief.timeframe.endswith("m")
-            else (),
-            input_change=comparison.input_change
-            if run.brief.schema_version == "1.2" or run.brief.timeframe.endswith("m")
-            else None,
+            events=comparison.events if run.brief.rich_comparison else (),
+            input_change=comparison.input_change if run.brief.rich_comparison else None,
         )
-    brief = run.brief.model_copy(update={"previous": previous_info})
+    brief = run.brief.model_copy(
+        update={
+            "previous": previous_info,
+            "index_guidance": reconcile_index_guidance(
+                run.brief, previous, run.prepared, comparison
+            ),
+        }
+    )
     brief_digest = digest(brief.model_dump(mode="json", exclude={"brief_digest", "generated_at"}))
     brief = brief.model_copy(update={"brief_digest": brief_digest})
     return BriefRun(

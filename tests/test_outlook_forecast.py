@@ -115,7 +115,7 @@ def test_outlook_model_requires_scope_fields():
 def _run_and_outlook():
     bundle = demo_bundle("AAPL")
     run = build_brief(
-        AnalysisRequest(symbol="AAPL", as_of=bundle.as_of),
+        AnalysisRequest(symbol="AAPL", as_of=bundle.as_of, mode="FROZEN_DATA_REPLAY"),
         bundle,
         Settings(),
         include_weekly=False,
@@ -182,7 +182,7 @@ def test_support_matrix_lists_new_outlook_events_and_scope():
 def test_build_brief_attaches_outlook_forecasts_to_cards():
     bundle = demo_bundle("AAPL")
     run = build_brief(
-        AnalysisRequest(symbol="AAPL", as_of=bundle.as_of),
+        AnalysisRequest(symbol="AAPL", as_of=bundle.as_of, mode="FROZEN_DATA_REPLAY"),
         bundle,
         Settings(),
         model=_model(),
@@ -197,7 +197,7 @@ def test_build_brief_attaches_outlook_forecasts_to_cards():
 def test_build_brief_shows_approved_target_probability_on_card():
     bundle = demo_bundle("AAPL")
     run = build_brief(
-        AnalysisRequest(symbol="AAPL", as_of=bundle.as_of),
+        AnalysisRequest(symbol="AAPL", as_of=bundle.as_of, mode="FROZEN_DATA_REPLAY"),
         bundle,
         Settings(),
         model=_model(event_id="OUTLOOK_TARGET_FIRST_5D_V1"),

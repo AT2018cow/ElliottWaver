@@ -1,5 +1,6 @@
 import json
 from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 
 from typer.testing import CliRunner
 
@@ -8,10 +9,11 @@ from elliottwaver.cli.main import app
 from elliottwaver.config import Settings
 from elliottwaver.data.demo import demo_bundle
 from elliottwaver.data.snapshots import SnapshotStore
+from elliottwaver.forecast import ModelRegistry
 from elliottwaver.schemas.brief import BriefForecast
 from elliottwaver.schemas.market import AnalysisRequest
-from elliottwaver.settlement import SettlementStore, support_matrix
-from elliottwaver.util import digest
+from elliottwaver.settlement import SettlementStore, SupportTestReceipt, support_matrix
+from elliottwaver.util import digest, package_source_digest, support_test_inputs_digest
 from elliottwaver.visualization.brief_formatter import publish_brief
 
 
@@ -223,6 +225,75 @@ def test_support_matrix_marks_model_status_and_reasons():
     )
     assert unknown["model_status"] == "UNCALIBRATED"
     assert unknown["reason"] == "未注册批准模型"
+
+
+def test_support_matrix_uses_test_receipts_and_never_approves_a_summary(tmp_path):
+    now = datetime.now(UTC)
+    name = "tests/test_forecasts.py"
+    receipt = SupportTestReceipt(
+        command=("python", "-m", "pytest", name, "-q"),
+        source_sha256=package_source_digest(),
+        test_inputs_sha256=support_test_inputs_digest(),
+        started_at=now - timedelta(minutes=1),
+        completed_at=now,
+        exit_code=0,
+    )
+    file = tmp_path / "test_forecasts.json"
+    file.write_text(receipt.model_dump_json())
+    matrix = support_matrix(
+        {"models": {"TARGET_FIRST_20D_V1": {"status": "APPROVED"}}},
+        test_receipts=tmp_path,
+        at=now,
+    )
+    assert not any(row["applicable_model"] for row in matrix["rows"])
+    assert any(row["research_status"] == "APPROVED" for row in matrix["rows"])
+    assert matrix["rows"][0]["tests"][name] == "PASS"
+    file.write_text(receipt.model_copy(update={"test_inputs_sha256": "0" * 64}).model_dump_json())
+    assert support_matrix(test_receipts=tmp_path)["rows"][0]["tests"][name] == "UNVERIFIED"
+    assert matrix["rows"][0]["tests"]["tests/test_evaluation.py"] == "UNVERIFIED"
+    file.write_text(receipt.model_copy(update={"exit_code": 1}).model_dump_json())
+    assert support_matrix(test_receipts=tmp_path)["rows"][0]["tests"][name] == "FAIL"
+    file.write_text(receipt.model_copy(update={"source_sha256": "0" * 64}).model_dump_json())
+    assert support_matrix(test_receipts=tmp_path)["rows"][0]["tests"][name] == "UNVERIFIED"
+
+
+def test_support_matrix_checks_registry_against_brief_and_withdrawal(tmp_path, approved_model):
+    bundle = demo_bundle()
+    request = AnalysisRequest(symbol="AAPL", as_of=bundle.as_of, mode="FROZEN_DATA_REPLAY")
+    model = approved_model()
+    run = build_brief(request, bundle, Settings(), model=model, check_windows=False)
+    assert any(item.status == "APPROVED" for item in run.brief.forecasts)
+    registry = ModelRegistry(tmp_path / "registry")
+    path = tmp_path / "model.json"
+    path.write_text(json.dumps(model))
+    when = bundle.as_of
+    registry.register(path, approved_at=when)
+
+    def applied(brief=run.brief, at=when):
+        return [
+            row
+            for row in support_matrix(registry=registry, brief=brief, at=at)["rows"]
+            if row["applicable_model"]
+        ]
+
+    assert [row["model_id"] for row in applied()] == [model["model_id"]]
+    research = {
+        "scope": {"symbols": ["MSFT"], "asset_types": ["EQUITY"], "timeframes": ["1d"]},
+        "models": {"CLOSE_BAND_5D_V1": {"status": "APPROVED"}},
+    }
+    assert not any(
+        row["applicable_model"] and row["symbols"] == ["MSFT"]
+        for row in support_matrix(research, registry=registry, brief=run.brief, at=when)["rows"]
+    )
+    assert not applied(at=when - timedelta(microseconds=1))
+    assert not applied(run.brief.model_copy(update={"feed": "unrelated"}))
+    assert not applied(run.brief.model_copy(update={"retrospective": True}))
+    withdrawn = when + timedelta(seconds=1)
+    registry.withdraw(model["model_id"], withdrawn_at=withdrawn)
+    assert not applied(at=withdrawn)
+    assert applied()
+    path.write_text("{}")
+    assert not applied()
 
 
 def test_settle_and_support_matrix_cli(tmp_path):

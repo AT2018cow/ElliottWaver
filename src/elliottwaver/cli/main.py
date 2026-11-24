@@ -5,6 +5,7 @@ import json
 import time
 import webbrowser
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from datetime import UTC, date, datetime
 from functools import wraps
 from importlib.metadata import PackageNotFoundError, version
@@ -33,6 +34,11 @@ from elliottwaver.data.snapshots import SnapshotStore
 from elliottwaver.data.workflow import fetch_bundle
 from elliottwaver.engine.templates import TEMPLATES
 from elliottwaver.errors import DataError, ElliottWaverError, InputError
+from elliottwaver.evaluation.index_plans import (
+    summarize_developing_evidence,
+    summarize_index_plans,
+    summarize_plan_stability,
+)
 from elliottwaver.evaluation.replay import replay
 from elliottwaver.forecast import ModelRegistry, load_model
 from elliottwaver.history import HistoryStore, base_lineage_key
@@ -41,7 +47,11 @@ from elliottwaver.service import AnalysisService, engine_rules_version, prepare_
 from elliottwaver.settlement import SettlementStore, support_matrix
 from elliottwaver.timeframes import TIMEFRAMES, normalize_timeframe
 from elliottwaver.util import atomic_write, canonical_json, digest
-from elliottwaver.visualization.brief_formatter import publish_brief, read_brief_report
+from elliottwaver.visualization.brief_formatter import (
+    PublicationWindowElapsed,
+    publish_brief,
+    read_brief_report,
+)
 from elliottwaver.visualization.brief_text import market_time_text
 from elliottwaver.visualization.report_formatter import publish_report
 
@@ -312,10 +322,7 @@ def _run_brief_core(
         model_data = None
         models_data = ()
         model_issue = "无法读取符合发布要求的概率模型"
-    run = build_brief(
-        request,
-        source,
-        settings,
+    brief_options = dict(
         timeframe_reason=reason,
         include_weekly=weekly,
         check_windows=window_check,
@@ -325,8 +332,35 @@ def _run_brief_core(
         retrospective=bool(model and model_data),
         model_issue=model_issue,
     )
+    run = build_brief(request, source, settings, **brief_options)
     history = HistoryStore(settings.cache.directory)
+    formats = tuple(format.split(",")) if format is not None else settings.output.formats
+    formats = tuple(x.strip() for x in formats if x.strip() and x.strip() != "json")
+    output_root = Path(output_dir) if output_dir else settings.output.directory
+    request_key = (
+        digest(
+            [
+                "live-brief-v1",
+                request,
+                source.snapshot_id,
+                engine_rules_version(settings),
+                settings.computation_hash,
+                settings.index_guidance,
+                brief_options,
+                output_root.resolve(),
+                sorted(set(formats)),
+                renderer,
+            ]
+        )
+        if request.mode == "LIVE"
+        else None
+    )
     with store.lock(digest(["brief-lineage", base_lineage_key(run.brief), run.brief.mode])):
+        saved = history.lookup_issuance(request_key) if request_key else None
+        if saved is not None:
+            issued_path, issued_digest = saved
+            issued, result = read_brief_report(issued_path, expected_digest=issued_digest)
+            return replace(run, brief=issued, result=result), issued_path
         previous_source = None
         previous_result = None
         try:
@@ -341,27 +375,36 @@ def _run_brief_core(
                 previous_source = store.load(previous_row["source_snapshot_id"])
             except DataError:
                 pass
-        run = attach_previous(
-            run,
-            previous,
-            previous_row["report_path"] if previous_row is not None else None,
-            previous_source=previous_source,
-            current_source=run.source,
-            previous_result=previous_result,
-        )
-        store.save(run.source)
-        store.save(run.prepared)
-        if run.weekly_prepared is not None:
-            store.save(run.weekly_prepared)
-        formats = tuple(format.split(",")) if format is not None else settings.output.formats
-        formats = tuple(x.strip() for x in formats if x.strip() and x.strip() != "json")
-        output = publish_brief(
-            run,
-            Path(output_dir) if output_dir else settings.output.directory,
-            formats,
-            renderer,
-        )
-        history.register(run.brief, output)
+        for attempt in range(2):
+            run = attach_previous(
+                run,
+                previous,
+                previous_row["report_path"] if previous_row is not None else None,
+                previous_source=previous_source,
+                current_source=run.source,
+                previous_result=previous_result,
+            )
+            store.save(run.source)
+            store.save(run.prepared)
+            if run.weekly_prepared is not None:
+                store.save(run.weekly_prepared)
+            try:
+                output = publish_brief(
+                    run,
+                    output_root,
+                    formats,
+                    renderer,
+                )
+            except PublicationWindowElapsed:
+                if attempt:
+                    raise
+                run = build_brief(request, source, settings, **brief_options)
+            else:
+                break
+        if run.brief.mode == "LIVE":
+            published, _ = read_brief_report(output, expected_digest=run.brief.brief_digest)
+            run = replace(run, brief=published)
+        history.register(run.brief, output, request_key=request_key)
     return run, output
 
 
@@ -649,17 +692,22 @@ def run_settle(
     store = SettlementStore(root)
     snapshots = SnapshotStore(root)
     records = []
+    plan_rows = {}
+    issuance_keys = []
+    guidance_runs = []
+    cancellations = {}
     seen = set()
     exit_code = 0
+    settlement_source = None
     for brief_path in paths:
         try:
             brief, _ = read_brief_report(brief_path.parent)
             if brief.brief_digest in seen:
                 continue
             seen.add(brief.brief_digest)
-            source = (
-                snapshots.load(snapshot) if snapshot else snapshots.load(brief.source_snapshot_id)
-            )
+            if snapshot and settlement_source is None:
+                settlement_source = snapshots.load(snapshot)
+            source = settlement_source or snapshots.load(brief.source_snapshot_id)
             store.register_brief(brief, brief_path.parent)
             for row in store.settle_brief(brief, brief_path.parent, source):
                 records.append(
@@ -675,6 +723,25 @@ def run_settle(
                         "latest": row["latest"],
                     }
                 )
+            if brief.index_guidance is not None:
+                guidance_runs.append((brief, source))
+                for track in brief.index_guidance.tracks:
+                    for event in track.transitions:
+                        if event.reason in {"STRUCTURE_REPLACED", "POLICY_CHANGED"}:
+                            cancellations[(event.plan_id, event.revision)] = event
+                    group = (
+                        brief.symbol,
+                        brief.mode,
+                        brief.feed,
+                        brief.adjustment,
+                        brief.index_guidance.policy_hash,
+                        brief.config_hash,
+                        brief.engine_version,
+                        brief.price_coordinate_id,
+                        track.horizon,
+                        track.holding_sessions,
+                    )
+                    issuance_keys.append((group, brief.last_bar_end_at))
         except (ElliottWaverError, OSError, ValueError) as exc:
             exit_code = exit_code or (exc.exit_code if isinstance(exc, ElliottWaverError) else 3)
             records.append(
@@ -684,6 +751,21 @@ def run_settle(
                 }
             )
     result = {"schema_version": "1.0", "records": records}
+    if guidance_runs:
+        for brief, source in guidance_runs:
+            for row in store.settle_index_guidance(brief, source, cancellations=cancellations):
+                key = (row["plan_id"], row["revision"])
+                previous = plan_rows.get(key)
+                rank = (brief.as_of, source.as_of, brief.brief_digest)
+                if previous is None or rank >= previous[0]:
+                    plan_rows[key] = (rank, row)
+        plans = [row for _, row in plan_rows.values()]
+        result.update(
+            index_plans=plans,
+            index_plan_statistics=summarize_index_plans(plans, issuance_keys),
+            index_confirmation_research=summarize_developing_evidence(guidance_runs),
+            index_plan_stability=summarize_plan_stability(guidance_runs),
+        )
     if output:
         atomic_write(Path(output), canonical_json(result) + "\n")
     if json_output:
@@ -705,15 +787,52 @@ def run_settle(
                 str(latest.get("outcome") or "—"),
             )
         Console().print(table)
+        if guidance_runs:
+            alerts = Table("指数预案", "期限", "状态", "最后观测会话")
+            from elliottwaver.visualization.brief_text import PLAN_STATE_TEXT
+
+            for row in plans:
+                obs = row["observation"]
+                alerts.add_row(
+                    row["plan_id"],
+                    "短线" if row["horizon"] == "SHORT" else "波段",
+                    PLAN_STATE_TEXT[obs["state"]] if obs["quality"] == "OK" else "数据待核",
+                    obs["through_session"] or "—",
+                )
+            Console().print(alerts)
     if exit_code:
         raise SystemExit(exit_code)
     return result
 
 
 @guarded
-def run_support_matrix(*, model_summary=None, output=None, json_output=False):
+def run_support_matrix(
+    *,
+    model_summary=None,
+    model_registry=None,
+    brief_report=None,
+    test_receipts=None,
+    at=None,
+    output=None,
+    json_output=False,
+):
     summary = json.loads(Path(model_summary).read_text()) if model_summary else None
-    matrix = support_matrix(summary)
+    when = None
+    if at is not None:
+        try:
+            when = datetime.fromisoformat(at)
+            if when.utcoffset() is None:
+                raise ValueError
+        except ValueError as exc:
+            raise InputError("--at requires an ISO 8601 timestamp with timezone") from exc
+    brief, _ = read_brief_report(Path(brief_report)) if brief_report else (None, None)
+    matrix = support_matrix(
+        summary,
+        registry=ModelRegistry(Path(model_registry)) if model_registry else None,
+        brief=brief,
+        at=when,
+        test_receipts=Path(test_receipts) if test_receipts else None,
+    )
     if output:
         atomic_write(Path(output), canonical_json(matrix) + "\n")
     if json_output:
@@ -741,14 +860,20 @@ def run_history(
     mode=None,
     timeframe=None,
     config=None,
+    acknowledge=None,
     json_output=False,
 ):
     settings = load_settings(Path(config) if config else None)
     mode_value = {"live": "LIVE", "frozen": "FROZEN_DATA_REPLAY"}.get(mode, mode)
     timeframe_value = normalize_timeframe(timeframe) if timeframe else None
     store = HistoryStore(settings.cache.directory)
+    canonical = route_symbol(symbol).canonical_symbol
+    if acknowledge is not None and not store.acknowledge_reminder(
+        canonical, acknowledge, mode=mode_value
+    ):
+        raise InputError("No matching single-index reminder")
     rows = store.query(
-        route_symbol(symbol).canonical_symbol,
+        canonical,
         as_of=_day(as_of),
         mode=mode_value,
         timeframe=timeframe_value,
@@ -776,6 +901,18 @@ def run_history(
                     "primary": primary,
                     "previous_change": brief.previous.change if brief.previous else None,
                     "path": row["report_path"],
+                    **(
+                        {
+                            "index_guidance": brief.index_guidance,
+                            "reminders": store.reminders(
+                                canonical, brief_digest=brief.brief_digest
+                            ),
+                        }
+                        if brief.index_guidance is not None
+                        else {"index_guidance_state": "NOT_RECORDED"}
+                        if route_symbol(canonical).asset_type == "INDEX"
+                        else {}
+                    ),
                 }
             )
         except DataError as exc:
@@ -811,6 +948,23 @@ def run_history(
                 record["brief_digest"][:12],
             )
         Console().print(table)
+        reminders = (
+            store.reminders(canonical, mode=mode_value, as_of=_day(as_of))
+            if timeframe_value in {None, "1d"}
+            else ()
+        )
+        if reminders:
+            from elliottwaver.visualization.brief_text import PLAN_REASON_TEXT
+
+            alerts = Table("本地提醒", "会话", "条件变化", "已查看")
+            for item in reminders:
+                alerts.add_row(
+                    item["transition_id"],
+                    item["session"],
+                    PLAN_REASON_TEXT.get(item["reason"], item["reason"]),
+                    item["acknowledged_at"] or "—",
+                )
+            Console().print(alerts)
         if not records:
             Console().print("没有找到历史摘要。")
     return records
@@ -1323,6 +1477,10 @@ else:
     @app.command("support-matrix")
     def support_matrix_command(
         model_summary: Path | None = None,
+        model_registry: Path | None = None,
+        brief_report: Path | None = None,
+        test_receipts: Path | None = None,
+        at: str | None = None,
         output: Path | None = None,
         json_output: bool = typer.Option(False, "--json"),
     ):
@@ -1335,6 +1493,7 @@ else:
         mode: str | None = None,
         timeframe: str | None = None,
         config: Path | None = None,
+        acknowledge: str | None = None,
         json_output: bool = typer.Option(False, "--json"),
     ):
         run_history(**locals())

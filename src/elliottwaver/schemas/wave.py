@@ -19,6 +19,7 @@ class PivotPoint(Contract):
     extreme_bar_id: str
     extreme_at: AwareDatetime
     confirmed_at: AwareDatetime | None = None
+    confirmed_bar_id: str | None = Field(None, exclude_if=lambda value: value is None)
     price: float = Field(gt=0)
     kind: Literal["HIGH", "LOW"]
     state: Literal["SEED", "CONFIRMED", "DEVELOPING"]

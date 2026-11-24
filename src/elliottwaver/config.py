@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, m
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from elliottwaver.errors import InputError
+from elliottwaver.schemas.index_plan import IndexSizingInput
 from elliottwaver.timeframes import Timeframe, normalize_timeframe
 from elliottwaver.util import digest
 
@@ -88,6 +89,23 @@ class DataConfig(Section):
     tencent_max_pages: int = Field(20, ge=1, le=200)
 
 
+class IndexGuidanceConfig(Section):
+    enabled: bool = True
+    short_sessions: int = Field(5, ge=2, le=5)
+    swing_sessions: int = Field(20, ge=10, le=30)
+    activation_sessions: int = Field(2, ge=1, le=5)
+    daily_trigger: Literal["close"] = "close"
+    near_atr: float = Field(0.5, ge=0)
+    max_chase_atr: float = Field(0.5, gt=0)
+    near_tie_score: float = Field(3.0, ge=0, le=100)
+    near_tie_min_coverage: float = Field(0.7, ge=0, le=1)
+    sizing: dict[str, IndexSizingInput] = Field(default_factory=dict)
+
+    @property
+    def policy_hash(self) -> str:
+        return digest(["single-index-daily-v1", self.model_dump(exclude={"sizing", "enabled"})])
+
+
 class CacheConfig(Section):
     directory: Path = Path(".cache/elliottwaver")
 
@@ -110,6 +128,7 @@ class Settings(BaseSettings):
     search: SearchConfig = Field(default_factory=SearchConfig)
     scoring: ScoringConfig = Field(default_factory=ScoringConfig)
     data: DataConfig = Field(default_factory=DataConfig)
+    index_guidance: IndexGuidanceConfig = Field(default_factory=IndexGuidanceConfig)
     cache: CacheConfig = Field(default_factory=CacheConfig)
     output: OutputConfig = Field(default_factory=OutputConfig)
 

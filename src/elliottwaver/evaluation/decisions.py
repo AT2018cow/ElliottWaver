@@ -50,7 +50,7 @@ from elliottwaver.schemas.market import AnalysisRequest, MarketDataBundle
 from elliottwaver.schemas.outlook import OutlookCase, OutlookPeriod
 from elliottwaver.service import engine_rules_version
 from elliottwaver.timeframes import TIMEFRAMES
-from elliottwaver.util import atomic_write, canonical_json, digest
+from elliottwaver.util import atomic_write, canonical_json, digest, package_source_digest
 
 SUPPORTED_EVENTS = {
     "CLOSE_BAND_5D_V1",
@@ -732,15 +732,7 @@ def evaluate_protocol(
     if receipts is not None and protocol.get("data_status") != "SEALED_FORWARD_HOLDOUT":
         raise InputError("Live reports require a sealed forward holdout protocol")
     protocol_hash = hashlib.sha256(protocol_path.read_bytes()).hexdigest()
-    package = Path(__file__).resolve().parents[1]
-    source_sha256 = digest(
-        {
-            "src/elliottwaver/" + path.relative_to(package).as_posix(): hashlib.sha256(
-                path.read_bytes()
-            ).hexdigest()
-            for path in sorted(package.rglob("*.py"))
-        }
-    )
+    source_sha256 = package_source_digest()
     protocol_identity = protocol.get("protocol_id") or protocol_hash
     cache_root = Path(protocol.get("cache_root", ".cache/elliottwaver"))
     settings = Settings(**protocol.get("settings", {}))
@@ -780,10 +772,24 @@ def evaluate_protocol(
                 f"{source_timeframe} evaluation requires a matching snapshot for {symbol}"
             )
         timeframe = source_timeframe
+        raw_availability = {bar.start_at: bar.usable_at for bar in bundle.raw_bars}
+        superseded = set()
+        if timeframe.endswith("m") and receipts is None:
+            next_available = None
+            for bar in reversed(bundle.bars):
+                paired = max(bar.usable_at, raw_availability[bar.start_at])
+                if next_available is not None and next_available <= paired:
+                    superseded.add(bar.start_at)
+                next_available = paired if next_available is None else min(paired, next_available)
         previous_pivots: list[dict] | None = None
         previous_decision: dict | None = None
         previous_run: BriefRun | None = None
         for decision_day, decision_bar in _decision_bars(bundle, protocol["grid"], timeframe):
+            available_at = (
+                max(decision_bar.usable_at, raw_availability[decision_bar.start_at])
+                if decision_bar is not None
+                else None
+            )
             decision_marker = (
                 decision_bar.start_at.isoformat()
                 if timeframe.endswith("m") and decision_bar is not None
@@ -807,15 +813,27 @@ def evaluate_protocol(
                     else str(decision_day)
                 ),
                 "decision_at": (
-                    decision_bar.start_at.isoformat()
-                    if timeframe.endswith("m") and decision_bar is not None
+                    available_at.isoformat()
+                    if timeframe.endswith("m") and available_at is not None
                     else None
                 ),
                 "source_snapshot_id": snapshot_id,
-                "as_of": decision_bar.usable_at.isoformat() if decision_bar is not None else None,
+                "as_of": available_at.isoformat() if available_at is not None else None,
             }
             if timeframe.endswith("m") and decision_bar is not None:
                 identity["last_bar_end_at"] = decision_bar.end_at.isoformat()
+                identity["signal_bar_start_at"] = decision_bar.start_at.isoformat()
+            if decision_bar is not None and decision_bar.start_at in superseded:
+                decisions.append(
+                    {
+                        **identity,
+                        "status": "SUPERSEDED",
+                        "analyzable": False,
+                        "error": "A later interval was already usable",
+                        "features": None,
+                    }
+                )
+                continue
             if decision_bar is None:
                 decisions.append(
                     {
@@ -828,7 +846,7 @@ def evaluate_protocol(
                 )
                 previous_pivots = previous_decision = None
                 continue
-            receipt = (
+            issued = (
                 receipts.get(
                     live_receipt_key(
                         symbol, timeframe, decision_bar.session_date, decision_bar.end_at
@@ -837,10 +855,11 @@ def evaluate_protocol(
                 if receipts
                 else None
             )
+            receipt = issued.brief if issued is not None else None
             if receipts is not None and receipt is None:
                 raise InputError(f"No live decision receipt for {symbol} at {decision_marker}")
             issue_source = store.load(receipt.source_snapshot_id) if receipt is not None else bundle
-            decision_cutoff = receipt.as_of if receipt is not None else decision_bar.usable_at
+            decision_cutoff = receipt.as_of if receipt is not None else available_at
             request = AnalysisRequest(
                 symbol=symbol,
                 as_of=decision_cutoff,
@@ -854,7 +873,7 @@ def evaluate_protocol(
                     request,
                     issue_source,
                     settings,
-                    intraday_issued_at=receipt.outlook.issued_at
+                    outlook_issued_at=receipt.outlook.issued_at
                     if receipt is not None and receipt.outlook is not None
                     else None,
                     include_weekly=receipt is None or receipt.weekly_state != "NOT_REQUESTED",
@@ -866,7 +885,11 @@ def evaluate_protocol(
                     ),
                 )
                 if receipt is not None and (
-                    run.result.result_digest != receipt.result_digest
+                    (
+                        timeframe.endswith("m")
+                        and run.prepared.bars[-1].end_at != decision_bar.end_at
+                    )
+                    or run.result.result_digest != receipt.result_digest
                     or run.brief.outlook != receipt.outlook
                     or run.brief.window_comparison != receipt.window_comparison
                     or run.brief.wave_relations != receipt.wave_relations
@@ -967,6 +990,11 @@ def evaluate_protocol(
                 )
                 decision = {
                     **identity,
+                    **(
+                        {"decision_at": issued.readable_at.isoformat()}
+                        if issued is not None
+                        else {}
+                    ),
                     "input_snapshot_id": prepared.snapshot_id,
                     "status": result.status,
                     "analyzable": analyzable,

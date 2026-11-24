@@ -421,3 +421,157 @@ def diagnostic_text(code: str, message: str) -> str:
     if message and any("\u4e00" <= char <= "\u9fff" for char in message):
         return message
     return "另有诊断详情，见报告目录中的 JSON。"
+
+
+PLAN_STATE_TEXT = {
+    "WAITING": "等待",
+    "NEAR": "接近触发",
+    "TRIGGERED": "指数条件已触发",
+    "TARGET_REACHED": "指数目标已达",
+    "INVALIDATED": "已失效",
+    "STAGE_EXIT": "阶段退出",
+    "EXPIRED": "已到期",
+    "CANCELLED": "已取消",
+    "AMBIGUOUS": "同根先后待核",
+}
+PLAN_REASON_TEXT = {
+    "WAIT_FOR_CLOSE": "等待下个有效收盘",
+    "NO_QUALIFIED_CARD": "等待达到规则和证据要求的主选",
+    "DATA_PENDING": "等待完整且可比的日线行情",
+    "CALENDAR_UNAVAILABLE": "等待可核验的完整交易日历",
+    "DIRECTION_NOT_LONG": "等待向上推进情景",
+    "NO_ADVANCE_GATE": "等待明确的上行推进门槛",
+    "STOP_ALREADY_HIT": "当前结构的退出条件已触及",
+    "NO_VALID_INVALIDATION": "等待确认位下方的结构失效条件",
+    "NO_UPSIDE_TARGET": "等待有效的上方目标",
+    "UNCONFIRMED_PIVOT": "等待用于预案的拐点确认",
+    "NO_ENTRY_RANGE": "等待确认位与目标之间具备足够空间",
+    "TARGET_ALREADY_REACHED": "首目标已进入或越过",
+    "BACKGROUND_CONFLICT": "等待日周方向冲突解除",
+    "BACKGROUND_MISSING": "等待完整周线背景",
+    "WINDOW_CONFLICT": "等待换窗方向分歧解除",
+    "NEAR_TIE": "等待主备质量分拉开或证据发生变化",
+    "WAIT_FOR_STABLE_RECOUNT": "等待下一根完整日线仍支持新主选",
+    "WAIT_FOR_INDEPENDENT_STRUCTURE": "等待出现新的结构证据",
+    "CLOSE_TRIGGER": "指数收盘达到冻结条件",
+    "HARD_INVALIDATION": "触及冻结失效条件",
+    "STAGE_EXIT": "触及冻结阶段退出条件",
+    "INDEX_TARGET_REACHED": "激活后首次达到冻结目标",
+    "INDEX_CHASE_LIMIT": "指数收盘超过追价上限",
+    "ACTIVATION_DEADLINE": "到最迟触发时刻仍未激活",
+    "HOLDING_DEADLINE": "已到冻结持有期限",
+    "SAME_BAR_TARGET_AND_EXIT": "同根出现目标和退出",
+    "SAME_BAR_TRIGGER_AND_EXIT": "同根出现触发和退出",
+    "MISSING_SESSION_BAR": "交易会话行情尚未齐备",
+    "CALENDAR_NOT_COVERED": "输入行情未覆盖冻结交易会话",
+    "DATA_REVISED": "行情已修订，历史观测保留",
+    "NOT_COMPARABLE": "与原发行行情口径未能对齐",
+    "PRICE_COORDINATE_CHANGED": "行情的指数点位口径与发行时不一致",
+    "POLICY_CHANGED": "预案政策变化",
+    "STRUCTURE_REPLACED": "新主选持续后替换旧预案",
+    "PLAN_ISSUED": "已发行",
+}
+PLAN_PRIORITY = {"INVALIDATED": 0, "STAGE_EXIT": 0, "TRIGGERED": 1, "NEAR": 2}
+
+
+def guidance_sections(brief: Brief) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    guidance = brief.index_guidance
+    if guidance is None:
+        return ()
+    results = []
+
+    def priority(track):
+        return min(
+            (PLAN_PRIORITY.get(item.to_state, 3) for item in track.transitions),
+            default=3,
+        )
+
+    for track in sorted(guidance.tracks, key=priority):
+        plan, obs = track.plan, track.observation
+        term = "短线" if track.horizon == "SHORT" else "波段"
+        state = PLAN_STATE_TEXT[obs.state] if obs.quality == "OK" else "数据待核"
+        title = f"{term} · {track.holding_sessions} 会话 · {state}"
+        reasons = PLAN_REASON_TEXT.get(obs.reason, obs.reason)
+        lines = [
+            f"{reasons} · 指数 {price_text(guidance.last_price)} 点 · 行情年龄 {guidance.last_price_age_seconds / 60:g} 分钟"
+        ]
+        if track.candidate_wait_reason and track.candidate_wait_reason != obs.reason:
+            lines.append(
+                "下一步 "
+                + PLAN_REASON_TEXT.get(track.candidate_wait_reason, track.candidate_wait_reason)
+            )
+        if plan:
+            lines.append(
+                f"收盘 {plan.trigger.op} {price_text(plan.trigger.price)} · "
+                f"距触发 {track.trigger_distance_points:+.3f} 点 / "
+                f"{track.trigger_distance_atr:+.2f} ATR · "
+                f"指数追价上限 {price_text(plan.max_entry_index_price)}"
+            )
+            lines.append(
+                f"最迟触发 {market_time_text(plan.activation_deadline, brief.symbol)} · "
+                + (f"持有到期 {obs.due_session}" if obs.due_session else "触发会话计为持有第 1 日")
+            )
+            lines.append(
+                "失效 "
+                + "、".join(
+                    f"{ {'LOW': '最低', 'HIGH': '最高', 'CLOSE': '收盘'}[c.side] } {c.op} {price_text(c.price)}"
+                    for c in plan.invalidations
+                )
+            )
+            if plan.stage_exits:
+                lines.append(
+                    "阶段退出 "
+                    + "、".join(
+                        f"{ {'LOW': '最低', 'HIGH': '最高', 'CLOSE': '收盘'}[c.side] } {c.op} {price_text(c.price)}"
+                        for c in plan.stage_exits
+                    )
+                )
+            zones = plan.targets
+        else:
+            zones = tuple(item.zone for item in guidance.target_distances)
+        if zones:
+            distances = track.current_targets if plan else guidance.target_distances
+            distance = next((item for item in distances if item.zone == zones[0]), None)
+            text = "目标 " + "、".join(
+                f"{price_text(z.low)}–{price_text(z.high)}" for z in zones[:3]
+            )
+            if distance is not None:
+                loc = {"AHEAD": "未达", "IN_ZONE": "已进入", "PASSED": "已越过"}[distance.location]
+                text += f" · {loc} · {distance.points:+.3f} 点"
+                if distance.atr is not None:
+                    text += f" / {distance.atr:+.2f} ATR"
+            lines.append(text)
+        evidence = plan.confirmation if plan else guidance.confirmation
+        if evidence:
+            lines.append(
+                f"极值至确认 {evidence.extreme_to_confirmation_seconds / 3600:g} 小时 · "
+                f"确认指数 {price_text(evidence.confirmation_price)} 点"
+            )
+        if obs.next_index_price:
+            quote = obs.next_index_price
+            delay = f"确认后 {(quote.confirmation_to_price_seconds / 3600):g} 小时"
+            move = f"{quote.moved_points:+.3f} 点"
+            if quote.moved_atr is not None:
+                move += f" / {quote.moved_atr:+.2f} ATR"
+            lines.append(f"下一可观察指数价 {price_text(quote.price)} 点 · {delay}已走 {move}")
+        if track.transitions:
+            ordered = sorted(
+                track.transitions, key=lambda item: PLAN_PRIORITY.get(item.to_state, 3)
+            )
+            changes = "、".join(
+                f"{item.session} {PLAN_REASON_TEXT.get(item.reason, item.reason)}"
+                for item in ordered
+            )
+            lines.append(f"本次变化 {changes}")
+        if guidance.sizing:
+            sizing = guidance.sizing
+            lines.append(
+                f"手工输入 {sizing.inputs.instrument} · 估算最多买 {sizing.buy_limit} 份 · "
+                f"输入可卖 {sizing.sell_limit} 份"
+            )
+        elif guidance.tool_status == "SIZING_INPUT_OUTSIDE_WINDOW":
+            lines.append("手工工具输入未生效或已过期")
+        else:
+            lines.append("执行工具未配置")
+        results.append((title, tuple(lines)))
+    return tuple(results)

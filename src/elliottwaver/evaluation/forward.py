@@ -37,11 +37,15 @@ def live_receipt_key(
     return symbol, timeframe, str(session)
 
 
-def live_reports(root: Path) -> dict[tuple[str, str, str], LiveReport]:
+def live_reports(
+    root: Path, *, allow_empty: bool = False
+) -> dict[tuple[str, str, str], LiveReport]:
     receipts = {}
+    found = False
     for body in sorted(root.rglob("brief.json")):
         if any(part.startswith(".") for part in body.relative_to(root).parts[:-1]):
             continue
+        found = True
         brief, result = read_brief_report(body.parent)
         if brief.mode != "LIVE" or result.mode != "LIVE" or brief.retrospective:
             continue
@@ -56,6 +60,6 @@ def live_reports(root: Path) -> dict[tuple[str, str, str], LiveReport]:
             raise InputError(f"Multiple live decisions for {key}; select the issued reports")
         if previous is None or readable_at < previous.readable_at:
             receipts[key] = LiveReport(brief, readable_at)
-    if not receipts:
+    if not receipts and (found or not allow_empty):
         raise InputError(f"No verified live decision reports in {root}")
     return receipts

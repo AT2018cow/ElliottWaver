@@ -108,3 +108,29 @@ done
 ```
 
 将大写占位路径替换成实际文件或目录。实时报告目录每标的、周期和决策日应只有一份指定发行，可保留同一报告的多种导出格式。带 `--offline` 或 `--as-of` 的复算会生成冻结回放报告。正式评分核对封存计划、源码身份、真实发行简报及其快照，再应用现有概率门槛。
+
+## 单指数 ETF 执行研究
+
+[单指数 ETF 影子协议模板](single-index-etf-shadow-template-v1.json) 可用于检查字段和命令。示例只有两个发行时隙，参数与费用用于演示；正式研究须在首格前填好完整交易日历、实际来源、规则与比较门槛。一个协议只研究同一主指数及一只映射 ETF。
+
+历史协议使用 `mode: FROZEN`，增加 `index_snapshot_id` 及 ETF 文件的 `tool_archive_sha256`。保留该研究用到的每份简报目录、每份简报对应的输入快照及拟核销的日线快照。只做指数点数核销时省略工具文件及其摘要。网格按时间标注 `DEVELOPMENT`、`CALIBRATION`、`HOLDOUT`。用 `--execution-split` 分开开发、校准和独立留出；先确定候选规则及门槛，再运行留出。观察或标签期限跨分割线的行保留在分母档案并标为剔除。
+
+```bash
+.venv/bin/python scripts/evaluate_briefs.py --protocol PROTOCOL.json \
+  --output-dir OUTPUT --index-reports REPORTS --snapshot-store CACHE \
+  --tool-archive TOOL.json --execution-split HOLDOUT
+```
+
+前向协议在第一发行格之前封存，保存原始 `seal.json`。从待发行配置取得分析摘要 `analysis_config_hash` 与日线指导摘要 `guidance_policy_hash`，分别对应匹配简报的 `config_hash` 和 `index_guidance.policy_hash`。盘中研究另登记 `intraday_feed` 与当时冻结的 `intraday_policy`。使用跨源触发时，保留原始父预案、15m 输入和两会话原始价格核对；评分会重验所引用的触发 bar。配置不一致的日线报告在发行网格中显示 `POLICY_MISMATCH`。指数发行用正常的 `brief` 实时入口归档。保留报告可读回执、每次的输入快照、完整日线及可用的盘中追踪报告。工具档记下每次开盘盘口、可见数量、原始 OHLC、各自接收时间及公司行为。按预登记的截止完成采集后再运行评分。改费用、配置、门槛、源码或指定依赖版本后需要新协议版本及其回执。
+
+```bash
+.venv/bin/python scripts/evaluate_briefs.py --protocol PROTOCOL.json \
+  --output-dir SEAL --seal-forward-execution
+.venv/bin/python scripts/evaluate_briefs.py --protocol PROTOCOL.json \
+  --output-dir OUTPUT --live-reports REPORTS --snapshot-store CACHE \
+  --tool-archive TOOL.json --execution-seal SEAL/seal.json
+```
+
+ETF 输入是 1.0 版 `ToolArchive` JSON。顶层包含 `mapping`、`cutoff`、`evidence` 和 `quotes`，另可声明 `actions`。三种来源类别为 `SYNTHETIC`、`FROZEN`、`RECEIVED`。每条 `quotes` 用 `quote_id`、本地 `session`、正式会话 `start_at/end_at`、最终行情 `observed_at` 及原始 `open/high/low/close` 标识。可选的 `opening_observed_at`、`bid/ask`、`opening_volume` 要取自该次开盘可得的证据；日总成交量不能填入可见开盘量。停牌或经证实不可交易时用 `tradable: false`。如可取得当日限价，提供 `lower_limit/upper_limit`。拆分用生效时刻、已知时刻和股数因子，分红用权益时刻、已知时刻、每份金额及到账时刻。拆分与同一时点的其他公司行动需要各自明确的生效顺序，无法区分顺序的档案会拒绝。费用和交易规则按生效日期排序并提供版本。时间字段带时区，价格和费用可用十进制字符串，详见 [输入契约](../../src/elliottwaver/schemas/index_execution.py)。
+
+输出 `issuance_grid.json` 记录按时、窗口外、漏发、待到期及跨段剔除。`plans.json` 可回溯预案与指数点位，`books.json` 逐笔记录各组订单、成交、费用、权益、持仓及净值，`summary.json` 给出比较、压力和配对退出结果。`manifest.json` 记录输入、源码、依赖及产物摘要。按摘要复验账本并记录证据来源。封存文件由本地系统生成，正式留存时应一并保存预先写入的时间证据。

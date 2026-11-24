@@ -399,7 +399,7 @@ def test_disparate_feed_requires_two_completed_matching_sessions(daily):
     assert verify_price_basis(plan, origin, switched)[0] == "PRICE_BASIS_UNVERIFIED"
 
 
-def test_verified_cross_feed_uses_completed_overlap_and_original_signal(daily):
+def test_verified_cross_feed_uses_completed_overlap_and_original_signal(daily, tmp_path):
     child, _, origins = trigger_fixture(daily)
     plan = daily.brief.index_guidance.tracks[0].plan
     daily_source = daily.prepared
@@ -429,6 +429,74 @@ def test_verified_cross_feed_uses_completed_overlap_and_original_signal(daily):
     status, overlap, proof = verify_price_basis(plan, issue, cross)
     assert status == "CROSS_FEED_VERIFIED" and overlap == (first.session_date, last.session_date)
     assert proof == plan.issued_at
+
+    from elliottwaver.errors import DataError, InputError
+    from elliottwaver.evaluation.index_research import _check_intraday_witness
+    from elliottwaver.schemas.index_context import IndexContext
+
+    ptrack, *rest = daily.brief.index_guidance.tracks
+    parent = daily.brief.model_copy(
+        update={
+            "index_guidance": daily.brief.index_guidance.model_copy(
+                update={"tracks": (ptrack.model_copy(update={"plan": plan}), *rest)}
+            )
+        }
+    )
+    scan = daily.brief.model_copy(
+        update={
+            "timeframe": "15m",
+            "mode": "LIVE",
+            "generated_at": cross.as_of,
+            "as_of": cross.as_of,
+            "feed": "cross",
+            "adjustment": "none",
+            "input_snapshot_id": cross.snapshot_id,
+            "last_bar_id": cross.bars[-1].bar_id,
+        }
+    )
+    tracking = build_intraday_tracking(
+        scan,
+        cross,
+        parent,
+        {plan.plan_id: issue},
+        IndexGuidanceConfig(),
+    )
+    witness = tracking.tracks[0]
+    assert witness.status == "TRIGGERED" and witness.price_basis == "CROSS_FEED_VERIFIED"
+    context = IndexContext(as_of=cross.as_of, main_snapshot_id=cross.snapshot_id, intraday=tracking)
+    scan = scan.model_copy(update={"index_context": context})
+    store = SnapshotStore(tmp_path)
+    native_id = store.save(native)
+    assert native_id == plan.input_snapshot_id
+    with pytest.raises(DataError):
+        _check_intraday_witness(
+            plan, parent, plan.issued_at, scan, cross.as_of, witness, store, live=True
+        )
+    store.save(cross)
+    assert _check_intraday_witness(
+        plan,
+        parent,
+        plan.issued_at,
+        scan,
+        cross.as_of,
+        witness,
+        store,
+        live=True,
+    )
+    altered = witness.model_copy(
+        update={
+            "variants": tuple(
+                item.model_copy(update={"raw_bar_id": "missing"})
+                if item.status == "TRIGGERED"
+                else item
+                for item in witness.variants
+            )
+        }
+    )
+    with pytest.raises(InputError, match="preserved bar"):
+        _check_intraday_witness(
+            plan, parent, plan.issued_at, scan, cross.as_of, altered, store, live=True
+        )
     changed = bars[-1].model_copy(update={"high": bars[-1].high + 2})
     broken = (*cross.raw_bars[: len(bars) - 1], changed, *cross.raw_bars[len(bars) :])
     assert (
@@ -681,3 +749,73 @@ def test_event_turnover_postclose_deadline_and_effective_timestamp(daily):
     rendered = str(index_context_sections(brief.model_copy(update={"index_context": context})))
     assert market_time_text(effective, "SPX") in rendered
     assert market_time_text(dataset.events[0].expected_at, "SPX") not in rendered
+
+
+def test_execution_replay_preserves_activation_before_a_later_index_gap(daily, tmp_path):
+    from types import SimpleNamespace
+
+    from elliottwaver.evaluation.index_research import _register_plans
+    from elliottwaver.schemas.index_execution import IssuanceSlot
+
+    plan = daily.brief.index_guidance.tracks[0].plan
+    p1, p2, p3 = plan.periods[:3]
+    opened = slot(p1.start_at, p1.end_at, p1.end_session, (102, 99, 101))
+    later = slot(p3.start_at, p3.end_at, p3.end_session, (105, 98, 101))
+    calendar = load_calendar(
+        daily.prepared.instrument, plan.decision_session, plan.periods[-1].end_session
+    )
+    store = SnapshotStore(tmp_path)
+    store.save(daily.prepared)
+    grid = (
+        IssuanceSlot(
+            session=plan.decision_session,
+            cutoff=daily.brief.as_of,
+            issue_by=plan.issued_at,
+            label_by=plan.periods[-1].end_at,
+            split="HOLDOUT",
+        ),
+    )
+    protocol = SimpleNamespace(
+        grid=grid,
+        index_adjustment=plan.adjustment,
+        index_feed=plan.feed,
+        intraday_feed=None,
+        intraday_policy=None,
+        analysis_config_hash=None,
+        guidance_policy_hash=None,
+        baseline_holding_sessions=5,
+        momentum_sessions=3,
+        mode="FROZEN",
+    )
+    reports = {
+        ("1d", plan.decision_session, daily.brief.brief_digest): (daily.brief, plan.issued_at)
+    }
+
+    def evaluate(bars):
+        base = daily.prepared
+        source = base.model_copy(
+            update={
+                "bars": (*base.bars, *bars),
+                "raw_bars": (*base.raw_bars, *bars),
+                "as_of": bars[-1].usable_at,
+                "sessions": tuple(
+                    sorted(set(base.sessions) | {p1.end_session, p2.end_session, p3.end_session})
+                ),
+            }
+        )
+        _, plans, books = _register_plans(
+            grid,
+            reports,
+            source,
+            calendar.sessions,
+            protocol,
+            data_cutoff=source.as_of,
+            snapshot_store=store,
+        )
+        return plans[0], books["HOLDOUT"]["FULL"]
+
+    first, original = evaluate((opened,))
+    revised, after_gap = evaluate((opened, later))
+    assert first["status"] == "ACTIVATED"
+    assert revised["status"] == "ACTIVATED_FOLLOW_UP_PENDING"
+    assert original and after_gap == original

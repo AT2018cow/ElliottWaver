@@ -5,6 +5,7 @@ import json
 import os
 import tempfile
 from datetime import date, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +17,8 @@ def _json_default(value: Any) -> Any:
         return value.model_dump(mode="json")
     if isinstance(value, (date, datetime)):
         return value.isoformat()
+    if isinstance(value, Decimal):
+        return str(value)
     if isinstance(value, Path):
         return str(value)
     raise TypeError(f"Cannot serialize {type(value).__name__}")

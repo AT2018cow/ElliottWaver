@@ -1,0 +1,76 @@
+{
+  "kind": "SINGLE_INDEX_EXECUTION",
+  "version": "1.0",
+  "mode": "FORWARD",
+  "mapping": {
+    "index_symbol": "SPX",
+    "tool_symbol": "SPY",
+    "version": "example-only",
+    "venue": "XNYS",
+    "timezone": "America/New_York",
+    "currency": "USD",
+    "feed": "REPLACE_WITH_TOOL_FEED"
+  },
+  "index_feed": "REPLACE_WITH_INDEX_FEED",
+  "settings": {
+    "capital": "10000",
+    "quantity": 10,
+    "allocation_priority": [
+      "SHORT",
+      "SWING"
+    ],
+    "risk_budget": "500",
+    "max_entry_price": "1000",
+    "stop_pct": "0.03",
+    "target_pct": "0.06",
+    "max_open_participation": "0.01",
+    "slippage_bps": "2",
+    "entry_sessions": 2,
+    "stagnant_sessions": 4,
+    "progress_pct": "0.01",
+    "partial_fraction": "0.50",
+    "trailing_pct": "0.03"
+  },
+  "rules": [
+    {
+      "version": "REPLACE_WITH_VERIFIED_RULE_AND_FEE_VERSION",
+      "effective_from": "2027-01-01",
+      "tick": "0.01",
+      "lot": 1,
+      "sell_lag_sessions": 0,
+      "minimum_commission": "1",
+      "cash_tick": "0.01"
+    }
+  ],
+  "grid": [
+    {
+      "session": "2027-01-11",
+      "cutoff": "2027-01-12T05:20:00Z",
+      "issue_by": "2027-01-12T05:30:00Z",
+      "label_by": "2027-03-01T21:00:00Z",
+      "split": "HOLDOUT"
+    },
+    {
+      "session": "2027-01-12",
+      "cutoff": "2027-01-13T05:20:00Z",
+      "issue_by": "2027-01-13T05:30:00Z",
+      "label_by": "2027-03-02T21:00:00Z",
+      "split": "HOLDOUT"
+    }
+  ],
+  "experiment_attempts": [
+    "example-fixed-execution-v1"
+  ],
+  "momentum_sessions": 3,
+  "baseline_holding_sessions": 5,
+  "block_sessions": 35,
+  "min_holdout_sessions": 60,
+  "min_holdout_trades": 10,
+  "min_timely_fraction": 0.95,
+  "min_net_increment": "0",
+  "max_drawdown": "0.2",
+  "bootstrap_seed": 0,
+  "bootstrap_samples": 1000,
+  "analysis_config_hash": "9c752132a779983f8d705e0f0ac831306a63e564520352f5800e9b3c65dc1a72",
+  "guidance_policy_hash": "8f92f9d0f1659b7d6462401cf912775f504df1d6e0172635ec966b6bd4d54d1e"
+}

@@ -1,6 +1,6 @@
 # ElliottWaver 0.7.0 实现与验收状态
 
-更新于 2026-11-24。安装、日常操作和研究流程见[中文使用手册](USER_GUIDE.md)。目标规格见[详细实现方案](IMPLEMENTATION_PLAN.md)和[收盘分析与概率评估实施设计](WAVE_ANALYSIS_DESIGN.md)。
+更新于 2026-11-25，覆盖 `v0.7.0` 发布后至 `6dc8c39` 的单指数增强源码。安装、日常操作和研究流程见[中文使用手册](USER_GUIDE.md)。目标规格见[详细实现方案](IMPLEMENTATION_PLAN.md)、[收盘分析与概率评估实施设计](WAVE_ANALYSIS_DESIGN.md)和[单指数实施与验收方案](SINGLE_INDEX_TRADING_IMPLEMENTATION_PLAN.md)。
 
 ## 已交付范围
 
@@ -21,10 +21,11 @@
 | 评分与点位 | 分项证据、缺失状态、质量/覆盖/相对权重、Top-K 未展示权重、带方向条件、第五浪上限、合法目标带；完成态含 38.2%–100% 回撤目标，低分但硬规则通过的结构以 `EXCLUDED_STRUCTURE` 显式列出；第五浪同时比较浪 5/浪 1 与浪 5/浪 3，含 2.618/4.236 扩展位；按 K 线跨度标注浪级并提示 `MIXED_DEGREE_SCENARIOS` |
 | 产物 | 单周期分析支持 Rich、JSON、Markdown、Plotly HTML、SVG/PNG 备选渲染，完整写入后更新对应周期/feed 的 latest。收盘摘要支持终端、JSON、HTML 和 Markdown，显示数据模式、截止时刻及候选规则证据，使用独立的摘要索引。 |
 | 收盘摘要 | `elliottwaver brief` 首屏用中文显示主备浪型、当前浪、观察期限、目标区及改变判断的条件。「核对依据」集中展示分析范围、子浪与规则状态。默认日线及完整周线背景，长跨度自动选择周线。`--format json` 保留终端文字并只保存 JSON 文件。真实行情概率当前为 `UNCALIBRATED`。 |
-| 单指数日线预案 | 默认短线 5 会话、波段 20 会话。冻结日线收盘触发、失效、阶段退出、上方目标和追价上限。首屏依据同一结构化预案渲染，历史记录本地提醒，结算生成指数状态和历史研究统计。 [用户手册](USER_GUIDE.md#461-单指数短线与波段预案) |
-| 单指数盘中跟踪与背景 | 按实况发行回执关联同指数日线预案。保存 60 分钟背景和 15 分钟触价、收盘、回踩记录。可选固定参照、按公告可用时间导入的成分广度与持有期事件，同源同槽成交量及休市日历分别给出可用状态。 [用户手册](USER_GUIDE.md#462-单指数的盘中确认与市场背景) |
+| 单指数行情与发行 | 按决策截止共同截取原始和分析 K 线，保留未知缺口。实时简报用本地发行回执记录报告可读时刻。冻结回放按决策截止承接当时可见的历史。 [A 批实施与复验](reviews/2026-11-24-single-index-trading-first-batch.md) |
+| 单指数日线预案 | 默认短线 5 会话、波段 20 会话。冻结收盘触发、失效、阶段退出、上方目标和追价上限。实时触发以完整证据的实际接收时刻为准。首屏显示条件及距离，历史记录本地提醒，结算核对激活 K 线和已记录的观察证据，再输出点位状态和研究统计。仅触及阶段退出位的同根歧义不会提高硬失效上界。 [用户手册](USER_GUIDE.md#461-单指数短线与波段预案) |
+| 单指数盘中跟踪与背景 | 关联当时可见的同指数日线预案。实时使用发行回执，冻结回放按决策截止查找。保存 60 分钟背景和 15 分钟触价、收盘、回踩记录。可选固定参照、按公告可用时间导入的成分广度与持有期事件，同源同槽成交量及休市日历分别给出可用状态。 [用户手册](USER_GUIDE.md#462-单指数的盘中确认与市场背景) |
 | 单指数 ETF 成交研究 | 支持现金账本、配对退出、费用和延迟压力、历史分段及前向协议封存。已通过合成成交与真实冻结 OHLC 入口复验。真实前向报价和成交回报待收集。 [D 批实施与复验](reviews/2026-11-25-single-index-trading-batch-d.md) |
-| 单指数盘中概率 | 五种分钟周期各两项 5 根事件，三种卡片分别训练和封存。v5 特征、时点切分、影子留出评分和注册表同用事件定义。真实单指数冻结样本状态为证据不足，真实前向审批待独立样本。 [E 批实施与复验](reviews/2026-11-25-single-index-trading-batch-e.md) |
+| 单指数盘中概率 | 五种分钟周期各两项 5 根事件，三种卡片分别训练和封存。v5 特征、时点切分、影子留出评分和注册表同用事件定义。展示时核对标的专属校准分箱和模型有效期。真实单指数冻结样本仍为证据不足，前向审批待独立样本。 [E 批实施与复验](reviews/2026-11-25-single-index-trading-batch-e.md) |
 | 盘中简报 | 明确给出盘中快照时自动采用其主周期。`BriefOutlook` 使用 `version=1.1`、`horizon_unit=BARS`、`horizon=5`，只选发行后尚未开始的 5 根主周期 K 线。首屏显示市场当地时间、最后一根已完成 K 线及可用时刻、推进、目标、失效条件和到期时刻。固定背景配对为 `1m→5m`、`5m→60m`、`15m/30m→60m`、`60m→1d`。小时背景使用截止已可用的同源原生日线。遇到旧版盘中报告的周线观察窗，结算返回 `SETTLEMENT_WINDOW_TIMEFRAME_MISMATCH`。 |
 | 短期预测增强 | PE-1 至 PE-6 核心：`project_with_gates` 条件角色、`BriefOutlook` 5 会话/2 周观察窗、推进/目标事件注册与评估、特征版本 4、A/B/C/D 对照、`freeze`/`score`、新事件模型作用域、按卡片概率展示、核销回放和终端/HTML/JSON 一致性；P-08 四标的（CN 个股/指数、US 个股/ETF）的 brief/watchlist/history/settle/support-matrix 全流程已通过；独立验收 PO-01 至 PO-09 已修复：推演条件语义、目标硬边界、发行/回放/核销共用冻结观察窗、训练/评分样本作用域、冻结与留出封存、标签语义、批量模型选择、终端精度和旧分析兼容；历史 holdout 已覆盖目标先达、推进和 2 周收盘事件，均正式记录为 INSUFFICIENT_EVIDENCE；旧评分产物只作回顾性研究留存，不用于批准。[实施记录](reviews/2026-11-21-prediction-outlook-protocols.md) · [独立验收修复](reviews/2026-11-21-prediction-outlook-review-followup.md) |
 | 历史与自选 | `elliottwaver history` 查询已发布摘要，原摘要记录上次判断及变化，区分 `CONFIG_CHANGED`、`DATA_REVISED` 和 `NOT_COMPARABLE`。新增 `timeframe`、`feed`、`adjustment`、`last_bar_end_at`、`last_bar_id` 和 `last_bar_available_at`，同日盘中摘要按最后一根 K 线排序；`history --timeframe` 可筛选。`elliottwaver watchlist` 批量生成 JSON 摘要，支持有限重试、有界并发、模型注册表回退和单标的失败隔离。 |
@@ -37,6 +38,14 @@
 | 快照与回放 | SQLite 索引、Parquet 不可变块、SHA256、原子写入、源身份检查；逐前缀回放与回放 manifest |
 
 ## 验证结果
+
+### 单指数 A 至 E 批及验收修复
+
+截至源码提交 `6dc8c39`，本地 Python 3.12 / Linux 全量 pytest **720 项通过**。Ruff 代码和格式检查、`pip check` 及 Git 差异检查通过。四项验收问题均已通过回归，覆盖迟到日线、修订后的核销证据、同一 K 线的回放排序及同根歧义统计。科创50冻结日线通过 `brief → history → settle` 复跑，隔离安装的 wheel 得到相同的两档到期结果。[整体验收与修复复验](reviews/2026-11-25-single-index-a-to-e-acceptance.md#修复复验)
+
+本地单指数分析只需所选指数的行情，无需配置 ETF、费用或 Modal。ETF 回放和盘中概率已完成本地研究入口验证，现有留出样本的结论仍为 `INSUFFICIENT_EVIDENCE`。[本地使用与研究边界](SINGLE_INDEX_TRADING_IMPLEMENTATION_PLAN.md#当前验收范围)
+
+### v0.7.0 发布验收
 
 以下为 `v0.7.0` 的验证结果。真实行情取数范围和九项审查修复的复验证据分别记录。 [盘中来源验收](reviews/2026-11-23-intraday-acceptance.md) · [独立审查修复](reviews/2026-11-24-intraday-code-review-repair.md)
 

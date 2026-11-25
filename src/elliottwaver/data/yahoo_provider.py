@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 from elliottwaver.config import DataConfig
 from elliottwaver.data.calendar import bar_window, load_calendar
 from elliottwaver.data.periods import aggregate_intraday, expected_starts, target_session
-from elliottwaver.data.quality import normalize_bars
+from elliottwaver.data.quality import normalize_bars, stale_intraday_error
 from elliottwaver.data.reliability import request_json
 from elliottwaver.errors import DataError, SourceError
 from elliottwaver.schemas.market import Bar, Instrument, MarketDataBundle, Provenance
@@ -211,7 +211,7 @@ class YahooIndexProvider:
         if not bars or not expected_source:
             raise DataError("YAHOO_NO_BARS: no completed index bars")
         if expected_source[-1] != bars[-1].start_at:
-            raise DataError("STALE_INTRADAY: Yahoo lacks the required completed bar")
+            raise stale_intraday_error(instrument, bars[-1])
         if timeframe != source_interval:
             bars = aggregate_intraday(
                 bars,
@@ -233,7 +233,7 @@ class YahooIndexProvider:
             since=start,
         )
         if not expected or expected[-1] != bars[-1].start_at:
-            raise DataError("STALE_INTRADAY: Yahoo lacks the required completed bar")
+            raise stale_intraday_error(instrument, bars[-1])
         return self._bundle(
             instrument,
             bars,

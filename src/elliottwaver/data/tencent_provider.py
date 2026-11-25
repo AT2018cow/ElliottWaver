@@ -15,7 +15,7 @@ from elliottwaver.config import DataConfig
 from elliottwaver.data.adjustment import adjust_to_basis
 from elliottwaver.data.calendar import load_calendar
 from elliottwaver.data.periods import expected_starts, intraday_windows, target_session
-from elliottwaver.data.quality import normalize_bars
+from elliottwaver.data.quality import normalize_bars, stale_intraday_error
 from elliottwaver.data.reliability import request_json
 from elliottwaver.errors import DataError, SourceError
 from elliottwaver.schemas.market import Bar, FactorPoint, Instrument, MarketDataBundle, Provenance
@@ -25,6 +25,7 @@ from elliottwaver.util import digest
 _API = "https://ifzq.gtimg.cn/appstock/app/kline/mkline"
 _PAGE = 320
 _PERIOD = {"1m": "m1", "5m": "m5", "15m": "m15", "30m": "m30", "60m": "m60"}
+PARSER_VERSION = "tencent-mkline-v2"
 
 
 class TencentProvider:
@@ -65,8 +66,7 @@ class TencentProvider:
         for session in calendar.sessions:
             for opened, closed in intraday_windows(session, minutes(timeframe)):
                 windows[closed] = (opened, session.date)
-        observed = datetime.now(UTC)
-        rows: dict[str, list] = {}
+        rows: dict[str, tuple[list, datetime]] = {}
         first_data = None
         marker = (
             calendar.session(target).close_at.astimezone(zone) + timedelta(minutes=1)
@@ -74,6 +74,7 @@ class TencentProvider:
         pages = 0
         while pages < self.config.tencent_max_pages:
             payload = self._request(instrument.provider_symbol, period, marker)
+            observed = datetime.now(UTC)
             data = (payload.get("data") or {}).get(instrument.provider_symbol) or {}
             if first_data is None:
                 first_data = data
@@ -81,14 +82,17 @@ class TencentProvider:
             if not page:
                 break
             for row in page:
-                rows[str(row[0])] = row
+                key = str(row[0])
+                previous = rows.get(key)
+                if previous is None or previous[0] != row:
+                    rows[key] = (row, observed)
             pages += 1
             earliest = min(str(row[0]) for row in page)
             if len(page) < _PAGE or earliest <= start.strftime("%Y%m%d0000"):
                 break
             marker = earliest
         bars = []
-        for row in rows.values():
+        for row, observed in rows.values():
             end_at = (
                 datetime.strptime(str(row[0]), "%Y%m%d%H%M").replace(tzinfo=zone).astimezone(UTC)
             )
@@ -127,7 +131,7 @@ class TencentProvider:
         if not bars or not expected:
             raise DataError("TENCENT_NO_BARS: no completed index bars")
         if expected[-1] != bars[-1].start_at:
-            raise DataError("STALE_INTRADAY: Tencent lacks the required completed bar")
+            raise stale_intraday_error(instrument, bars[-1])
         name = ""
         if first_data is not None:
             name = (first_data.get("qt") or {}).get(instrument.provider_symbol, [None, ""])[1] or ""
@@ -174,7 +178,7 @@ class TencentProvider:
                 ["tencent", self.feed, target, factor_hash, [bar.bar_id for bar in bars]]
             ),
             factor_hash=factor_hash,
-            parser_version="tencent-mkline-v1",
+            parser_version=PARSER_VERSION,
             source_timeframe=timeframe,
             aggregation="none",
             coverage_start=bars[0].session_date,
@@ -182,7 +186,7 @@ class TencentProvider:
             coverage_reason="TENCENT_BACKWARD_PAGES",
             session_profile="cn_exchange_session",
             calendar_version=calendar.version,
-            fetched_at=observed,
+            fetched_at=datetime.now(UTC),
             requested_start=start,
             requested_end=end,
             volume_unit="index_volume" if instrument.asset_type == "INDEX" else "vendor_unit",

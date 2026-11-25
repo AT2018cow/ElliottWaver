@@ -17,8 +17,8 @@ from elliottwaver.config import DataConfig, tushare_token
 from elliottwaver.data.adjustment import adjust_to_basis
 from elliottwaver.data.calendar import load_calendar
 from elliottwaver.data.periods import expected_starts, target_session
-from elliottwaver.data.quality import normalize_bars
-from elliottwaver.errors import DataError, SourceError
+from elliottwaver.data.quality import normalize_bars, stale_intraday_error
+from elliottwaver.errors import DataError, InputError, SourceError
 from elliottwaver.schemas.market import Bar, FactorPoint, Instrument, MarketDataBundle, Provenance
 from elliottwaver.timeframes import minutes
 from elliottwaver.util import digest
@@ -48,18 +48,28 @@ class TushareProvider:
         self.feed = feed
 
     def _request(self, api_name: str, params: dict, fields: str) -> list[dict]:
-        response = requests.post(
-            _API,
-            json={
-                "api_name": api_name,
-                "token": tushare_token(),
-                "params": params,
-                "fields": fields,
-            },
-            timeout=(10, self.config.request_timeout_seconds),
-        )
-        response.raise_for_status()
-        payload = response.json()
+        try:
+            token = tushare_token()
+        except InputError as exc:
+            raise SourceError(f"TUSHARE_AUTH_REQUIRED: {exc}") from None
+        try:
+            response = requests.post(
+                _API,
+                json={"api_name": api_name, "token": token, "params": params, "fields": fields},
+                timeout=(10, self.config.request_timeout_seconds),
+            )
+            response.raise_for_status()
+        except requests.HTTPError as exc:
+            status = exc.response.status_code if exc.response is not None else None
+            raise SourceError(f"TUSHARE_HTTP: 行情请求失败（HTTP {status}）") from None
+        except requests.RequestException:
+            raise SourceError("TUSHARE_HTTP: 行情连接失败") from None
+        try:
+            payload = response.json()
+        except ValueError:
+            raise SourceError("TUSHARE_RESPONSE: 行情响应无法解析") from None
+        if not isinstance(payload, dict):
+            raise SourceError("TUSHARE_RESPONSE: 行情响应无法解析")
         if payload.get("code") != 0:
             raise SourceError(
                 f"TUSHARE_{payload.get('code')}: {payload.get('msg') or 'request failed'}"
@@ -159,7 +169,7 @@ class TushareProvider:
             since=start,
         )
         if not raw or not expected or raw[-1].start_at != expected[-1]:
-            raise DataError("STALE_INTRADAY: Tushare lacks the required final bar")
+            raise stale_intraday_error(instrument, raw[-1] if raw else None)
         factors: tuple[FactorPoint, ...] = ()
         if instrument.asset_type == "EQUITY":
             factors = self._factors(instrument, start, target)

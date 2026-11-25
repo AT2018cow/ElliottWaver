@@ -155,6 +155,7 @@ class Settings(BaseSettings):
         frozen=True,
     )
     schema_version: Literal[1] = 1
+    default_index: str | None = None
     analysis: AnalysisConfig = Field(default_factory=AnalysisConfig)
     search: SearchConfig = Field(default_factory=SearchConfig)
     scoring: ScoringConfig = Field(default_factory=ScoringConfig)
@@ -208,15 +209,23 @@ def long_term_settings(settings: Settings) -> Settings:
     return settings.model_copy(update={"search": search})
 
 
-def load_settings(path: Path | None = None) -> Settings:
+def read_settings_values(path: Path | None) -> dict:
     try:
-        values = yaml.safe_load(path.read_text()) if path else {}
+        values = yaml.safe_load(path.read_text(encoding="utf-8")) if path else {}
         if values is None:
             values = {}
         if not isinstance(values, dict):
             raise ValueError("configuration must be a mapping")
+        return values
+    except (ValueError, OSError, yaml.YAMLError) as exc:
+        raise InputError(f"Invalid configuration: {exc}") from exc
+
+
+def settings_from_values(values: dict) -> Settings:
+    try:
         # Environment takes precedence over YAML constructor values.
         defaults = Settings(**values)
+        values = values.copy()
         env = Settings()
         override = {k: env.model_dump()[k] for k in env.model_fields_set}
         for key, value in override.items():
@@ -225,8 +234,12 @@ def load_settings(path: Path | None = None) -> Settings:
                 value = {**values[key], **{f: value[f] for f in fields}}
             values[key] = value
         return Settings(**values) if override else defaults
-    except (ValueError, OSError, yaml.YAMLError) as exc:
+    except ValueError as exc:
         raise InputError(f"Invalid configuration: {exc}") from exc
+
+
+def load_settings(path: Path | None = None) -> Settings:
+    return settings_from_values(read_settings_values(path))
 
 
 def alpaca_credentials() -> tuple[SecretStr, SecretStr]:

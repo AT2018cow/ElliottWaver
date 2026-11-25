@@ -16,10 +16,12 @@ from elliottwaver.data.periods import (
     intraday_windows,
     target_session,
 )
+from elliottwaver.data.quality import stale_intraday_error
 from elliottwaver.data.router import route_symbol
 from elliottwaver.data.sina_provider import SinaProvider
 from elliottwaver.data.snapshots import SERIES_FIELDS, SnapshotStore
 from elliottwaver.data.source_cache import SourceBlockStore, compatible_provider_basis
+from elliottwaver.data.tencent_provider import PARSER_VERSION as TENCENT_PARSER_VERSION
 from elliottwaver.data.tencent_provider import TencentProvider
 from elliottwaver.data.tushare_provider import PARSER_VERSION as TUSHARE_PARSER_VERSION
 from elliottwaver.data.tushare_provider import TushareProvider
@@ -60,7 +62,9 @@ def fetch_bundle(
     if instrument.market == "US" and instrument.asset_type == "INDEX":
         if not settings.data.us_index_feed:
             raise DataError(
-                "US_INDEX_FEED_UNCONFIGURED: 配置 data.us_index_feed: massive-index 后才可请求原生美股指数"
+                "US_INDEX_FEED_UNCONFIGURED: 尚未配置美股指数行情源。"
+                f"运行 elliottwaver init {instrument.canonical_symbol} 设置 Yahoo，"
+                "或在所用配置的 data.us_index_feed 中选择行情源。"
             )
         feed = settings.data.us_index_feed
     elif instrument.market == "US":
@@ -74,7 +78,9 @@ def fetch_bundle(
         if intraday:
             if not settings.data.cn_index_intraday_feed:
                 raise DataError(
-                    "INDEX_INTRADAY_UNSUPPORTED: 配置 data.cn_index_intraday_feed 后才可请求指数盘中行情"
+                    "INDEX_INTRADAY_UNSUPPORTED: 尚未配置指数盘中行情源。"
+                    f"运行 elliottwaver init {instrument.canonical_symbol} 设置腾讯行情，"
+                    "或在所用配置的 data.cn_index_intraday_feed 中选择行情源。"
                 )
             feed = settings.data.cn_index_intraday_feed
         else:
@@ -88,10 +94,8 @@ def fetch_bundle(
             parser = "yahoo-chart-v1" if feed == "yahoo-index" else "massive-v1"
         elif instrument.market == "US":
             parser = "yahoo-chart-v1" if feed == "yahoo" else "alpaca-rest-v1"
-        elif feed == "tencent-cn-index":
-            parser = "tencent-mkline-v1"
-        elif feed == "tencent-cn-equity":
-            parser = "tencent-mkline-v1"
+        elif feed in {"tencent-cn-index", "tencent-cn-equity"}:
+            parser = TENCENT_PARSER_VERSION
         elif feed == "baostock":
             parser = "baostock-v1"
         elif feed.startswith("tushare"):
@@ -169,7 +173,7 @@ def fetch_bundle(
             None,
         )
         if required_interval is None:
-            raise DataError("STALE_INTRADAY: no completed interval for the requested session")
+            raise DataError("STALE_INTRADAY: 本交易会话尚无达到可用时间的完整盘中 K 线。")
 
     def current_tail(bundle):
         last = bundle.bars[-1]
@@ -401,9 +405,9 @@ def fetch_bundle(
                 buffer_minutes=buffer,
             )
             if bundle is None or not current_tail(bundle):
-                error = "STALE_INTRADAY: source blocks lack the required completed bar"
-                source_store.record_failure(source_key, (target,), error)
-                raise DataError(error)
+                error = stale_intraday_error(instrument, (bundle or native).bars[-1])
+                source_store.record_failure(source_key, (target,), str(error))
+                raise error
             lookup_key = digest(
                 [key, source_store.revision_token(source_key, start, target, request.as_of)]
             )

@@ -15,7 +15,7 @@ import requests
 from elliottwaver.config import DataConfig, massive_api_key
 from elliottwaver.data.calendar import bar_window, load_calendar
 from elliottwaver.data.periods import as_weekly, expected_starts, target_session
-from elliottwaver.data.quality import normalize_bars
+from elliottwaver.data.quality import normalize_bars, stale_intraday_error
 from elliottwaver.errors import DataError, SourceError
 from elliottwaver.schemas.market import Bar, Instrument, MarketDataBundle, Provenance
 from elliottwaver.timeframes import minutes
@@ -218,7 +218,7 @@ class MassiveIndexProvider:
         if not bars:
             raise DataError("Massive returned no intraday index bars")
         if not expected or expected[-1] != bars[-1].start_at:
-            raise DataError("STALE_INTRADAY: Massive lacks the required completed bar")
+            raise stale_intraday_error(instrument, bars[-1])
         daily_context = tuple(
             bar for bar in daily if bar.usable_at <= as_of and bar.session_date <= target
         )

@@ -2,7 +2,7 @@
 
 适用于 ElliottWaver 0.7.0 及其后的单指数增强源码。覆盖沪深与美股的日线、周线、小时线和分钟线。指数的盘中周期需要配置对应行情源。逐腿结构树和跨周期关联通过增强配置启用。 [升级步骤](#从已有安装升级) · [源码验收状态](IMPLEMENTATION_STATUS.md)
 
-ElliottWaver 从股票和指数的 K 线中识别波浪候选，给出规则检查、推进价、失效价和目标区。日常用 `brief` 直接在终端看数浪和短期推演，单周期深入分析用 `analyze`。需要图表时，可另行打开 HTML 摘要。
+ElliottWaver 从股票和指数的 K 线中识别波浪候选，给出规则检查、推进价、失效价和目标区。日常使用直接输入代码，程序根据交易时段生成相应简报，并比对已有判断。单周期深入分析用 `analyze`。
 
 目录：
 
@@ -27,14 +27,32 @@ ElliottWaver 从股票和指数的 K 线中识别波浪候选，给出规则检�
 
 ## 1. 先运行起来
 
-以下示例从源码目录运行。先安装对应市场的依赖，再运行 `brief` 读取可用的收盘数据。[安装步骤](#2-安装与环境检查)
+安装对应市场的依赖后，在保存配置和报告的工作目录执行。以下以科创 50 为例。[安装步骤](#2-安装与环境检查)
+
+```bash
+.venv/bin/elliottwaver 000688.SH
+```
+
+- **盘前、午休、收盘后和休市日**查看最近一根已可用完整日线的主选。指数简报附短线、波段两档预案，默认持有期为 5 和 20 个交易日。收盘日线未达到行情可用时间时，仍显示上一交易日的数据日期。
+- **交易中**先出日线，再显示可用的 15 分钟波浪判断和 60 分钟背景。首根 15 分钟 K 线尚未到可用时间，或行情源尚未返回所需 K 线时，保留日线并提示盘中状态。
+- **有旧简报**就在对应周期下显示与上次相比的变化。比较使用同标的、同周期、同来源与复权口径的本地实时简报。指数盘中确认使用当时已经发行并有效的日线预案，首次盘中运行时可以看到波浪判断，新发行的预案从自己的有效观察窗开始跟踪。
+
+沪深京指数日线用新浪，盘中默认用腾讯。美股指数默认用 Yahoo。美股个股沿用 Alpaca 配置，选用免费 Yahoo 时可传 `--config config.free.example.yaml`。日常命令、`analyze` 和 `data fetch/inspect` 按 `--config`、当前目录的 `config.local.yaml`、`config.yaml` 的顺序选择配置文件。共享的 `output.formats` 可以包含 PNG，简报沿用其中的 HTML 和 Markdown，详细分析按配置导出 PNG。
+
+### 单独查看某一项
+
+`brief 000688.SH --details` 展开规则与诊断，`brief 000688.SH --open` 打开日线图表。`intraday 000688.SH` 单独查看盘中，`history 000688.SH` 查看历次简报，`history 000688.SH --json` 可查各报告的完整路径。若希望这些单项命令也省略指数代码，才需要运行 `init 000688.SH` 保存默认指数。
+
+`brief --help` 显示常用选项，`brief --help-all` 列出高级选项。
+
+### 临时查看个股或周线
 
 ```bash
 .venv/bin/elliottwaver brief 600519.SH --format json
 .venv/bin/elliottwaver brief 000300.SH --timeframe 1w --format json
 ```
 
-第一条命令查看贵州茅台的日线主分析和最近完整的周线背景。第二条命令用周线分析沪深 300。两条命令都从新浪取数，需要联网，无需密钥。终端显示中文摘要及保存路径，文件只保存 JSON。需要看 K 线图时，可去掉 `--format json`，加 `--open` 打开默认生成的网页摘要。
+第一条命令查看贵州茅台的日线主分析和最近完整的周线背景。第二条命令用周线分析沪深 300。两条命令都从新浪取数，需要联网，无需密钥。终端显示中文摘要及报告入口，原始报告归档只保存 JSON。需要看 K 线图时，可去掉 `--format json`，加 `--open` 打开默认生成的网页摘要。
 
 配置 Alpaca 后，可用 `.venv/bin/elliottwaver brief AAPL --feed sip --format json` 查看美股日线摘要。[美股配置与示例](#42-美股)
 
@@ -377,7 +395,7 @@ A 股老指数/老股票原始数据可到 1990/1991 年；引擎日历从 **199
 .venv/bin/elliottwaver history AAPL --timeframe 5m --mode frozen --json
 ```
 
-查询返回最近 50 条匹配记录。`--timeframe` 可按主周期筛选；盘中记录按最后一根已完成 K 线的时刻排序，并显示市场当地时间。JSON 数组中每条记录的 `path` 指向原报告目录。生成摘要时若用了自定义缓存，查询时也要传同一个 `--config`。报告移走或校验失败时，历史结果显示 `UNREADABLE`。
+查询返回最近 50 条匹配记录。省略代码和模式时，`history` 查当前默认指数日常实时发行的记录，回放可用 `history --mode frozen` 查看。`--timeframe` 可按主周期筛选；盘中记录按最后一根已完成 K 线的时刻排序，并显示市场当地时间。JSON 数组中每条记录的 `path` 指向原报告目录。生成摘要时若用了自定义缓存，查询时也要使用同一份配置。报告移走或校验失败时，终端标记为「报告不可读」，JSON 状态为 `UNREADABLE`。
 
 `brief.json` 中的 `previous` 记录同模式的上一次较早判断。盘中报告按最后一根已完成 K 线选择前一份记录，因此同一天的两份判断也能比较；重复生成同一根 K 线时沿用此前合格记录。常见结果有 `FIRST_RECORD`（首次）、`SAME_COUNT`（维持）、`ALTERNATE_PROMOTED`（备选升为主选）、`STAGE_ADVANCED`（浪段推进）和 `COUNT_CHANGED`（结构改变）。配置或引擎版本变化显示 `CONFIG_CHANGED`。周期、feed、复权口径变化或没有可比较的行情时显示 `NOT_COMPARABLE`。`DATA_REVISED` 只计算截至上次决策的重叠 K 线和因子修订。JSON 另保留 `previous_last_bar_end_at`、`structure_change`、`revision_count` 和 `factor_revision_count`。
 
@@ -441,16 +459,18 @@ printf '600519.SH\n000300.SH\n' > reports/my-watchlist.txt
 
 文件每行一个标的，空行和以 `#` 开头的注释会被忽略，合法代码按规范写法去重。`--workers` 可设为 1、2、4 或 8，`--retries` 可设为 0 至 5，`--retry-delay` 设置两次尝试之间的秒数。非法代码按原文记录，其他标的继续处理，命令最后返回首个失败标的的退出码。已生成但状态为 `INSUFFICIENT_DATA` 或 `STALE_DATA` 的摘要也计为失败，可用 JSON 条目的 `path` 和 `error` 排查。
 
-批量摘要只保存 JSON 产物，默认目录为 `reports/watchlist/`。要看某只标的的 HTML，单独运行 `brief SYMBOL`。如需给整批选用其他周期，传 `--timeframe 1w`。批量行情来源通过 `--config` 配置，美股仍需要对应 feed 的凭证。`--model-registry DIR` 可指定已有的模型注册表，默认使用缓存目录下的 `models/`。
+批量摘要保存在 `reports/watchlist/`，各标的的入口页链接到 JSON 原件。要生成某只标的的网页简报和图表，单独运行 `brief SYMBOL`。如需给整批选用其他周期，传 `--timeframe 1w`。批量行情来源通过 `--config` 配置，美股仍需要对应 feed 的凭证。`--model-registry DIR` 可指定已有的模型注册表，默认使用缓存目录下的 `models/`。
 
 ### 4.7.1 到期结算
 
-先生成 `brief` 并保留其报告目录。等要核对的交易日或交易周结束后下载新快照。以下示例假设贵州茅台原摘要的主周期是日线。
+先生成 `brief` 并保留其报告目录。以下示例核对贵州茅台的一份日线摘要。从 `history` 结果选择要核对的日线记录，将它的 `path` 加上 `/brief.json`。等待观察期结束后下载覆盖到期日的快照。
 
 ```bash
+.venv/bin/elliottwaver history 600519 --timeframe 1d --json
+DAILY_BRIEF_JSON='替换为所选日线报告的完整 brief.json 路径'
 .venv/bin/elliottwaver data fetch 600519 --timeframe 1d --refresh
 OUTCOME_SNAPSHOT_ID='替换为新下载行情的完整snapshot_id'
-.venv/bin/elliottwaver settle reports/CN/600519.SH/brief \
+.venv/bin/elliottwaver settle "$DAILY_BRIEF_JSON" \
   --snapshot "$OUTCOME_SNAPSHOT_ID" --output reports/settlements-600519.json --json
 ```
 
@@ -559,7 +579,7 @@ PROTOCOL=docs/protocols/roadmap-repair-2026-heldout-smoke.json
 
 ```bash
 .venv/bin/python scripts/label_wave_cases.py export \
-  --briefs reports/CN/600519.SH/brief \
+  --briefs reports/600519.SH/archive/brief \
   --cache-root .cache/elliottwaver --bar-window 60 \
   --output reports/blind-cases.json --html reports/blind-cases.html
 ```
@@ -613,7 +633,18 @@ PROTOCOL=docs/protocols/roadmap-repair-2026-heldout-smoke.json
 
 ## 5. 找到并查看报告
 
-收盘摘要默认写入 `reports/<市场>/<标的>/brief/<行情日期>/<产物摘要>/`。终端打印目录。使用 `--json` 时，输出摘要对象，可通过 `history SYMBOL --json` 查询保存路径。
+查看某只股票或指数时，打开 `reports/<标的>/index.html`。例如 `reports/000688.SH/index.html` 汇集科创 50 的日线、盘中和详细分析。终端在每次分析后给出该入口。页面更新时会校验简报的归档文件和实时发行回执。某份报告校验失败时，列表使用该周期上一份有效报告。页面另列回放、演示和最近归档。只导出 JSON 时，入口直接链接可用的 JSON 文件。
+
+```text
+reports/
+  000688.SH/
+    index.html
+    archive/
+      brief/<行情日期>_<产物摘要>/
+      analysis/<行情日期>_<产物摘要>/
+```
+
+结算和研究脚本可读取 `reports/<标的>/archive/brief/` 中的原始摘要。改动前已生成的报告保留原路径，可用 `history SYMBOL --json` 查询具体位置。指定输出根目录时，固定入口和归档也一起写到该根目录。
 
 | 摘要文件 | 内容 |
 | --- | --- |
@@ -622,20 +653,20 @@ PROTOCOL=docs/protocols/roadmap-repair-2026-heldout-smoke.json
 | `weekly.json`、`weekly.html` | 周线背景结果和图表，仅在算出背景结果后生成 |
 | `brief.json`、`manifest.json` | 摘要数据和产物校验清单，始终保存 |
 
-`brief --format json` 只保存 JSON 产物。`--format html,md` 包含 HTML 和 Markdown，`--renderer svg` 可更换图表渲染器。同一个业务判断以 `brief_digest` 标识。导出格式或渲染器变化时，会使用不同产物目录。
+`brief --format json` 的原始摘要只保存 JSON 产物。`--format html,md` 包含 HTML 和 Markdown，`--renderer svg` 可更换图表渲染器。同一个业务判断以 `brief_digest` 标识。导出格式或渲染器变化时，会使用不同产物目录。
 
 `analyze` 和 `demo` 输出单周期报告。终端最后会给出类似信息。
 
 ```text
-报告：reports/CN/600519.SH/1d/2026-11-16/<产物摘要>
+报告入口 · reports/600519.SH/index.html
 快照：<快照ID>
 ```
 
-默认真实分析写入 `reports/`，演示写入 `reports/demo/`。目录中的日期为最后一根纳入分析的 K 线所属交易日。指数报告使用相同结构，例如 `reports/CN/000688.SH/1d/2026-11-16/<产物摘要>/`，并在报告头部标注“品种：指数”。
+默认真实分析写入 `reports/`，演示写入 `reports/demo/`。归档目录名的日期为最后一根纳入分析的 K 线所属交易日。指数报告使用相同结构，并在报告头部标注“品种：指数”。
 
 ```text
 reports/
-  CN/600519.SH/1d/2026-11-16/<产物摘要>/
+  600519.SH/archive/analysis/2026-11-16_<产物摘要>/
     chart.html       交互图表
     report.md        文字报告与评分依据
     analysis.json    完整结构化结果
@@ -658,9 +689,9 @@ HTML 包含 K 线、成交量、MACD 三个面板。可以通过图上方的下�
 .venv/bin/elliottwaver analyze 600519 --format json --json
 ```
 
-`analysis.json` 和 `manifest.json` 始终写入；`--format json` 表示只保留这两个基础文件。要额外导出 Plotly 的 PNG，需安装 `.[png]` 并满足 Kaleido 的浏览器要求；上面的 SVG 渲染命令可直接生成 PNG。
+`analysis.json` 和 `manifest.json` 始终写入；`--format json` 时，分析归档只有这两个基础文件。要额外导出 Plotly 的 PNG，需安装 `.[png]` 并满足 Kaleido 的浏览器要求；上面的 SVG 渲染命令可直接生成 PNG。
 
-每个股票/周期目录下的 `latest_<配置摘要>_<feed>.json` 是最近一次有效报告的路径指针。打开图表时使用终端打印的具体目录即可。
+分析归档中的 `latest_<周期>_<配置摘要>_<feed>.json` 是程序使用的路径指针。日常打开标的目录中的 `index.html` 即可。
 
 ## 6. 怎么理解分析结果
 
@@ -751,7 +782,7 @@ HTML 包含 K 线、成交量、MACD 三个面板。可以通过图上方的下�
 
 `--as-of YYYY-MM-DD` 对 A 股解释为该日收盘后加缓冲，对美股解释为纽约当地次日零点加缓冲。精确时间必须带 `+08:00`、`-05:00`、`Z` 等时区信息；不能请求未来尚不可用的时刻。
 
-`--end` 限制纳入的交易日期；`--as-of` 控制数据当时是否已经可用。`--start` 影响锚点搜索范围，程序仍可保留更早数据用于指标预热和图表展示，因此不应把它当成严格的下载或显示起点。
+`--end` 限制纳入的交易日期。指定它时，分析报告归入冻结回放。`--as-of` 控制数据当时是否已经可用。`--start` 影响锚点搜索范围，程序仍可保留更早数据用于指标预热和图表展示，因此不应把它当成严格的下载或显示起点。
 
 高级用法：`--anchor YYYY-MM-DD` 将起浪日期限定为该日。该日期必须有可用 K 线；如果没有匹配的合法当前计数，会出现 `EXPLICIT_ANCHOR_UNMATCHED`。盘中还可传入带时区的精确开始时刻，匹配 K 线的 `start_at`：
 
@@ -899,6 +930,9 @@ done
 .venv/bin/elliottwaver --help
 .venv/bin/elliottwaver analyze --help
 .venv/bin/elliottwaver brief --help
+.venv/bin/elliottwaver brief --help-all
+.venv/bin/elliottwaver init --help
+.venv/bin/elliottwaver intraday --help
 .venv/bin/elliottwaver history --help
 .venv/bin/elliottwaver watchlist --help
 .venv/bin/elliottwaver settle --help
@@ -936,7 +970,7 @@ done
 | `SH880xxx sector indices are not supported` | 同花顺行业指数当前未接入；请使用 `SH000*`、`SZ399*`、`BJ899*` 官方指数代码 |
 | 快照不存在 | 检查完整 ID、当前工作目录，以及是否使用相同 `cache.directory` |
 | 快照周期不匹配 | 使用快照原周期，或从日线派生周线。小时线需单独获取，`brief` 读取分钟快照时须显式指定对应周期 |
-| 批量报告没有 HTML | `watchlist` 保存 JSON 产物。单独运行 `brief SYMBOL` 生成可读摘要和图表 |
+| 批量报告没有图表 | `watchlist` 的入口页链接到 JSON。运行 `brief SYMBOL` 生成网页摘要和图表 |
 | 概率显示 `UNCALIBRATED` | 当前分析未使用适用的已批准模型，可以继续看浪型、权重和确认/失效条件 |
 | 结算显示 `RIGHT_CENSORED` | 事件所需的后续交易会话尚未被快照覆盖。到期后用对应标的的新快照重新结算 |
 | 1 分钟线每天少两个时隙 | 新浪现代沪深股票 profile 对 14:57、14:58 起始的无成交集合竞价时隙有明确处理；其余未知缺口仍会阻断分析 |

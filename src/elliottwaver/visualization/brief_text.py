@@ -5,6 +5,7 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from elliottwaver.schemas.brief import Brief, BriefAnchor, BriefCard, BriefForecast, BriefPeriod
+from elliottwaver.schemas.index_context import IntradayTrack
 from elliottwaver.schemas.outlook import OutlookCase
 from elliottwaver.schemas.wave import LevelCondition, PriceZone, WaveScenario
 
@@ -87,10 +88,10 @@ def price_text(value: float) -> str:
     return text.rstrip("0").rstrip(".") if "." in text else text
 
 
-def target_range_text(zone: PriceZone) -> str:
+def target_range_text(zone: PriceZone, *, digits: int = 2) -> str:
     exact = f"{price_text(zone.low)}–{price_text(zone.high)}"
-    low, high = f"{zone.low:.2f}", f"{zone.high:.2f}"
-    if low == high or low == "0.00":
+    low, high = f"{zone.low:.{digits}f}", f"{zone.high:.{digits}f}"
+    if low == high or float(low) == 0:
         return exact
     if float(low) == zone.low and float(high) == zone.high:
         return exact
@@ -131,11 +132,15 @@ def card_role(index: int) -> str:
     return "主选" if index == 0 else f"备选 {index}"
 
 
-def condition_text(condition: LevelCondition, role: str | None = None) -> str:
+def condition_price_text(condition: LevelCondition) -> str:
     side = {"HIGH": "最高价", "LOW": "最低价", "CLOSE": "收盘价"}[condition.side]
     op = {"<": "低于", "<=": "不高于", ">": "高于", ">=": "不低于"}[condition.op]
+    return f"{side}{op} {price_text(condition.price)}"
+
+
+def condition_text(condition: LevelCondition, role: str | None = None) -> str:
     label = CONDITION.get(role or condition.kind, "触发条件")
-    return f"{label} · {side}{op} {price_text(condition.price)}（{condition.reason}）"
+    return f"{label} · {condition_price_text(condition)}（{condition.reason}）"
 
 
 def mode_text(value: str) -> str:
@@ -150,10 +155,14 @@ def feed_text(value: str) -> str:
     return {
         "sina": "新浪个股行情",
         "sina-index": "新浪指数行情",
+        "tencent-cn-index": "腾讯指数行情",
+        "tushare-cn-index": "Tushare 指数行情",
+        "yahoo-index": "Yahoo 指数行情",
+        "massive-index": "Massive 指数行情",
         "sip": "Alpaca 合并行情（SIP）",
         "iex": "Alpaca IEX 行情",
         "synthetic": "合成演示行情",
-    }.get(value, value)
+    }.get(value, value or "未配置")
 
 
 def adjustment_text(value: str) -> str:
@@ -335,20 +344,24 @@ def comparison_text(brief: Brief) -> tuple[str, ...]:
         }
         lines.append(f"换起点复核 · {labels[window.state]}")
     if (previous := brief.previous) and previous.change != "FIRST_RECORD":
-        labels = {
-            "SAME_COUNT": "维持原数浪",
-            "ALTERNATE_PROMOTED": "原备选成为主选",
-            "STAGE_ADVANCED": "浪段已推进",
-            "COUNT_CHANGED": "数浪已改变",
-            "TIP_MOVED": "进行中端点移动",
-            "HARD_INVALIDATED": "原数浪已失效",
-            "EVIDENCE_CHANGED": "支持证据有变化",
-            "CONFIG_CHANGED": "配置或规则版本有变化",
-            "DATA_REVISED": "历史行情有修订",
-            "NOT_COMPARABLE": "两次结果不可直接比较",
-        }
-        lines.append(f"相较上次 · {labels.get(previous.change, status_text(previous.change))}")
+        lines.append(f"相较上次 · {previous_change_text(previous.change)}")
     return tuple(lines)
+
+
+def previous_change_text(value: str) -> str:
+    return {
+        "FIRST_RECORD": "首次记录",
+        "SAME_COUNT": "维持原数浪",
+        "ALTERNATE_PROMOTED": "原备选成为主选",
+        "STAGE_ADVANCED": "浪段已推进",
+        "COUNT_CHANGED": "数浪已改变",
+        "TIP_MOVED": "进行中端点移动",
+        "HARD_INVALIDATED": "原数浪已失效",
+        "EVIDENCE_CHANGED": "支持证据有变化",
+        "CONFIG_CHANGED": "配置或规则版本有变化",
+        "DATA_REVISED": "历史行情有修订",
+        "NOT_COMPARABLE": "两次结果不可直接比较",
+    }.get(value, status_text(value))
 
 
 def omission_text(period: Brief | BriefPeriod) -> str:
@@ -616,6 +629,14 @@ CONTEXT_STATUS_TEXT = {
 }
 
 
+def intraday_track_text(track: IntradayTrack) -> str:
+    methods = {"TOUCH": "触价", "CLOSE": "收盘确认", "RETEST": "突破回踩"}
+    horizon = "短线" if track.horizon == "SHORT" else "波段"
+    threshold = f" · 门槛 {price_text(track.threshold)}" if track.threshold is not None else ""
+    mode = f"15 分钟{methods[track.selected_method]} · " if track.selected_method else ""
+    return f"{horizon} · {mode}{CONTEXT_STATUS_TEXT.get(track.status, track.status)}{threshold}"
+
+
 def index_context_sections(brief: Brief) -> tuple[tuple[str, tuple[str, ...]], ...]:
     context = brief.index_context
     if context is None:
@@ -655,15 +676,10 @@ def index_context_sections(brief: Brief) -> tuple[tuple[str, tuple[str, ...]], .
         sections.append(("市场背景", tuple(lines)))
     if context.intraday:
         intraday = context.intraday
-        methods = {"TOUCH": "触价", "CLOSE": "收盘确认", "RETEST": "突破回踩"}
-        lines = [f"60 分钟背景 {intraday.background_bias}"]
-        for track in intraday.tracks:
-            horizon = "短线" if track.horizon == "SHORT" else "波段"
-            threshold = (
-                f" · 门槛 {price_text(track.threshold)}" if track.threshold is not None else ""
-            )
-            mode = f"15 分钟{methods[track.selected_method]} · " if track.selected_method else ""
-            lines.append(f"{horizon} · {mode}{label(track.status)}{threshold}")
+        lines = [
+            f"60 分钟背景 · {direction_text(intraday.background_bias)}",
+            *(intraday_track_text(track) for track in intraday.tracks),
+        ]
         if intraday.volume.value is not None:
             lines.append(
                 f"同源同槽相对量 {intraday.volume.value:.2f} 倍 · {intraday.volume.sample_days} 日"

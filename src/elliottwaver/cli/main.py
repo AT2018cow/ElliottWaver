@@ -1,25 +1,39 @@
-"""CLI entrypoints; a minimal argparse bootstrap works before optional UI install."""
+"""CLI entrypoints for daily analysis and research."""
 
-import argparse
 import json
 import time
 import webbrowser
 from concurrent.futures import ThreadPoolExecutor
+from copy import copy
 from dataclasses import replace
 from datetime import UTC, date, datetime
 from functools import wraps
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
+from typing import Annotated
 
+import typer
 from pydantic import ValidationError
 from rich.console import Console
+from rich.style import Style
 from rich.table import Table
+from rich.text import Text
+from typer.core import TyperCommand, TyperGroup
 
 from elliottwaver import __version__
 from elliottwaver.brief import attach_previous, build_brief
-from elliottwaver.cli.console_render import render_brief, render_result
+from elliottwaver.cli.console_render import render_brief, render_brief_summary, render_result
+from elliottwaver.cli.daily import (
+    DAILY_HELP,
+    daily_config_path,
+    daily_instrument,
+    init_index,
+    intraday_availability,
+    with_index_feed_defaults,
+)
 from elliottwaver.cli.index_context import attach_index_context, resolve_index_context
 from elliottwaver.config import (
+    Settings,
     alpaca_credentials,
     large_degree_settings,
     load_settings,
@@ -34,7 +48,7 @@ from elliottwaver.data.router import route_symbol
 from elliottwaver.data.snapshots import SnapshotStore
 from elliottwaver.data.workflow import fetch_bundle
 from elliottwaver.engine.templates import TEMPLATES
-from elliottwaver.errors import DataError, ElliottWaverError, InputError
+from elliottwaver.errors import DataError, ElliottWaverError, InputError, SourceError
 from elliottwaver.evaluation.index_plans import (
     summarize_developing_evidence,
     summarize_index_plans,
@@ -46,16 +60,24 @@ from elliottwaver.history import HistoryStore, base_lineage_key
 from elliottwaver.schemas.market import AnalysisRequest
 from elliottwaver.service import AnalysisService, engine_rules_version, prepare_bundle
 from elliottwaver.settlement import SettlementStore, support_matrix
-from elliottwaver.timeframes import TIMEFRAMES, normalize_timeframe
+from elliottwaver.timeframes import TIMEFRAMES, Timeframe, normalize_timeframe
 from elliottwaver.util import atomic_write, canonical_json, digest
 from elliottwaver.visualization.brief_formatter import (
+    BRIEF_FORMATS,
     PublicationWindowElapsed,
     publish_brief,
     read_brief_report,
     read_issuance,
 )
-from elliottwaver.visualization.brief_text import market_time_text
+from elliottwaver.visualization.brief_text import (
+    market_time_text,
+    mode_text,
+    previous_change_text,
+    status_text,
+    timeframe_text,
+)
 from elliottwaver.visualization.report_formatter import publish_report
+from elliottwaver.visualization.report_index import report_entry, write_report_index
 
 
 def guarded(function):
@@ -90,6 +112,24 @@ def _anchor(value):
     return moment.date(), moment
 
 
+def _refresh_report_entry(output: Path) -> None:
+    if output.parent.parent.name != "archive":
+        return
+    try:
+        write_report_index(output.parents[2])
+    except OSError as exc:
+        Console(stderr=True).print(f"报告已保存，入口页更新失败 · {exc}", markup=False)
+
+
+def _show_report_entry(console: Console, output: Path) -> None:
+    entry = report_entry(output)
+    label = "报告入口" if entry != output else "报告目录"
+    console.print(
+        Text(f"{label} · {entry}", style=Style(link=entry.resolve().as_uri())),
+        soft_wrap=True,
+    )
+
+
 @guarded
 def run_analyze(
     symbol,
@@ -116,7 +156,7 @@ def run_analyze(
     subwave_depth=None,
     timeframe=None,
 ):
-    settings = load_settings(Path(config) if config else None)
+    settings = load_settings(daily_config_path(config))
     if subwave_depth is not None and subwave_depth not in {0, 1, 2}:
         raise InputError("--subwave-depth must be 0, 1, or 2")
     if long_term:
@@ -158,7 +198,7 @@ def run_analyze(
         top_k=top_k,
         allow_stale=allow_stale,
         allow_gaps=allow_gaps,
-        mode="FROZEN_DATA_REPLAY" if snapshot or as_of else "LIVE",
+        mode="FROZEN_DATA_REPLAY" if snapshot or as_of or end else "LIVE",
         timeframe=normalize_timeframe(
             timeframe or (bundle.timeframe if snapshot else settings.analysis.timeframe)
         ),
@@ -177,11 +217,12 @@ def run_analyze(
         formats,
         renderer,
     )
+    _refresh_report_entry(output)
     if json_output:
         print(canonical_json(result))
     else:
         render_result(result)
-        Console().print(f"报告：{output}", markup=False)
+        _show_report_entry(Console(), output)
         Console().print(f"快照：{bundle.snapshot_id}")
     if open_browser and "html" in formats:
         webbrowser.open((output / "chart.html").resolve().as_uri())
@@ -205,6 +246,12 @@ def _choose_brief_timeframe(requested, source, start, cutoff):
     return "1d", "默认日线；长历史可用 --timeframe 1w"
 
 
+def _brief_formats(format: str | None, settings: Settings) -> tuple[str, ...]:
+    if format is None:
+        return tuple(item for item in settings.output.formats if item in BRIEF_FORMATS)
+    return tuple(item for value in format.split(",") if (item := value.strip()) not in {"", "json"})
+
+
 def _run_brief_core(
     symbol,
     *,
@@ -221,9 +268,7 @@ def _run_brief_core(
     output_dir=None,
     format=None,
     renderer="plotly",
-    json_output=False,
     refresh=False,
-    open_browser=False,
     allow_stale=False,
     allow_gaps=False,
     subwave_depth=None,
@@ -232,8 +277,10 @@ def _run_brief_core(
     model=None,
     model_registry=None,
     timeframe="auto",
+    settings: Settings | None = None,
 ):
-    settings = load_settings(Path(config) if config else None)
+    if settings is None:
+        settings = load_settings(Path(config) if config else None)
     if subwave_depth is not None and subwave_depth not in {0, 1, 2}:
         raise InputError("--subwave-depth must be 0, 1, or 2")
     if subwave_depth is not None:
@@ -337,8 +384,7 @@ def _run_brief_core(
     )
     run = build_brief(request, source, settings, **brief_options)
     history = HistoryStore(settings.cache.directory)
-    formats = tuple(format.split(",")) if format is not None else settings.output.formats
-    formats = tuple(x.strip() for x in formats if x.strip() and x.strip() != "json")
+    formats = _brief_formats(format, settings)
     output_root = Path(output_dir) if output_dir else settings.output.directory
     context = resolve_index_context(
         run,
@@ -372,6 +418,7 @@ def _run_brief_core(
         if saved is not None:
             issued_path, issued_digest = saved
             issued, result = read_brief_report(issued_path, expected_digest=issued_digest)
+            _refresh_report_entry(issued_path)
             return replace(run, brief=issued, result=result), issued_path
         previous_source = None
         previous_result = None
@@ -418,6 +465,7 @@ def _run_brief_core(
             published, _ = read_brief_report(output, expected_digest=run.brief.brief_digest)
             run = replace(run, brief=published)
         history.register(run.brief, output, request_key=request_key)
+    _refresh_report_entry(output)
     return run, output
 
 
@@ -426,8 +474,53 @@ def _brief_exit_code(status: str, *, allow_stale: bool = False) -> int:
 
 
 @guarded
+def run_automatic(symbol: str, *, config: Path | None = None) -> None:
+    instrument = route_symbol(symbol)
+    settings = with_index_feed_defaults(load_settings(daily_config_path(config)), instrument)
+    console = Console()
+    report = None
+
+    def show_period(timeframe: Timeframe) -> int:
+        nonlocal report
+        try:
+            run, output = _run_brief_core(
+                instrument.canonical_symbol, timeframe=timeframe, settings=settings
+            )
+        except (DataError, SourceError) as exc:
+            console.print(f"{timeframe_text(timeframe)}暂不可用 · {exc}", markup=False)
+            return exc.exit_code
+        render_brief_summary(
+            run.brief, is_index=instrument.asset_type == "INDEX", automatic=True, console=console
+        )
+        report = output
+        return _brief_exit_code(run.brief.status)
+
+    daily_exit = show_period("1d")
+    console.print()
+    try:
+        try:
+            intraday = intraday_availability(
+                instrument, datetime.now(UTC), settings.data.delayed_access_buffer_minutes
+            )
+        except DataError as exc:
+            console.print(f"无法确定交易时段 · {exc}", markup=False)
+            raise SystemExit(daily_exit or exc.exit_code) from exc
+        if intraday == "AVAILABLE":
+            show_period("15m")
+        elif intraday == "AWAITING_BAR":
+            console.print("盘中行情待更新 · 今天首根完整 15 分钟 K 线尚未到可用时间。")
+        else:
+            console.print("当前为非交易时段。")
+    finally:
+        if report is not None:
+            _show_report_entry(console, report)
+    if daily_exit:
+        raise SystemExit(daily_exit)
+
+
+@guarded
 def run_brief(
-    symbol,
+    symbol=None,
     *,
     snapshot=None,
     reference_snapshot=None,
@@ -453,9 +546,17 @@ def run_brief(
     model=None,
     model_registry=None,
     timeframe="auto",
+    details=False,
 ):
+    settings = load_settings(daily_config_path(config))
+    instrument = daily_instrument(symbol, settings.default_index)
+    settings = with_index_feed_defaults(settings, instrument)
+    formats = _brief_formats(format, settings)
+    if open_browser and format is None and "html" not in formats:
+        formats = (*formats, "html")
+        format = ",".join(formats)
     run, output = _run_brief_core(
-        symbol,
+        symbol if symbol is not None else instrument.canonical_symbol,
         snapshot=snapshot,
         reference_snapshot=reference_snapshot,
         offline=offline,
@@ -465,13 +566,11 @@ def run_brief(
         anchor=anchor,
         feed=feed,
         top_k=top_k,
-        config=config,
+        settings=settings,
         output_dir=output_dir,
         format=format,
         renderer=renderer,
-        json_output=json_output,
         refresh=refresh,
-        open_browser=open_browser,
         allow_stale=allow_stale,
         allow_gaps=allow_gaps,
         subwave_depth=subwave_depth,
@@ -481,17 +580,18 @@ def run_brief(
         model_registry=model_registry,
         timeframe=timeframe,
     )
-    formats = (
-        tuple(format.split(","))
-        if format is not None
-        else load_settings(Path(config) if config else None).output.formats
-    )
-    formats = tuple(x.strip() for x in formats if x.strip() and x.strip() != "json")
     if json_output:
         print(canonical_json(run.brief))
     else:
-        render_brief(run.brief, run.result)
-        Console().print(f"报告目录 · {output}", markup=False)
+        if (
+            instrument.asset_type == "INDEX"
+            and run.brief.timeframe in {"1d", "15m"}
+            and not details
+        ):
+            render_brief_summary(run.brief, is_index=True, config=config)
+        else:
+            render_brief(run.brief, run.result)
+        _show_report_entry(Console(), output)
     if open_browser and "html" in formats:
         webbrowser.open((output / "index.html").resolve().as_uri())
     exit_code = _brief_exit_code(run.brief.status, allow_stale=allow_stale)
@@ -878,7 +978,7 @@ def run_support_matrix(
 
 @guarded
 def run_history(
-    symbol,
+    symbol=None,
     *,
     as_of=None,
     mode=None,
@@ -887,20 +987,27 @@ def run_history(
     acknowledge=None,
     json_output=False,
 ):
-    settings = load_settings(Path(config) if config else None)
+    settings = load_settings(daily_config_path(config))
+    instrument = daily_instrument(symbol, settings.default_index)
+    daily_history = symbol is None and mode is None
+    lineage = False if daily_history else None
     mode_value = {"live": "LIVE", "frozen": "FROZEN_DATA_REPLAY"}.get(mode, mode)
+    if daily_history:
+        mode_value = "LIVE"
     timeframe_value = normalize_timeframe(timeframe) if timeframe else None
+    as_of_day = _day(as_of)
     store = HistoryStore(settings.cache.directory)
-    canonical = route_symbol(symbol).canonical_symbol
+    canonical = instrument.canonical_symbol
     if acknowledge is not None and not store.acknowledge_reminder(
         canonical, acknowledge, mode=mode_value
     ):
         raise InputError("No matching single-index reminder")
     rows = store.query(
         canonical,
-        as_of=_day(as_of),
+        as_of=as_of_day,
         mode=mode_value,
         timeframe=timeframe_value,
+        retrospective=lineage,
     )
     records = []
     for row in rows:
@@ -944,7 +1051,7 @@ def run_history(
                         }
                         if brief.index_guidance is not None
                         else {"index_guidance_state": "NOT_RECORDED"}
-                        if route_symbol(canonical).asset_type == "INDEX"
+                        if instrument.asset_type == "INDEX"
                         else {}
                     ),
                 }
@@ -968,8 +1075,10 @@ def run_history(
                 }
             )
     pending = (
-        store.pending_intraday_alerts(canonical, mode=mode_value, as_of=_day(as_of))
-        if timeframe_value in {None, "15m"} and route_symbol(canonical).asset_type == "INDEX"
+        store.pending_intraday_alerts(
+            canonical, mode=mode_value, as_of=as_of_day, retrospective=lineage
+        )
+        if timeframe_value in {None, "15m"} and instrument.asset_type == "INDEX"
         else []
     )
     if json_output:
@@ -980,44 +1089,61 @@ def run_history(
                 records.append({"pending_intraday_alerts": pending})
         print(canonical_json(records))
     else:
-        table = Table("周期", "行情截止", "模式", "状态", "主选", "上次变化", "摘要")
+        console = Console()
+        if daily_history:
+            console.print(f"{canonical} · 日常分析历史", markup=False)
+        table = Table("周期", "行情截止", "模式", "状态", "主选", "与上次相比", "报告")
         for record in records:
+            directory = Path(record["path"]).resolve()
+            report = directory / "index.html"
+            if not report.is_file():
+                report = directory
             table.add_row(
-                record["timeframe"] or "—",
+                timeframe_text(record["timeframe"]) if record["timeframe"] else "—",
                 record["last_bar_local"] or record["market_asof"],
-                record["mode"],
-                record["status"],
+                mode_text(record["mode"]),
+                "报告不可读" if record["status"] == "UNREADABLE" else status_text(record["status"]),
                 record["primary"] or "—",
-                record["previous_change"] or "—",
-                record["brief_digest"][:12],
+                previous_change_text(record["previous_change"])
+                if record["previous_change"]
+                else "—",
+                Text("打开", style=Style(link=report.as_uri())),
             )
-        Console().print(table)
+        if records:
+            console.print(table)
+            _show_report_entry(console, Path(records[0]["path"]))
         reminders = (
-            store.reminders(canonical, mode=mode_value, as_of=_day(as_of))
+            store.reminders(canonical, mode=mode_value, as_of=as_of_day, retrospective=lineage)
             if timeframe_value in {None, "1d"}
             else ()
         )
         if reminders:
             from elliottwaver.visualization.brief_text import PLAN_REASON_TEXT
 
-            alerts = Table("本地提醒", "会话", "条件变化", "已查看")
+            alerts = Table("本地提醒", "周期", "条件变化", "首次可见", "已查看")
             for item in reminders:
                 alerts.add_row(
                     item["transition_id"],
-                    item["session"],
+                    "短线" if item["horizon"] == "SHORT" else "波段",
                     PLAN_REASON_TEXT.get(item["reason"], item["reason"]),
+                    market_time_text(datetime.fromisoformat(item["first_seen_at"]), canonical),
                     item["acknowledged_at"] or "—",
                 )
-            Console().print(alerts)
+            console.print(alerts)
         if pending:
-            pending_table = Table("未查看的盘中提醒", "预案", "可用时刻")
+            pending_table = Table("未查看的盘中提醒", "周期", "触发可见时刻")
             for alert in pending:
                 pending_table.add_row(
-                    alert["transition_id"], alert["plan_id"], alert["observable_at"]
+                    alert["transition_id"],
+                    "短线" if alert["horizon"] == "SHORT" else "波段",
+                    market_time_text(datetime.fromisoformat(alert["observable_at"]), canonical),
                 )
-            Console().print(pending_table)
+            console.print(pending_table)
         if not records:
-            Console().print("没有找到历史摘要。")
+            message = "没有找到历史摘要。"
+            if daily_history:
+                message += " 可运行 elliottwaver brief 生成收盘判断。"
+            console.print(message)
     return records
 
 
@@ -1048,11 +1174,12 @@ def run_demo(
         tuple(x.strip() for x in format.split(",") if x.strip() != "json"),
         renderer,
     )
+    _refresh_report_entry(output)
     if json_output:
         print(canonical_json(result))
     else:
         render_result(result)
-        Console().print(f"合成行情演示报告：{output}", markup=False)
+        _show_report_entry(Console(), output)
         Console().print(f"快照：{bundle.snapshot_id}")
     return output
 
@@ -1071,7 +1198,7 @@ def run_fetch(
     large_degree=False,
     timeframe=None,
 ):
-    settings = load_settings(Path(config) if config else None)
+    settings = load_settings(daily_config_path(config))
     if long_term:
         settings = long_term_settings(settings)
     elif large_degree:
@@ -1128,7 +1255,7 @@ def run_fetch(
 
 @guarded
 def run_inspect(snapshot, *, config=None):
-    settings = load_settings(Path(config) if config else None)
+    settings = load_settings(daily_config_path(config))
     bundle = SnapshotStore(settings.cache.directory).load(snapshot)
     print(
         canonical_json(
@@ -1216,7 +1343,7 @@ def run_replay(
 
 
 @guarded
-def run_doctor(market="US"):
+def run_doctor(market=None, *, config=None):
     packages = {}
     for package in (
         "pydantic",
@@ -1249,12 +1376,27 @@ def run_doctor(market="US"):
         massive_credentials = True
     except InputError:
         massive_credentials = False
-    settings = load_settings()
+    config_path = daily_config_path(config)
+    settings = load_settings(config_path)
+    if market is None:
+        market = (
+            daily_instrument(None, settings.default_index).market
+            if settings.default_index
+            else "US"
+        )
+    market = market.upper()
+    if market not in {"CN", "US"}:
+        raise InputError("市场应为 CN 或 US。")
+    index_feed = (
+        settings.data.cn_index_intraday_feed if market == "CN" else settings.data.us_index_feed
+    )
     print(
         json.dumps(
             {
                 "elliottwaver": __version__,
                 "market": market,
+                "default_index": settings.default_index,
+                "config": str(config_path) if config_path else None,
                 "packages": packages,
                 "alpaca_credentials_configured": credentials,
                 "tushare_token_configured": tushare_credentials,
@@ -1264,10 +1406,7 @@ def run_doctor(market="US"):
                 "us_index_feed": settings.data.us_index_feed or None,
                 "network_smoke": "NOT_RUN",
                 "supported_timeframes": TIMEFRAMES,
-                "index_timeframes": list(TIMEFRAMES)
-                if settings.data.cn_index_intraday_feed
-                or (market == "US" and settings.data.us_index_feed)
-                else ["1d", "1w"],
+                "index_timeframes": list(TIMEFRAMES) if index_feed else ["1d", "1w"],
                 "supported_patterns": [template.name for template in TEMPLATES],
                 "bj_live": "INDEX_ONLY",
                 "calibrated_probability": "UNAVAILABLE",
@@ -1278,325 +1417,292 @@ def run_doctor(market="US"):
     )
 
 
-def _argparse_app():
-    parser = argparse.ArgumentParser(
-        prog="elliottwaver", description="ElliottWaver Elliott wave analysis"
-    )
-    parser.add_argument("--version", action="version", version=__version__)
-    sub = parser.add_subparsers(dest="command", required=True)
-    analyze = sub.add_parser("analyze")
-    analyze.add_argument("symbol")
-    for name in (
-        "snapshot",
-        "as-of",
-        "start",
-        "end",
-        "anchor",
-        "feed",
-        "config",
-        "output-dir",
-        "format",
-        "timeframe",
-    ):
-        analyze.add_argument(f"--{name}")
-    analyze.add_argument("--top-k", type=int)
-    analyze.add_argument("--renderer", choices=["plotly", "svg"], default="plotly")
-    for option in ("offline", "refresh", "allow-stale", "allow-gaps", "long-term", "large-degree"):
-        analyze.add_argument(f"--{option}", action="store_true")
-    analyze.add_argument("--subwave-depth", type=int, choices=(0, 1, 2))
-    analyze.add_argument("--open", dest="open_browser", action="store_true")
-    analyze.add_argument("--json", dest="json_output", action="store_true")
-    brief = sub.add_parser("brief")
-    brief.add_argument("symbol")
-    for name in (
-        "snapshot",
-        "as-of",
-        "start",
-        "end",
-        "anchor",
-        "feed",
-        "config",
-        "output-dir",
-        "format",
-        "timeframe",
-    ):
-        brief.add_argument(f"--{name}")
-    brief.add_argument("--top-k", type=int)
-    brief.add_argument("--renderer", choices=["plotly", "svg"], default="plotly")
-    for option in ("offline", "refresh", "allow-stale", "allow-gaps"):
-        brief.add_argument(f"--{option}", action="store_true")
-    brief.add_argument("--subwave-depth", type=int, choices=(0, 1, 2))
-    brief.add_argument("--model")
-    brief.add_argument("--model-registry")
-    brief.add_argument("--no-weekly", dest="weekly", action="store_false")
-    brief.add_argument("--no-window-check", dest="window_check", action="store_false")
-    brief.add_argument("--open", dest="open_browser", action="store_true")
-    brief.add_argument("--json", dest="json_output", action="store_true")
-    history = sub.add_parser("history")
-    history.add_argument("symbol")
-    history.add_argument("--as-of")
-    history.add_argument("--mode", choices=["live", "frozen"])
-    history.add_argument("--timeframe")
-    history.add_argument("--config")
-    history.add_argument("--json", dest="json_output", action="store_true")
-    watchlist = sub.add_parser("watchlist")
-    watchlist.add_argument("file")
-    for name in ("output-dir", "as-of", "timeframe", "config"):
-        watchlist.add_argument(f"--{name}")
-    watchlist.add_argument("--allow-gaps", action="store_true")
-    watchlist.add_argument("--no-weekly", dest="weekly", action="store_false")
-    watchlist.add_argument("--no-window-check", dest="window_check", action="store_false")
-    watchlist.add_argument("--subwave-depth", type=int, choices=(0, 1, 2))
-    watchlist.add_argument("--model")
-    watchlist.add_argument("--model-registry")
-    watchlist.add_argument("--retries", type=int, default=1)
-    watchlist.add_argument("--workers", type=int, default=1)
-    watchlist.add_argument("--retry-delay", type=float, default=0.5)
-    watchlist.add_argument("--refresh", action="store_true")
-    watchlist.add_argument("--json", dest="json_output", action="store_true")
-    settle = sub.add_parser("settle")
-    settle.add_argument("reports")
-    settle.add_argument("--cache-root")
-    settle.add_argument("--snapshot")
-    settle.add_argument("--output")
-    settle.add_argument("--config")
-    settle.add_argument("--json", dest="json_output", action="store_true")
-    matrix = sub.add_parser("support-matrix")
-    matrix.add_argument("--model-summary")
-    matrix.add_argument("--output")
-    matrix.add_argument("--json", dest="json_output", action="store_true")
-    demo = sub.add_parser("demo")
-    demo.add_argument("--symbol", default="AAPL")
-    demo.add_argument("--bearish", action="store_true")
-    demo.add_argument("--output-dir", default="reports/demo")
-    demo.add_argument("--renderer", choices=["plotly", "svg"], default="plotly")
-    demo.add_argument("--format", default="html,md")
-    demo.add_argument("--config")
-    demo.add_argument("--timeframe")
-    demo.add_argument("--json", dest="json_output", action="store_true")
-    doctor = sub.add_parser("doctor")
-    doctor.add_argument("--market", choices=["US", "CN"], default="US")
-    replay_parser = sub.add_parser("replay")
-    replay_parser.add_argument("snapshot")
-    for name in ("start", "end", "config"):
-        replay_parser.add_argument(f"--{name}")
-    replay_parser.add_argument("--step", type=int, default=1)
-    replay_parser.add_argument("--allow-gaps", action="store_true")
-    replay_parser.add_argument("--output", default="reports/replay.jsonl")
-    data = sub.add_parser("data").add_subparsers(dest="data_command", required=True)
-    fetch = data.add_parser("fetch")
-    fetch.add_argument("symbol")
-    for name in ("start", "end", "as-of", "feed", "config", "timeframe"):
-        fetch.add_argument(f"--{name}")
-    fetch.add_argument("--refresh", action="store_true")
-    inspect = data.add_parser("inspect")
-    inspect.add_argument("snapshot")
-    inspect.add_argument("--config")
-    args = vars(parser.parse_args())
-    command = args.pop("command")
-    if command == "data":
-        command = args.pop("data_command")
-    return {
-        "analyze": run_analyze,
-        "brief": run_brief,
-        "history": run_history,
-        "watchlist": run_watchlist,
-        "settle": run_settle,
-        "support-matrix": run_support_matrix,
-        "demo": run_demo,
-        "doctor": run_doctor,
-        "replay": run_replay,
-        "fetch": run_fetch,
-        "inspect": run_inspect,
-    }[command](**args)
+DAILY_COMMANDS = "日常分析"
+ANALYSIS_COMMANDS = "深入分析与本地数据"
+RESEARCH_COMMANDS = "批量与研究"
+ADVANCED_OPTIONS = "高级选项"
 
 
-try:
-    import typer
-except ImportError:
-    app = _argparse_app
-else:
-    app = typer.Typer(no_args_is_help=True, help="Reproducible Elliott wave analysis")
-    data_app = typer.Typer(no_args_is_help=True)
-    app.add_typer(data_app, name="data")
+class SymbolCommandGroup(TyperGroup):
+    def resolve_command(self, ctx, args):
+        token = args[0]
+        if not token.startswith("-") and self.get_command(ctx, token) is None:
+            return "", self.get_command(ctx, "scan"), args
+        return super().resolve_command(ctx, args)
 
-    def _show_version(value: bool) -> None:
-        if value:
-            typer.echo(__version__)
-            raise typer.Exit()
 
-    @app.callback()
-    def global_options(
-        show_version: bool = typer.Option(
-            False,
-            "--version",
-            callback=_show_version,
-            is_eager=True,
-            help="Show the version and exit.",
-        ),
-    ) -> None:
-        """Handle global CLI options."""
+class BriefCommand(TyperCommand):
+    def format_help(self, ctx, formatter):
+        if ctx.meta.get("brief_help_all"):
+            return super().format_help(ctx, formatter)
+        summary = copy(self)
+        summary.params = [
+            param
+            for param in self.params
+            if getattr(param, "rich_help_panel", None) != ADVANCED_OPTIONS
+        ]
+        return TyperCommand.format_help(summary, ctx, formatter)
 
-    @app.command("analyze")
-    def analyze_command(
-        symbol: str,
-        snapshot: str | None = None,
-        offline: bool = False,
-        as_of: str | None = None,
-        start: str | None = None,
-        end: str | None = None,
-        anchor: str | None = None,
-        feed: str | None = None,
-        top_k: int | None = None,
-        config: Path | None = None,
-        output_dir: Path | None = None,
-        format: str | None = None,
-        renderer: str = "plotly",
-        json_output: bool = typer.Option(False, "--json"),
-        refresh: bool = False,
-        open_browser: bool = typer.Option(False, "--open"),
-        allow_stale: bool = False,
-        allow_gaps: bool = False,
-        long_term: bool = False,
-        large_degree: bool = False,
-        subwave_depth: int | None = None,
-        timeframe: str | None = None,
-    ):
-        run_analyze(**locals())
 
-    @app.command("brief")
-    def brief_command(
-        symbol: str,
-        snapshot: str | None = None,
-        reference_snapshot: str | None = None,
-        offline: bool = False,
-        as_of: str | None = None,
-        start: str | None = None,
-        end: str | None = None,
-        anchor: str | None = None,
-        feed: str | None = None,
-        top_k: int | None = None,
-        config: Path | None = None,
-        output_dir: Path | None = None,
-        format: str | None = None,
-        renderer: str = "plotly",
-        json_output: bool = typer.Option(False, "--json"),
-        refresh: bool = False,
-        open_browser: bool = typer.Option(False, "--open"),
-        allow_stale: bool = False,
-        allow_gaps: bool = False,
-        subwave_depth: int | None = None,
-        model: Path | None = None,
-        model_registry: Path | None = None,
-        weekly: bool = True,
-        window_check: bool = True,
-        timeframe: str = "auto",
-    ):
-        run_brief(**locals())
+def _show_all_brief_options(ctx: typer.Context, value: bool) -> None:
+    if value and not ctx.resilient_parsing:
+        ctx.meta["brief_help_all"] = True
+        typer.echo(ctx.get_help())
+        raise typer.Exit()
 
-    @app.command("watchlist")
-    def watchlist_command(
-        file: Path,
-        output_dir: Path = Path("reports/watchlist"),
-        as_of: str | None = None,
-        timeframe: str = "auto",
-        config: Path | None = None,
-        json_output: bool = typer.Option(False, "--json"),
-        allow_gaps: bool = False,
-        weekly: bool = True,
-        window_check: bool = True,
-        subwave_depth: int | None = None,
-        model: Path | None = None,
-        model_registry: Path | None = None,
-        retries: int = 1,
-        workers: int = 1,
-        retry_delay: float = 0.5,
-        refresh: bool = False,
-    ):
-        run_watchlist(**locals())
 
-    @app.command("settle")
-    def settle_command(
-        reports: Path,
-        cache_root: Path | None = None,
-        snapshot: str | None = None,
-        output: Path | None = None,
-        config: Path | None = None,
-        json_output: bool = typer.Option(False, "--json"),
-    ):
-        run_settle(**locals())
+app = typer.Typer(
+    cls=SymbolCommandGroup,
+    no_args_is_help=True,
+    help="ElliottWaver 波浪分析。\n\n" + DAILY_HELP,
+    subcommand_metavar="代码 | 命令",
+)
+data_app = typer.Typer(no_args_is_help=True)
+app.add_typer(data_app, name="data", help="获取或查看行情快照。", rich_help_panel=ANALYSIS_COMMANDS)
 
-    @app.command("support-matrix")
-    def support_matrix_command(
-        model_summary: Path | None = None,
-        model_registry: Path | None = None,
-        brief_report: Path | None = None,
-        test_receipts: Path | None = None,
-        at: str | None = None,
-        output: Path | None = None,
-        json_output: bool = typer.Option(False, "--json"),
-    ):
-        run_support_matrix(**locals())
 
-    @app.command("history")
-    def history_command(
-        symbol: str,
-        as_of: str | None = None,
-        mode: str | None = None,
-        timeframe: str | None = None,
-        config: Path | None = None,
-        acknowledge: str | None = None,
-        json_output: bool = typer.Option(False, "--json"),
-    ):
-        run_history(**locals())
+def _show_version(value: bool) -> None:
+    if value:
+        typer.echo(__version__)
+        raise typer.Exit()
 
-    @app.command("demo")
-    def demo_command(
-        symbol: str = "AAPL",
-        bearish: bool = False,
-        output_dir: Path = Path("reports/demo"),
-        renderer: str = "plotly",
-        format: str = "html,md",
-        json_output: bool = typer.Option(False, "--json"),
-        config: Path | None = None,
-        timeframe: str | None = None,
-    ):
-        run_demo(**locals())
 
-    @app.command("doctor")
-    def doctor_command(market: str = "US"):
-        run_doctor(market)
+@app.callback()
+def global_options(
+    show_version: bool = typer.Option(
+        False,
+        "--version",
+        callback=_show_version,
+        is_eager=True,
+        help="显示程序版本。",
+    ),
+) -> None:
+    """处理全局选项。"""
 
-    @app.command("replay")
-    def replay_command(
-        snapshot: str,
-        start: str | None = None,
-        end: str | None = None,
-        step: int = 1,
-        output: Path = Path("reports/replay.jsonl"),
-        config: Path | None = None,
-        allow_gaps: bool = False,
-    ):
-        run_replay(**locals())
 
-    @data_app.command("fetch")
-    def fetch_command(
-        symbol: str,
-        start: str | None = None,
-        end: str | None = None,
-        as_of: str | None = None,
-        feed: str | None = None,
-        config: Path | None = None,
-        refresh: bool = False,
-        long_term: bool = False,
-        large_degree: bool = False,
-        timeframe: str | None = None,
-    ):
-        run_fetch(**locals())
+@app.command("scan", hidden=True, help="按市场时段自动分析指定股票或指数。")
+def scan_command(
+    symbol: str,
+    config: Annotated[Path | None, typer.Option(help="使用指定配置文件。")] = None,
+):
+    run_automatic(symbol, config=config)
 
-    @data_app.command("inspect")
-    def inspect_command(snapshot: str, config: Path | None = None):
-        run_inspect(**locals())
+
+@app.command("init", help="为单项命令设置可选的默认指数。", rich_help_panel=DAILY_COMMANDS)
+@guarded
+def init_command(
+    symbol: str,
+    config: Annotated[Path | None, typer.Option(help="沿用指定文件的配置。")] = None,
+    yes: bool = typer.Option(False, "--yes", help="保存设置，跳过交互确认。"),
+):
+    init_index(symbol, config=config, yes=yes)
+
+
+@app.command("analyze", help="查看单周期的完整数浪与规则。", rich_help_panel=ANALYSIS_COMMANDS)
+def analyze_command(
+    symbol: str,
+    snapshot: str | None = None,
+    offline: bool = False,
+    as_of: str | None = None,
+    start: str | None = None,
+    end: str | None = None,
+    anchor: str | None = None,
+    feed: str | None = None,
+    top_k: int | None = None,
+    config: Path | None = None,
+    output_dir: Path | None = None,
+    format: str | None = None,
+    renderer: str = "plotly",
+    json_output: bool = typer.Option(False, "--json"),
+    refresh: bool = False,
+    open_browser: bool = typer.Option(False, "--open"),
+    allow_stale: bool = False,
+    allow_gaps: bool = False,
+    long_term: bool = False,
+    large_degree: bool = False,
+    subwave_depth: int | None = None,
+    timeframe: str | None = None,
+):
+    run_analyze(**locals())
+
+
+@app.command(
+    "brief",
+    cls=BriefCommand,
+    help="查看收盘波浪判断、短线与波段预案。\n\n"
+    "直接运行 elliottwaver brief，或附上指数代码临时查看。"
+    "首次可用 elliottwaver init 000688.SH 设置默认指数。",
+    rich_help_panel=DAILY_COMMANDS,
+)
+def brief_command(
+    symbol: str | None = typer.Argument(None, help="临时指定标的。省略时使用默认指数。"),
+    details: bool = typer.Option(False, "--details", help="查看完整终端简报和规则复核。"),
+    open_browser: bool = typer.Option(False, "--open", help="用浏览器打开 HTML 图表。"),
+    refresh: bool = typer.Option(False, "--refresh", help="重新向行情源请求数据。"),
+    json_output: bool = typer.Option(False, "--json", help="在终端输出结构化 JSON。"),
+    format: str | None = typer.Option(None, help="选择保存格式。json 表示只保存 JSON 文件。"),
+    help_all: bool = typer.Option(
+        False,
+        "--help-all",
+        is_eager=True,
+        callback=_show_all_brief_options,
+        help="显示快照、日期、周期和模型等高级选项。",
+    ),
+    snapshot: str | None = typer.Option(None, rich_help_panel=ADVANCED_OPTIONS),
+    reference_snapshot: str | None = typer.Option(None, rich_help_panel=ADVANCED_OPTIONS),
+    offline: bool = typer.Option(False, rich_help_panel=ADVANCED_OPTIONS),
+    as_of: str | None = typer.Option(None, rich_help_panel=ADVANCED_OPTIONS),
+    start: str | None = typer.Option(None, rich_help_panel=ADVANCED_OPTIONS),
+    end: str | None = typer.Option(None, rich_help_panel=ADVANCED_OPTIONS),
+    anchor: str | None = typer.Option(None, rich_help_panel=ADVANCED_OPTIONS),
+    feed: str | None = typer.Option(None, rich_help_panel=ADVANCED_OPTIONS),
+    top_k: int | None = typer.Option(None, rich_help_panel=ADVANCED_OPTIONS),
+    config: Annotated[Path | None, typer.Option(rich_help_panel=ADVANCED_OPTIONS)] = None,
+    output_dir: Annotated[Path | None, typer.Option(rich_help_panel=ADVANCED_OPTIONS)] = None,
+    renderer: str = typer.Option("plotly", rich_help_panel=ADVANCED_OPTIONS),
+    allow_stale: bool = typer.Option(False, rich_help_panel=ADVANCED_OPTIONS),
+    allow_gaps: bool = typer.Option(False, rich_help_panel=ADVANCED_OPTIONS),
+    subwave_depth: int | None = typer.Option(None, rich_help_panel=ADVANCED_OPTIONS),
+    model: Annotated[Path | None, typer.Option(rich_help_panel=ADVANCED_OPTIONS)] = None,
+    model_registry: Annotated[Path | None, typer.Option(rich_help_panel=ADVANCED_OPTIONS)] = None,
+    weekly: bool = typer.Option(True, rich_help_panel=ADVANCED_OPTIONS),
+    window_check: bool = typer.Option(True, rich_help_panel=ADVANCED_OPTIONS),
+    timeframe: str = typer.Option("auto", rich_help_panel=ADVANCED_OPTIONS),
+):
+    del help_all
+    run_brief(**locals())
+
+
+@app.command(
+    "intraday",
+    help="查看 15 分钟波浪判断与 60 分钟背景，指数另核对日线预案。",
+    rich_help_panel=DAILY_COMMANDS,
+)
+def intraday_command(
+    symbol: str | None = typer.Argument(None, help="指定股票或指数。省略时使用默认指数。"),
+    details: bool = typer.Option(False, "--details", help="查看完整终端简报。"),
+    open_browser: bool = typer.Option(False, "--open", help="用浏览器打开 HTML 图表。"),
+    refresh: bool = typer.Option(False, "--refresh", help="重新向行情源请求数据。"),
+    json_output: bool = typer.Option(False, "--json", help="在终端输出结构化 JSON。"),
+    config: Annotated[Path | None, typer.Option(help="使用指定配置文件。")] = None,
+):
+    run_brief(**locals(), timeframe="15m")
+
+
+@app.command("watchlist", help="为一组标的生成摘要。", rich_help_panel=RESEARCH_COMMANDS)
+def watchlist_command(
+    file: Path,
+    output_dir: Path = Path("reports/watchlist"),
+    as_of: str | None = None,
+    timeframe: str = "auto",
+    config: Path | None = None,
+    json_output: bool = typer.Option(False, "--json"),
+    allow_gaps: bool = False,
+    weekly: bool = True,
+    window_check: bool = True,
+    subwave_depth: int | None = None,
+    model: Path | None = None,
+    model_registry: Path | None = None,
+    retries: int = 1,
+    workers: int = 1,
+    retry_delay: float = 0.5,
+    refresh: bool = False,
+):
+    run_watchlist(**locals())
+
+
+@app.command("settle", help="用行情快照核对已发行预案。", rich_help_panel=RESEARCH_COMMANDS)
+def settle_command(
+    reports: Path,
+    cache_root: Path | None = None,
+    snapshot: str | None = None,
+    output: Path | None = None,
+    config: Path | None = None,
+    json_output: bool = typer.Option(False, "--json"),
+):
+    run_settle(**locals())
+
+
+@app.command("support-matrix", help="查看研究与模型支持状态。", rich_help_panel=RESEARCH_COMMANDS)
+def support_matrix_command(
+    model_summary: Path | None = None,
+    model_registry: Path | None = None,
+    brief_report: Path | None = None,
+    test_receipts: Path | None = None,
+    at: str | None = None,
+    output: Path | None = None,
+    json_output: bool = typer.Option(False, "--json"),
+):
+    run_support_matrix(**locals())
+
+
+@app.command("history", help="查询最近判断和预案变化。", rich_help_panel=DAILY_COMMANDS)
+def history_command(
+    symbol: str | None = typer.Argument(None, help="临时指定标的。省略时查看默认指数。"),
+    as_of: str | None = typer.Option(None, help="只查看此日期及以前的行情判断。"),
+    mode: str | None = typer.Option(None, help="按 live 或 frozen 筛选。"),
+    timeframe: str | None = typer.Option(None, help="只查看指定周期。"),
+    config: Annotated[Path | None, typer.Option(help="使用指定配置文件。")] = None,
+    acknowledge: str | None = typer.Option(None, help="把指定变化记录标记为已查看。"),
+    json_output: bool = typer.Option(False, "--json", help="输出 JSON，含各条报告的完整路径。"),
+):
+    run_history(**locals())
+
+
+@app.command("demo", help="用合成行情体验分析。", rich_help_panel=ANALYSIS_COMMANDS)
+def demo_command(
+    symbol: str = "AAPL",
+    bearish: bool = False,
+    output_dir: Path = Path("reports/demo"),
+    renderer: str = "plotly",
+    format: str = "html,md",
+    json_output: bool = typer.Option(False, "--json"),
+    config: Path | None = None,
+    timeframe: str | None = None,
+):
+    run_demo(**locals())
+
+
+@app.command("doctor", help="检查本地依赖和配置。", rich_help_panel=ANALYSIS_COMMANDS)
+def doctor_command(
+    market: str | None = typer.Option(None, help="指定 CN 或 US。默认检查已设指数所属市场。"),
+    config: Annotated[Path | None, typer.Option(help="使用指定配置文件。")] = None,
+):
+    run_doctor(market, config=config)
+
+
+@app.command("replay", help="用已保存的行情逐步回放。", rich_help_panel=RESEARCH_COMMANDS)
+def replay_command(
+    snapshot: str,
+    start: str | None = None,
+    end: str | None = None,
+    step: int = 1,
+    output: Path = Path("reports/replay.jsonl"),
+    config: Path | None = None,
+    allow_gaps: bool = False,
+):
+    run_replay(**locals())
+
+
+@data_app.command("fetch")
+def fetch_command(
+    symbol: str,
+    start: str | None = None,
+    end: str | None = None,
+    as_of: str | None = None,
+    feed: str | None = None,
+    config: Path | None = None,
+    refresh: bool = False,
+    long_term: bool = False,
+    large_degree: bool = False,
+    timeframe: str | None = None,
+):
+    run_fetch(**locals())
+
+
+@data_app.command("inspect")
+def inspect_command(snapshot: str, config: Path | None = None):
+    run_inspect(**locals())
 
 
 if __name__ == "__main__":

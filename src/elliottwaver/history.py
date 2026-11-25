@@ -396,6 +396,7 @@ class HistoryStore:
         mode: str | None = None,
         as_of: date | None = None,
         brief_digest: str | None = None,
+        retrospective: bool | None = None,
     ) -> list[dict]:
         clauses = ["symbol = ?"]
         values = [symbol]
@@ -407,6 +408,11 @@ class HistoryStore:
             if value is not None:
                 clauses.append(f"{key} ?")
                 values.append(value)
+        if retrospective is not None:
+            clauses.append(
+                "brief_digest IN (SELECT brief_digest FROM briefs WHERE base_lineage_key = ?)"
+            )
+            values.append(digest([symbol, "retrospective"] if retrospective else [symbol]))
         with closing(sqlite3.connect(self.path)) as db:
             db.row_factory = sqlite3.Row
             rows = db.execute(
@@ -446,7 +452,13 @@ class HistoryStore:
         *,
         mode: str | None = None,
         as_of: date | None = None,
+        retrospective: bool | None = None,
     ) -> list[dict]:
+        lineage = (
+            digest([symbol, "retrospective"] if retrospective else [symbol])
+            if retrospective is not None
+            else None
+        )
         with closing(sqlite3.connect(self.path)) as db:
             rows = db.execute(
                 """
@@ -454,6 +466,7 @@ class HistoryStore:
                 FROM intraday_index_alerts AS a JOIN briefs AS b USING (brief_digest)
                 WHERE a.symbol = ? AND a.acknowledged_at IS NULL
                 AND (? IS NULL OR a.mode = ?) AND (? IS NULL OR b.market_asof <= ?)
+                AND (? IS NULL OR b.base_lineage_key = ?)
                 ORDER BY a.first_seen_at DESC, a.transition_id
                 """,
                 (
@@ -462,6 +475,8 @@ class HistoryStore:
                     mode,
                     as_of.isoformat() if as_of else None,
                     as_of.isoformat() if as_of else None,
+                    lineage,
+                    lineage,
                 ),
             ).fetchall()
         return [

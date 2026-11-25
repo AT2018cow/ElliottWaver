@@ -7,6 +7,7 @@ __pycache__/
 .hypothesis/
 .cache/
 .env
+config.local.yaml
 reports/
 build/
 dist/

@@ -1,10 +1,11 @@
-from datetime import date, datetime
+from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pandas as pd
 import pytest
 
 from elliottwaver.config import DataConfig, Settings
+from elliottwaver.data import tencent_provider
 from elliottwaver.data.router import route_symbol
 from elliottwaver.data.tencent_provider import TencentProvider
 from elliottwaver.data.workflow import fetch_bundle
@@ -60,7 +61,7 @@ def test_tencent_index_60m_maps_bar_end_labels_to_windows():
 
 def test_tencent_index_5m_rejects_missing_completed_tail():
     provider = FakeTencent(DataConfig(cn_index_intraday_feed="tencent-cn-index"))
-    with pytest.raises(DataError, match="STALE_INTRADAY"):
+    with pytest.raises(DataError, match="STALE_INTRADAY") as stale:
         provider.fetch(
             route_symbol("000300.SH"),
             date(2024, 6, 3),
@@ -68,6 +69,46 @@ def test_tencent_index_5m_rejects_missing_completed_tail():
             datetime(2024, 6, 3, 10, 0, tzinfo=CST),
             timeframe="5m",
         )
+    assert "最近一根结束于 2024-06-03 09:45" in str(stale.value)
+    assert "该根接收于" in str(stale.value)
+
+
+def test_tencent_observation_time_belongs_to_response_page(monkeypatch):
+    initial = datetime(2024, 6, 3, 3, 35, tzinfo=UTC)
+    now = initial
+    prices = ["3900", "3910", "3915", "3895", "1000"]
+    overlap = ["202406031030", *prices]
+    pages = iter(
+        [
+            [overlap, ["202406031130", *prices]],
+            [["202405311500", *prices], overlap],
+            [],
+        ]
+    )
+
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return now.astimezone(tz)
+
+    def request(code, period, marker):
+        nonlocal now
+        now += timedelta(seconds=5)
+        return {"data": {code: {period: next(pages)}}}
+
+    provider = TencentProvider(DataConfig())
+    monkeypatch.setattr(tencent_provider, "datetime", Clock)
+    monkeypatch.setattr(tencent_provider, "_PAGE", 2)
+    monkeypatch.setattr(provider, "_request", request)
+    bundle = provider.fetch(
+        route_symbol("000300.SH"), date(2024, 5, 31), date(2024, 6, 3), initial, timeframe="60m"
+    )
+    assert [bar.observed_at for bar in bundle.raw_bars] == [
+        initial + timedelta(seconds=10),
+        initial + timedelta(seconds=5),
+        initial + timedelta(seconds=5),
+    ]
+    assert bundle.provenance.fetched_at == initial + timedelta(seconds=15)
 
 
 def test_workflow_routes_cn_index_to_tencent_when_configured(tmp_path):

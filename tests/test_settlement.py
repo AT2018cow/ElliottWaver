@@ -257,6 +257,24 @@ def test_support_matrix_uses_test_receipts_and_never_approves_a_summary(tmp_path
     assert support_matrix(test_receipts=tmp_path)["rows"][0]["tests"][name] == "UNVERIFIED"
 
 
+def test_test_inputs_digest_ignores_generated_preferences(tmp_path):
+    (tmp_path / "pyproject.toml").touch()
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests/conftest.py").touch()
+    (tmp_path / "scripts").mkdir()
+    example = tmp_path / "config.example.yaml"
+    example.write_text("default_index: SPX\n")
+    baseline = support_test_inputs_digest(tmp_path)
+    assert baseline is not None
+    preferences = tmp_path / "config.local.yaml"
+    preferences.write_text("default_index: 000688.SH\n")
+    assert support_test_inputs_digest(tmp_path) == baseline
+    preferences.write_text("default_index: NDX\n")
+    assert support_test_inputs_digest(tmp_path) == baseline
+    example.write_text("default_index: NDX\n")
+    assert support_test_inputs_digest(tmp_path) != baseline
+
+
 def test_support_matrix_checks_registry_against_brief_and_withdrawal(tmp_path, approved_model):
     bundle = demo_bundle()
     request = AnalysisRequest(symbol="AAPL", as_of=bundle.as_of, mode="FROZEN_DATA_REPLAY")

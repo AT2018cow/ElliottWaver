@@ -8,6 +8,8 @@ from typing import TypeVar
 
 import requests
 
+from elliottwaver.errors import SourceError
+
 T = TypeVar("T")
 _RETRY_STATUS = {429, 500, 502, 503, 504}
 
@@ -44,7 +46,6 @@ def request_json(
     timeout: tuple[float, float] = (10, 20),
     **kwargs,
 ) -> dict:
-    last: BaseException | None = None
     for index in range(attempts):
         try:
             response = requests.request(method, url, timeout=timeout, **kwargs)
@@ -63,10 +64,8 @@ def request_json(
             if not isinstance(payload, dict):
                 raise ValueError("response is not a JSON object")
             return payload
-        except (requests.RequestException, ValueError) as exc:
-            last = exc
+        except (requests.RequestException, ValueError):
             if index + 1 >= attempts:
-                raise
+                raise SourceError("HTTP_REQUEST_FAILED: 无法取得有效行情响应") from None
             time.sleep(base_delay * (2**index))
-    assert last is not None
-    raise last
+    raise ValueError("attempts must be positive")

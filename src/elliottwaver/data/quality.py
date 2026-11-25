@@ -3,7 +3,17 @@ from zoneinfo import ZoneInfo
 
 from elliottwaver.data.periods import sina_auction_empty, uses_sparse_sina_auction
 from elliottwaver.errors import DataError
-from elliottwaver.schemas.market import Bar, MarketDataBundle
+from elliottwaver.schemas.market import Bar, Instrument, MarketDataBundle
+
+
+def stale_intraday_error(instrument: Instrument, last: Bar | None) -> DataError:
+    message = "STALE_INTRADAY: 尚未收到本次需要的完整盘中 K 线。"
+    if last is not None:
+        zone = ZoneInfo(instrument.timezone)
+        message += f" 最近一根结束于 {last.end_at.astimezone(zone):%Y-%m-%d %H:%M %Z}。"
+        if last.observed_at is not None:
+            message += f" 该根接收于 {last.observed_at.astimezone(zone):%Y-%m-%d %H:%M:%S %Z}。"
+    return DataError(message)
 
 
 def normalize_bars(bars: Sequence[Bar]) -> tuple[Bar, ...]:

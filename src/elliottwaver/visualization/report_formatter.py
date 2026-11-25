@@ -18,6 +18,7 @@ from elliottwaver.visualization.chart_builder import (
     render_html,
     svg_chart,
 )
+from elliottwaver.visualization.report_index import catalog_metadata
 
 
 def _parent_summary(scenario) -> str:
@@ -151,13 +152,13 @@ def publish_report(
         raise ExportError("Unsupported report format")
     if result.input_snapshot_id != bundle.snapshot_id:
         raise ExportError("Report input snapshot does not match the analyzed input")
-    parent = root / result.instrument.market / result.instrument.canonical_symbol / result.timeframe
+    parent = root / result.instrument.canonical_symbol / "archive" / "analysis"
     if renderer not in {"plotly", "svg"}:
         raise ExportError("Unsupported renderer; choose plotly or svg")
     render_identity = [result.result_digest, formats, renderer, result.mode]
     if renderer == "plotly" and ("html" in formats or "png" in formats):
         render_identity.append(PLOTLY_RENDER_VERSION)
-    destination = parent / str(result.market_asof) / digest(render_identity)
+    destination = parent / f"{result.market_asof}_{digest(render_identity)}"
     destination.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=".report-", dir=destination.parent))
     try:
@@ -180,6 +181,15 @@ def publish_report(
                     "input_snapshot_id": bundle.snapshot_id,
                     "result_digest": result.result_digest,
                     "renderer": renderer,
+                    "catalog": catalog_metadata(
+                        timeframe=result.timeframe,
+                        feed=result.feed,
+                        mode=result.mode,
+                        status=result.status,
+                        market_asof=result.market_asof,
+                        bar_end=bundle.bars[-1].end_at,
+                        as_of=result.as_of,
+                    ),
                     "files": files,
                 }
             ),
@@ -215,7 +225,9 @@ def publish_report(
         else:
             os.replace(staging, destination)
         if result.status in {"OK", "UNCLEAR", "SEARCH_LIMITED"}:
-            pointer = parent / f"latest_{result.config_hash[:12]}_{result.feed}.json"
+            pointer = (
+                parent / f"latest_{result.timeframe}_{result.config_hash[:12]}_{result.feed}.json"
+            )
             previous = json.loads(pointer.read_text()) if pointer.exists() else {}
             if previous.get("market_asof", "") <= str(result.market_asof):
                 atomic_write(

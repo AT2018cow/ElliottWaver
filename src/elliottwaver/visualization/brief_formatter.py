@@ -43,10 +43,14 @@ from elliottwaver.visualization.brief_text import (
     timeframe_text,
 )
 from elliottwaver.visualization.chart_builder import PLOTLY_RENDER_VERSION, render_html
+from elliottwaver.visualization.report_index import (
+    ISSUANCE_FILE,
+    ISSUANCE_PENDING,
+    catalog_metadata,
+)
 
 BRIEF_TEXT_RENDER_VERSION = "brief-render-v6"
-ISSUANCE_FILE = "issuance.json"
-ISSUANCE_PENDING = ".issuance-pending"
+BRIEF_FORMATS = frozenset({"html", "md"})
 
 
 class PublicationWindowElapsed(ExportError):
@@ -601,7 +605,7 @@ def publish_brief(
     clock: Callable[[], datetime] | None = None,
 ) -> Path:
     formats = tuple(sorted(set(formats)))
-    if set(formats) - {"html", "md"} or renderer not in {"plotly", "svg"}:
+    if set(formats) - BRIEF_FORMATS or renderer not in {"plotly", "svg"}:
         raise ExportError("Unsupported brief format")
     if run.result.input_snapshot_id != run.prepared.snapshot_id:
         raise ExportError("Brief result does not match the prepared input snapshot")
@@ -621,11 +625,10 @@ def publish_brief(
     now = clock or (lambda: datetime.now(UTC))
     destination = (
         root
-        / run.result.instrument.market
         / run.brief.symbol
+        / "archive"
         / "brief"
-        / str(run.brief.market_asof)
-        / digest(render_identity)
+        / f"{run.brief.market_asof}_{digest(render_identity)}"
     )
     destination.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=".brief-", dir=destination.parent))
@@ -677,6 +680,16 @@ def publish_brief(
                     "result_digest": run.brief.result_digest,
                     "engine_version": run.brief.engine_version,
                     "config_hash": run.brief.config_hash,
+                    "catalog": catalog_metadata(
+                        timeframe=run.brief.timeframe,
+                        feed=run.brief.feed,
+                        mode=run.brief.mode,
+                        status=run.brief.status,
+                        market_asof=run.brief.market_asof,
+                        bar_end=run.prepared.bars[-1].end_at,
+                        as_of=run.brief.as_of,
+                        retrospective=run.brief.retrospective,
+                    ),
                     "files": files,
                 }
             ),

@@ -58,7 +58,10 @@ def support_test_inputs_digest(root: Path | None = None) -> str | None:
     config = root / "pyproject.toml"
     if not (tests / "conftest.py").is_file() or not config.is_file():
         return None
-    files = [config, *root.glob("config*.yaml")]
+    files = [
+        config,
+        *(path for path in root.glob("config*.yaml") if path.name != "config.local.yaml"),
+    ]
     for directory in (tests, root / "scripts"):
         if not directory.is_dir():
             return None

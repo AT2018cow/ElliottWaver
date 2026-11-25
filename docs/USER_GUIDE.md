@@ -1,6 +1,6 @@
 # ElliottWaver 中文使用手册
 
-适用于 ElliottWaver 0.7.0 及其后的单指数增强源码。覆盖沪深与美股的日线、周线、小时线和分钟线。指数的盘中周期需要配置对应行情源。逐腿结构树和跨周期关联通过增强配置启用。 [升级步骤](#从已有安装升级) · [源码验收状态](IMPLEMENTATION_STATUS.md)
+适用于 ElliottWaver 0.8.0。覆盖沪深与美股的日线、周线、小时线和分钟线。指数的盘中周期需要配置对应行情源。逐腿结构树和跨周期关联通过增强配置启用。 [升级步骤](#从已有安装升级) · [源码验收状态](IMPLEMENTATION_STATUS.md)
 
 ElliottWaver 从股票和指数的 K 线中识别波浪候选，给出规则检查、推进价、失效价和目标区。日常使用直接输入代码，程序根据交易时段生成相应简报，并比对已有判断。单周期深入分析用 `analyze`。
 
@@ -94,16 +94,16 @@ python3 -m venv .venv
 mv .cache/eliotbot .cache/elliottwaver
 ```
 
-`brief`、`analyze`、`history` 和自选批量的原有入口继续可用。原 `config.yaml` 中如仍写着旧缓存目录，可继续使用，也可改为 `.cache/elliottwaver`。 [版本说明](../CHANGELOG.md#070--2026-11-24)
+0.8.0 日常运行只需输入标的代码。仍可使用 `brief`、`intraday`、`analyze`、`history` 和 `watchlist` 单项入口。新报告按标的归档，不需要迁移旧报告即可使用。原 `config.yaml` 中如仍写着旧缓存目录，可继续使用，也可改为 `.cache/elliottwaver`。 [版本说明](../CHANGELOG.md#080--2026-11-25) · [报告目录说明](../reports/README.md)
 
 ### 从发布 Wheel 安装
 
-从 GitHub Release 下载 `elliottwaver-0.7.0-py3-none-any.whl` 和同名 `.sha256` 文件，放到当前目录。安装依赖需能访问所用 Python 包源。首次运行请在有写权限的工作目录执行。
+从 GitHub Release 下载 `elliottwaver-0.8.0-py3-none-any.whl` 和同名 `.sha256` 文件，放到当前目录。安装依赖需能访问所用 Python 包源。首次运行请在有写权限的工作目录执行。
 
 ```bash
 python3 -m venv .venv
-sha256sum -c elliottwaver-0.7.0-py3-none-any.whl.sha256
-.venv/bin/python -m pip install './elliottwaver-0.7.0-py3-none-any.whl[cn,us]'
+sha256sum -c elliottwaver-0.8.0-py3-none-any.whl.sha256
+.venv/bin/python -m pip install './elliottwaver-0.8.0-py3-none-any.whl[cn,us]'
 .venv/bin/elliottwaver --version
 .venv/bin/elliottwaver demo --symbol 600519.SH
 ```
@@ -644,7 +644,9 @@ reports/
       analysis/<行情日期>_<产物摘要>/
 ```
 
-结算和研究脚本可读取 `reports/<标的>/archive/brief/` 中的原始摘要。改动前已生成的报告保留原路径，可用 `history SYMBOL --json` 查询具体位置。指定输出根目录时，固定入口和归档也一起写到该根目录。
+结算和研究脚本可读取 `reports/<标的>/archive/brief/` 中的原始摘要。用 `elliottwaver history SYMBOL --json` 可查询本机已登记的摘要路径。指定输出根目录时，固定入口和归档也一起写到该根目录。
+
+验证、实验和研究的本地存档不在标的入口页中，按用途查阅[报告目录说明](../reports/README.md)。旧布局的 `reports/CN/`、`reports/US/` 和 `reports/watchlist/` 下的 `CN/`、`US/` 日常归档已从本工作区清理，历史验收记录中的旧路径只用于说明当时的运行位置。
 
 | 摘要文件 | 内容 |
 | --- | --- |

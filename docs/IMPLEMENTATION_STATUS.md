@@ -1,6 +1,6 @@
-# ElliottWaver 0.7.0 实现与验收状态
+# ElliottWaver 0.8.0 实现与验收状态
 
-更新于 2026-11-25，覆盖截至 `6dc8c39` 的单指数增强和当前源码的日常命令。安装、日常操作和研究流程见[中文使用手册](USER_GUIDE.md)。目标规格见[详细实现方案](IMPLEMENTATION_PLAN.md)、[收盘分析与概率评估实施设计](WAVE_ANALYSIS_DESIGN.md)和[单指数实施与验收方案](SINGLE_INDEX_TRADING_IMPLEMENTATION_PLAN.md)。
+更新于 2026-11-25，覆盖 0.8.0 的单指数分析、日常自动入口和报告归档。安装、日常操作和研究流程见[中文使用手册](USER_GUIDE.md)。目标规格见[详细实现方案](IMPLEMENTATION_PLAN.md)、[收盘分析与概率评估实施设计](WAVE_ANALYSIS_DESIGN.md)和[单指数实施与验收方案](SINGLE_INDEX_TRADING_IMPLEMENTATION_PLAN.md)。
 
 ## 已交付范围
 

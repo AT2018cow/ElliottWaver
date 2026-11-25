@@ -4,7 +4,7 @@
 
 **中文终端摘要直接显示主备浪型、当前浪、短期目标区和需要重新数浪的价位。** 日线观察接下来的 5 个完整交易日，周线观察 2 个完整交易周，盘中周期观察发行后尚未开始的 5 根主周期 K 线。需要查看单周期候选细节或长历史时，用 `elliottwaver analyze`。CLI 也支持历史查询、自选批量和到期结算。 [版本说明](CHANGELOG.md)
 
-当前版本为 **0.7.0**。已有环境可安装新版 wheel 或从源码升级。用 `elliottwaver --version` 查看包版本，用报告中的 `engine_version` 核对分析规则。 [升级步骤](docs/USER_GUIDE.md#从已有安装升级)
+当前版本为 **0.8.0**。已有环境可安装新版 wheel 或从源码升级。用 `elliottwaver --version` 查看包版本，用报告中的 `engine_version` 核对分析规则。 [升级步骤](docs/USER_GUIDE.md#从已有安装升级)
 
 发布验收覆盖日线、完整周线和盘中 `1m/5m/15m/30m/60m`，`1h` 是 `60m` 的别名。沪深指数使用新浪无复权日线，盘中可配置免费 Tencent 或授权 Tushare。美股可用 Alpaca SIP/IEX 或免费 Yahoo，指数单独配置 Yahoo 或 Massive。候选权重表示相对评分，盘中事件概率保持未校准。 [来源与验收范围](docs/IMPLEMENTATION_STATUS.md)
 
